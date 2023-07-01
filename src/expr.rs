@@ -139,6 +139,200 @@ impl fmt::Display for If {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct While {
+    pub cond: Box<Expr>,
+    pub body: Block,
+}
+
+impl fmt::Display for While {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "while {cond} {{ {body} }}", cond = self.cond, body = self.body)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ForLoop {
+    pub pat: Box<Pat>,
+    pub expr: Box<Expr>,
+    pub body: Block,
+}
+
+impl fmt::Display for ForLoop {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "for {pat} in {expr} {{ {body} }}", pat = self.pat, expr = self.expr, body = self.body)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Arm {
+    pub attrs: Vec<Attribute>,
+    pub pat: Box<Pat>,
+    pub guard: Option<Box<Expr>>,
+    pub body: Box<Expr>,
+}
+
+impl fmt::Display for Arm {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for attr in self.attrs.iter() {
+            writeln!(f, "{attr}")?;
+        }
+        write!(f, "{pat}", pat = self.pat)?;
+        if let Some(guard) = &self.guard {
+            write!(f, " if {guard}", guard = guard)?;
+        }
+        write!(f, " => {body}", body = self.body)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Match {
+    pub expr: Box<Expr>,
+    pub arms: Vec<Arm>,
+}
+
+impl fmt::Display for Match {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "match {expr} {{", expr = self.expr)?;
+        for arm in self.arms.iter() {
+            writeln!(f, "{arm},", arm = arm)?;
+        }
+        write!(f, "}}")
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Field {
+    pub expr: Box<Expr>,
+    pub ident: String,
+}
+
+impl fmt::Display for Field {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{expr}.{ident}", expr = self.expr, ident = self.ident)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Index {
+    pub expr: Box<Expr>,
+    pub index: Box<Expr>,
+}
+
+impl fmt::Display for Index {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{expr}[{index}]", expr = self.expr, index = self.index)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum RangeLimits {
+    HalfOpen,
+    Closed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Range {
+    pub start: Option<Box<Expr>>,
+    pub end: Option<Box<Expr>>,
+    pub op: RangeLimits,
+}
+
+impl fmt::Display for Range {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.op {
+            RangeLimits::HalfOpen => {
+                write!(f, "{start}..{end}", start = self.start.as_ref().map(|e| e.to_string()).unwrap_or_default(), end = self.end.as_ref().map(|e| e.to_string()).unwrap_or_default())
+            },
+            RangeLimits::Closed => {
+                write!(f, "{start}..={end}", start = self.start.as_ref().map(|e| e.to_string()).unwrap_or_default(), end = self.end.as_ref().map(|e| e.to_string()).unwrap_or_default())
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Return {
+    pub expr: Option<Box<Expr>>,
+}
+
+impl fmt::Display for Return {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(expr) = &self.expr {
+            write!(f, "return {expr}", expr = expr)
+        } else {
+            write!(f, "return")
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Assign {
+    pub lhs: Box<Expr>,
+    pub rhs: Box<Expr>,
+}
+
+impl fmt::Display for Assign {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{lhs} = {rhs}", lhs = self.lhs, rhs = self.rhs)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum BinOpKind {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Rem,
+    And,
+    Or,
+    BitAnd,
+    BitOr,
+    BitXor,
+    Shl,
+    Shr,
+    Eq,
+    Lt,
+    Le,
+    Ne,
+    Ge,
+    Gt,
+}
+
+impl BinOpKind {
+    pub fn as_assign_op(&self) -> &str {
+        match self {
+            Self::Add => "+=",
+            Self::Sub => "-=",
+            Self::Mul => "*=",
+            Self::Div => "/=",
+            Self::Rem => "%=",
+            Self::And => "&=",
+            Self::Or => "|=",
+            Self::BitAnd => "&=",
+            Self::BitOr => "|=",
+            Self::BitXor => "^=",
+            Self::Shl => "<<=",
+            Self::Shr => ">>=",
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AssignOp {
+    pub lhs: Box<Expr>,
+    pub op: BinOpKind,
+    pub rhs: Box<Expr>,
+}
+
+impl fmt::Display for AssignOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{lhs} {op} {rhs}", lhs = self.lhs, op = self.op.as_assign_op(), rhs = self.rhs)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ExprKind {
     Array(Array),
     Tuple(Tuple),
@@ -147,8 +341,18 @@ pub enum ExprKind {
     Lit(Lit),
     Let(Let),
     If(If),
+    While(While),
+    ForLoop(ForLoop),
+    Match(Match),
     Call(Call),
     MethodCall(MethodCall),
+    Block(Block),
+    Field(Field),
+    Index(Index),
+    Range(Range),
+    Return(Return),
+    Assign(Assign),
+    AssignOp(AssignOp),
     MacCall(MacCall),
 }
 
@@ -160,8 +364,18 @@ impl_display_for_enum!(ExprKind;
     Lit,
     Let,
     If,
+    While,
+    ForLoop,
+    Match,
     Call,
     MethodCall,
+    Block,
+    Field,
+    Index,
+    Range,
+    Return,
+    Assign,
+    AssignOp,
     MacCall,
 );
 impl_obvious_conversion!(ExprKind;
@@ -172,8 +386,18 @@ impl_obvious_conversion!(ExprKind;
     Lit,
     Let,
     If,
+    While,
+    ForLoop,
+    Match,
     Call,
     MethodCall,
+    Block,
+    Field,
+    Index,
+    Range,
+    Return,
+    Assign,
+    AssignOp,
     MacCall,
 );
 

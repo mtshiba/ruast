@@ -90,6 +90,15 @@ impl Crate {
         self.items.push(item.into());
     }
 
+    pub fn remove_item(&mut self, index: usize) -> Item {
+        self.items.remove(index)
+    }
+
+    pub fn remove_item_by_ident(&mut self, ident: &str) -> Option<Item> {
+        let index = self.items.iter().position(|item| item.ident() == Some(ident))?;
+        Some(self.remove_item(index))
+    }
+
     pub fn dump(self, path: impl AsRef<Pt>) -> Result<(), std::io::Error> {
         let mut file = File::create(path)?;
         write!(file, "{}", self)?;

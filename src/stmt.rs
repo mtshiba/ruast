@@ -6,6 +6,16 @@ pub trait Empty {
     type Input;
     fn empty(ident: impl Into<Self::Input>) -> Self;
 }
+pub trait HasItem<Itm = Item> {
+    fn with_item(mut self, item: impl Into<Itm>) -> Self
+    where Self: Sized {
+        self.add_item(item);
+        self
+    }
+    fn add_item(&mut self, item: impl Into<Itm>);
+    fn remove_item(&mut self, index: usize) -> Option<Itm>;
+    fn remove_item_by_ident(&mut self, ident: &str) -> Option<Itm>;
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Local {
@@ -36,7 +46,7 @@ impl fmt::Display for LocalKind {
         match self {
             Self::Decl => write!(f, ""),
             Self::Init(expr) => write!(f, " = {expr}"),
-            Self::InitElse(expr, block) => write!(f, " = {expr} else {block}"),
+            Self::InitElse(expr, block) => write!(f, " = {expr} else {{ {block} }}"),
         }
     }
 }
@@ -183,6 +193,36 @@ impl Fn {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Mod {
+    Loaded { ident: String, items: Vec<Item> },
+    Unloaded(String),
+}
+
+impl fmt::Display for Mod {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Loaded { ident, items } => {
+                writeln!(f, "mod {} {{", ident)?;
+                for item in items.iter() {
+                    writeln!(f, "{item}")?;
+                }
+                write!(f, "}}")
+            }
+            Self::Unloaded(ident) => write!(f, "mod {};", ident),
+        }
+    }
+}
+
+impl Mod {
+    pub fn ident(&self) -> &str {
+        match self {
+            Self::Loaded { ident, .. } => ident,
+            Self::Unloaded(ident) => ident,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Block {
     pub stmts: Vec<Stmt>,
@@ -211,8 +251,23 @@ impl Block {
         Self { stmts: Vec::new() }
     }
 
+    pub fn with_stmt(mut self, stmt: impl Into<Stmt>) -> Self {
+        self.add_stmt(stmt);
+        self
+    }
+
     pub fn add_stmt(&mut self, stmt: impl Into<Stmt>) {
         self.stmts.push(stmt.into());
+    }
+
+    pub fn remove_stmt(&mut self, index: usize) -> Stmt {
+        self.stmts.remove(index)
+    }
+
+    pub fn remove_item_by_ident(&mut self, ident: &str) -> Option<Item> {
+        let index = self.stmts.iter().position(|stmt| stmt.ident() == Some(ident))?;
+        let Stmt::Item(item) = self.remove_stmt(index) else { unreachable!() };
+        Some(item)
     }
 }
 
@@ -293,6 +348,46 @@ impl fmt::Display for VariantData {
                 write!(f, "}}")
             }
         }
+    }
+}
+
+impl VariantData {
+    pub fn add_field(&mut self, field: FieldDef) {
+        match self {
+            Self::Unit => {
+                let new = if field.ident.is_some() {
+                    Self::Struct(vec![field])
+                } else {
+                    Self::Tuple(vec![field])
+                };
+                *self = new;
+            },
+            Self::Tuple(fields) => fields.push(field),
+            Self::Struct(fields) => fields.push(field),
+        }
+    }
+
+    pub fn remove_field(&mut self, index: usize) -> Option<FieldDef> {
+        match self {
+            Self::Unit => None,
+            Self::Tuple(fields) => {
+                fields.get(index)?;
+                Some(fields.remove(index))
+            }
+            Self::Struct(fields) => {
+                fields.get(index)?;
+                Some(fields.remove(index))
+            }
+        }
+    }
+
+    pub fn remove_field_by_ident(&mut self, ident: &str) -> Option<FieldDef> {
+        let index = match self {
+            Self::Unit => return None,
+            Self::Tuple(fields) => fields.iter().position(|field| field.ident.as_deref() == Some(ident))?,
+            Self::Struct(fields) => fields.iter().position(|field| field.ident.as_deref() == Some(ident))?,
+        };
+        Some(self.remove_field(index).unwrap())
     }
 }
 
@@ -386,25 +481,27 @@ impl EnumDef {
     pub fn add_variant(&mut self, item: Variant) {
         self.variants.push(item);
     }
+
+    pub fn remove_variant(&mut self, index: usize) -> Variant {
+        self.variants.remove(index)
+    }
+
+    pub fn remove_variant_by_ident(&mut self, ident: &str) -> Option<Variant> {
+        let index = self.variants.iter().position(|va| va.ident == ident)?;
+        Some(self.remove_variant(index))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StructDef {
     pub ident: String,
     pub generics: Vec<GenericArg>,
-    pub fields: Vec<FieldDef>,
+    pub variant: VariantData,
 }
 
 impl fmt::Display for StructDef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "struct {} {{", self.ident)?;
-        for (i, field) in self.fields.iter().enumerate() {
-            if i != 0 {
-                writeln!(f)?;
-            }
-            writeln!(f, "{field},")?;
-        }
-        write!(f, "}}")
+        writeln!(f, "struct {} {}", self.ident, self.variant)
     }
 }
 
@@ -417,25 +514,33 @@ impl Empty for StructDef {
 }
 
 impl StructDef {
-    pub fn new(ident: impl Into<String>, generics: Vec<GenericArg>, fields: Vec<FieldDef>) -> Self {
+    pub fn new(ident: impl Into<String>, generics: Vec<GenericArg>, variant: VariantData) -> Self {
         Self {
             ident: ident.into(),
             generics,
-            fields,
+            variant
         }
     }
 
     pub fn empty(ident: impl Into<String>) -> Self {
-        Self::new(ident, Vec::new(), Vec::new())
+        Self::new(ident, Vec::new(), VariantData::Unit)
     }
 
     pub fn with_item(mut self, item: FieldDef) -> Self {
-        self.add_item(item);
+        self.add_field(item);
         self
     }
 
-    pub fn add_item(&mut self, item: FieldDef) {
-        self.fields.push(item);
+    pub fn add_field(&mut self, item: FieldDef) {
+        self.variant.add_field(item);
+    }
+
+    pub fn remove_field(&mut self, index: usize) -> Option<FieldDef> {
+        self.variant.remove_field(index)
+    }
+
+    pub fn remove_field_by_ident(&mut self, ident: &str) -> Option<FieldDef> {
+        self.variant.remove_field_by_ident(ident)
     }
 }
 
@@ -520,6 +625,15 @@ impl TraitDef {
     pub fn add_item(&mut self, item: impl Into<AssocItem>) {
         self.items.push(item.into());
     }
+
+    pub fn remove_item(&mut self, index: usize) -> AssocItem {
+        self.items.remove(index)
+    }
+
+    pub fn remove_item_by_ident(&mut self, ident: &str) -> Option<AssocItem> {
+        let index = self.items.iter().position(|item| item.ident() == Some(ident))?;
+        Some(self.remove_item(index))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -575,6 +689,15 @@ impl Impl {
 
     pub fn add_item(&mut self, item: impl Into<AssocItem>) {
         self.items.push(item.into());
+    }
+
+    pub fn remove_item(&mut self, index: usize) -> AssocItem {
+        self.items.remove(index)
+    }
+
+    pub fn remove_item_by_ident(&mut self, ident: &str) -> Option<AssocItem> {
+        let index = self.items.iter().position(|item| item.ident() == Some(ident))?;
+        Some(self.remove_item(index))
     }
 }
 
@@ -659,12 +782,24 @@ impl Item {
             kind: item.into(),
         }
     }
+
+    pub fn ident(&self) -> Option<&str> {
+        self.kind.ident()
+    }
+}
+
+impl Item<AssocItemKind> {
+    pub fn ident(&self) -> Option<&str> {
+        self.kind.ident()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ItemKind {
     Use(Path),
     Fn(Fn),
+    Mod(Mod),
+    TyAlias(TyAlias),
     EnumDef(EnumDef),
     StructDef(StructDef),
     UnionDef(UnionDef),
@@ -674,8 +809,26 @@ pub enum ItemKind {
     MacroDef(MacroDef),
 }
 
-impl_obvious_conversion!(ItemKind; Fn, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCall);
-impl_display_for_enum!(ItemKind; Use, Fn, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCall);
+impl_obvious_conversion!(ItemKind; Fn, Mod, TyAlias, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCall);
+impl_display_for_enum!(ItemKind; Use, Fn, Mod, TyAlias, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCall);
+
+impl ItemKind {
+    pub fn ident(&self) -> Option<&str> {
+        match self {
+            Self::Use(_) => None,
+            Self::Fn(item) => Some(&item.ident),
+            Self::Mod(module) => Some(module.ident()),
+            Self::TyAlias(item) => Some(&item.ident),
+            Self::EnumDef(item) => Some(&item.ident),
+            Self::StructDef(item) => Some(&item.ident),
+            Self::UnionDef(item) => Some(&item.ident),
+            Self::TraitDef(item) => Some(&item.ident),
+            Self::Impl(_) => None,
+            Self::MacCall(_) => None,
+            Self::MacroDef(item) => Some(&item.ident),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ConstItem {
@@ -719,6 +872,18 @@ pub enum AssocItemKind {
 }
 
 impl_display_for_enum!(AssocItemKind; ConstItem, Fn, TyAlias, MacCall);
+impl_obvious_conversion!(AssocItemKind; ConstItem, Fn, TyAlias, MacCall);
+
+impl AssocItemKind {
+    pub fn ident(&self) -> Option<&str> {
+        match self {
+            Self::ConstItem(item) => Some(&item.ident),
+            Self::Fn(item) => Some(&item.ident),
+            Self::TyAlias(item) => Some(&item.ident),
+            Self::MacCall(_) => None,
+        }
+    }
+}
 
 pub type AssocItem = Item<AssocItemKind>;
 
@@ -750,5 +915,14 @@ impl fmt::Display for Stmt {
 impl<E: Into<Expr>> From<E> for Stmt {
     fn from(expr: E) -> Self {
         Self::Expr(expr.into())
+    }
+}
+
+impl Stmt {
+    pub fn ident(&self) -> Option<&str> {
+        match self {
+            Self::Item(item) => item.ident(),
+            _ => None,
+        }
     }
 }
