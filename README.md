@@ -48,4 +48,10 @@ println!("{}", krate[0]);
 
 There is a [`codegen`](https://github.com/carllerche/codegen) crate for Rust code generation, but this crate has not been maintained for some time and only supports basic syntax elements.
 
+## Goals
+
 The goal of this project is to provide a simple and portable Rust AST building/Rust code generation library.
+
+## Non-goals
+
+This library is not directly related to the Rust compiler AST, and ASTs built with this library cannot be directly given as input to the compiler.
