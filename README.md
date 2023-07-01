@@ -57,3 +57,7 @@ The goal of this project is to provide a simple and portable Rust AST building/R
 ## Non-goals
 
 This library is not directly related to the Rust compiler AST, and ASTs built with this library cannot be directly given as input to the compiler.
+
+## License
+
+This project is licensed under either of [Apache license version 2.0](./LICENSE-APACHE) or [MIT license](./LICENSE-MIT) at your option.
