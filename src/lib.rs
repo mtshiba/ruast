@@ -3,6 +3,9 @@ mod stmt;
 mod token;
 mod ty;
 
+use std::io::Write;
+use std::path::Path as Pt;
+use std::fs::File;
 use std::fmt;
 use std::ops::{Index, IndexMut};
 
@@ -76,7 +79,18 @@ impl Crate {
         }
     }
 
+    pub fn with_item(mut self, item: impl Into<Item>) -> Self {
+        self.add_item(item);
+        self
+    }
+
     pub fn add_item(&mut self, item: impl Into<Item>) {
         self.items.push(item.into());
+    }
+
+    pub fn dump(self, path: impl AsRef<Pt>) -> Result<(), std::io::Error> {
+        let mut file = File::create(path)?;
+        write!(file, "{}", self)?;
+        Ok(())
     }
 }

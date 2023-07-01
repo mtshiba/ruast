@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::{impl_display_for_enum, impl_obvious_conversion};
+use crate::{impl_display_for_enum, impl_obvious_conversion, Pat, Block};
 use crate::token::Token;
 use crate::ty::Type;
 
@@ -15,8 +15,8 @@ impl fmt::Display for Attribute {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Expr {
-    attrs: Vec<Attribute>,
-    kind: ExprKind,
+    pub attrs: Vec<Attribute>,
+    pub kind: ExprKind,
 }
 
 impl fmt::Display for Expr {
@@ -50,21 +50,130 @@ impl fmt::Display for Const {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+pub struct Array(Vec<Expr>);
+
+impl fmt::Display for Array {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[")?;
+        let mut iter = self.0.iter();
+        if let Some(expr) = iter.next() {
+            write!(f, "{expr}")?;
+            for expr in iter {
+                write!(f, ", {expr}")?;
+            }
+        }
+        write!(f, "]")
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+pub struct Tuple(Vec<Expr>);
+
+impl fmt::Display for Tuple {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "(")?;
+        let mut iter = self.0.iter();
+        if let Some(expr) = iter.next() {
+            write!(f, "{expr}")?;
+            for expr in iter {
+                write!(f, ", {expr}")?;
+            }
+        }
+        write!(f, ")")
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Binary {
+    pub lhs: Box<Expr>,
+    pub op: Token,
+    pub rhs: Box<Expr>,
+}
+
+impl fmt::Display for Binary {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "({lhs} {op} {rhs})", lhs = self.lhs, op = self.op, rhs = self.rhs)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Unary {
+    pub op: Token,
+    pub expr: Box<Expr>,
+}
+
+impl fmt::Display for Unary {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "({op} {expr})", op = self.op, expr = self.expr)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Let {
+    pub pat: Box<Pat>,
+    pub expr: Box<Expr>,
+}
+
+impl fmt::Display for Let {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "let {pat} = {expr}", pat = self.pat, expr = self.expr)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct If {
+    pub cond: Box<Expr>,
+    pub then: Block,
+    pub else_: Option<Box<Expr>>,
+}
+
+impl fmt::Display for If {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "if {cond} {{ {then} }}", cond = self.cond, then = self.then)?;
+        if let Some(else_) = &self.else_ {
+            write!(f, " else {{ {else_} }}", else_ = else_)?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ExprKind {
+    Array(Array),
+    Tuple(Tuple),
+    Binary(Binary),
+    Unary(Unary),
     Lit(Lit),
+    Let(Let),
+    If(If),
     Call(Call),
+    MethodCall(MethodCall),
     MacCall(MacCall),
 }
 
 impl_display_for_enum!(ExprKind;
+    Array,
+    Tuple,
+    Binary,
+    Unary,
     Lit,
+    Let,
+    If,
     Call,
+    MethodCall,
     MacCall,
 );
 impl_obvious_conversion!(ExprKind;
+    Array,
+    Tuple,
+    Binary,
+    Unary,
     Lit,
+    Let,
+    If,
     Call,
+    MethodCall,
     MacCall,
 );
 
@@ -83,8 +192,8 @@ pub enum LitKind {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Lit {
-    kind: LitKind,
-    symbol: String,
+    pub kind: LitKind,
+    pub symbol: String,
 }
 
 impl fmt::Display for Lit {
@@ -104,8 +213,8 @@ impl<S: Into<String>> From<S> for Lit {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Call {
-    func: Box<Expr>,
-    args: Vec<Expr>,
+    pub func: Box<Expr>,
+    pub args: Vec<Expr>,
 }
 
 impl fmt::Display for Call {
@@ -132,8 +241,29 @@ impl Call {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct MethodCall {
+    pub receiver: Box<Expr>,
+    pub seg: PathSegment,
+    pub args: Vec<Expr>,
+}
+
+impl fmt::Display for MethodCall {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}.{}(", self.receiver, self.seg)?;
+        let mut iter = self.args.iter();
+        if let Some(arg) = iter.next() {
+            write!(f, "{arg}")?;
+            for arg in iter {
+                write!(f, ", {arg}")?;
+            }
+        }
+        write!(f, ")")
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Path {
-    segments: Vec<PathSegment>,
+    pub segments: Vec<PathSegment>,
 }
 
 impl fmt::Display for Path {
@@ -159,15 +289,15 @@ impl Path {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PathSegment {
-    ident: String,
-    args: Option<Vec<GenericArg>>,
+    pub ident: String,
+    pub args: Option<Vec<GenericArg>>,
 }
 
 impl fmt::Display for PathSegment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.ident)?;
         if let Some(args) = &self.args {
-            write!(f, "<")?;
+            write!(f, "::<")?;
             let mut iter = args.iter();
             if let Some(arg) = iter.next() {
                 write!(f, "{arg}")?;
@@ -216,8 +346,8 @@ pub enum MacDelimiter {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DelimArgs {
-    delim: MacDelimiter,
-    tokens: Vec<Token>,
+    pub delim: MacDelimiter,
+    pub tokens: Vec<Token>,
 }
 
 impl fmt::Display for DelimArgs {
@@ -254,6 +384,15 @@ impl fmt::Display for DelimArgs {
     }
 }
 
+impl Default for DelimArgs {
+    fn default() -> Self {
+        Self {
+            delim: MacDelimiter::Parenthesis,
+            tokens: Vec::new(),
+        }
+    }
+}
+
 impl From<Vec<Token>> for DelimArgs {
     fn from(tokens: Vec<Token>) -> Self {
         Self {
@@ -265,6 +404,7 @@ impl From<Vec<Token>> for DelimArgs {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MacCall {
+    /// `!` not included
     pub path: Path,
     pub args: DelimArgs,
 }

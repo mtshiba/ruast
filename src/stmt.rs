@@ -1,6 +1,11 @@
 use std::fmt;
 
-use crate::{expr::{Expr, MacCall, Path}, GenericArg, Type, impl_obvious_conversion, impl_display_for_enum, Attribute};
+use crate::{expr::{Expr, MacCall, Path}, GenericArg, Type, impl_obvious_conversion, impl_display_for_enum, Attribute, DelimArgs};
+
+pub trait Empty {
+    type Input;
+    fn empty(ident: impl Into<Self::Input>) -> Self;
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Local {
@@ -44,8 +49,8 @@ pub struct PatField {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StructPat {
-    path: Path,
-    fields: Vec<PatField>,
+    pub path: Path,
+    pub fields: Vec<PatField>,
 }
 
 impl fmt::Display for StructPat {
@@ -148,6 +153,14 @@ impl fmt::Display for Fn {
     }
 }
 
+impl Empty for Fn {
+    type Input = String;
+
+    fn empty(ident: impl Into<Self::Input>) -> Self {
+        Self::empty(ident)
+    }
+}
+
 impl Fn {
     pub fn main(output: Option<Type>, body: Block) -> Self {
         Self {
@@ -156,6 +169,16 @@ impl Fn {
             inputs: Vec::new(),
             output,
             body: Some(body),
+        }
+    }
+
+    pub fn empty(ident: impl Into<String>) -> Self {
+        Self {
+            ident: ident.into(),
+            generics: Vec::new(),
+            inputs: Vec::new(),
+            output: None,
+            body: None,
         }
     }
 }
@@ -214,6 +237,30 @@ impl fmt::Display for FieldDef {
     }
 }
 
+impl FieldDef {
+    pub fn new(vis: Visibility, ident: Option<impl Into<String>>, ty: impl Into<Type>) -> Self {
+        Self {
+            attrs: Vec::new(),
+            vis,
+            ident: ident.map(Into::into),
+            ty: ty.into(),
+        }
+    }
+
+    pub fn simple(ident: impl Into<String>, ty: impl Into<Type>) -> Self {
+        Self::new(Visibility::Inherited, Some(ident), ty)
+    }
+
+    pub fn with_attr(mut self, attr: impl Into<Attribute>) -> Self {
+        self.add_attr(attr);
+        self
+    }
+
+    pub fn add_attr(&mut self, attr: impl Into<Attribute>) {
+        self.attrs.push(attr.into());
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum VariantData {
     Unit,
@@ -267,6 +314,29 @@ impl fmt::Display for Variant {
     }
 }
 
+impl Empty for Variant {
+    type Input = String;
+
+    fn empty(ident: impl Into<Self::Input>) -> Self {
+        Self::empty(ident)
+    }
+}
+
+impl Variant {
+    pub fn new(vis: Visibility, ident: impl Into<String>, data: VariantData, disr_expr: Option<Expr>) -> Self {
+        Self {
+            vis,
+            ident: ident.into(),
+            data,
+            disr_expr,
+        }
+    }
+
+    pub fn empty(ident: impl Into<String>) -> Self {
+        Self::new(Visibility::Inherited, ident, VariantData::Unit, None)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EnumDef {
     pub ident: String,
@@ -284,6 +354,37 @@ impl fmt::Display for EnumDef {
             writeln!(f, "{variant},")?;
         }
         write!(f, "}}")
+    }
+}
+
+impl Empty for EnumDef {
+    type Input = String;
+
+    fn empty(ident: impl Into<Self::Input>) -> Self {
+        Self::empty(ident)
+    }
+}
+
+impl EnumDef {
+    pub fn new(ident: impl Into<String>, generics: Vec<GenericArg>, variants: Vec<Variant>) -> Self {
+        Self {
+            ident: ident.into(),
+            generics,
+            variants,
+        }
+    }
+
+    pub fn empty(ident: impl Into<String>) -> Self {
+        Self::new(ident, Vec::new(), Vec::new())
+    }
+
+    pub fn with_variant(mut self, item: Variant) -> Self {
+        self.add_variant(item);
+        self
+    }
+
+    pub fn add_variant(&mut self, item: Variant) {
+        self.variants.push(item);
     }
 }
 
@@ -307,14 +408,69 @@ impl fmt::Display for StructDef {
     }
 }
 
+impl Empty for StructDef {
+    type Input = String;
+
+    fn empty(ident: impl Into<Self::Input>) -> Self {
+        Self::empty(ident)
+    }
+}
+
+impl StructDef {
+    pub fn new(ident: impl Into<String>, generics: Vec<GenericArg>, fields: Vec<FieldDef>) -> Self {
+        Self {
+            ident: ident.into(),
+            generics,
+            fields,
+        }
+    }
+
+    pub fn empty(ident: impl Into<String>) -> Self {
+        Self::new(ident, Vec::new(), Vec::new())
+    }
+
+    pub fn with_item(mut self, item: FieldDef) -> Self {
+        self.add_item(item);
+        self
+    }
+
+    pub fn add_item(&mut self, item: FieldDef) {
+        self.fields.push(item);
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UnionDef {
     pub ident: String,
+    pub generics: Vec<GenericArg>,
+    pub variants: VariantData,
 }
 
 impl fmt::Display for UnionDef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "union {} {{}}", self.ident)
+    }
+}
+
+impl Empty for UnionDef {
+    type Input = String;
+
+    fn empty(ident: impl Into<Self::Input>) -> Self {
+        Self::empty(ident)
+    }
+}
+
+impl UnionDef {
+    pub fn new(ident: impl Into<String>, generics: Vec<GenericArg>, variants: VariantData) -> Self {
+        Self {
+            ident: ident.into(),
+            generics,
+            variants,
+        }
+    }
+
+    pub fn empty(ident: impl Into<String>) -> Self {
+        Self::new(ident, Vec::new(), VariantData::Unit)
     }
 }
 
@@ -335,11 +491,42 @@ impl fmt::Display for TraitDef {
     }
 }
 
+impl Empty for TraitDef {
+    type Input = String;
+
+    fn empty(ident: impl Into<Self::Input>) -> Self {
+        Self::empty(ident)
+    }
+}
+
+impl TraitDef {
+    pub fn new(ident: impl Into<String>, generics: Vec<GenericArg>, items: Vec<AssocItem>) -> Self {
+        Self {
+            ident: ident.into(),
+            generics,
+            items,
+        }
+    }
+
+    pub fn empty(ident: impl Into<String>) -> Self {
+        Self::new(ident, Vec::new(), Vec::new())
+    }
+
+    pub fn with_item(mut self, item: impl Into<AssocItem>) -> Self {
+        self.add_item(item);
+        self
+    }
+
+    pub fn add_item(&mut self, item: impl Into<AssocItem>) {
+        self.items.push(item.into());
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Impl {
-    of_trait: Option<Type>,
-    self_ty: Type,
-    items: Vec<AssocItem>,
+    pub of_trait: Option<Type>,
+    pub self_ty: Type,
+    pub items: Vec<AssocItem>,
 }
 
 impl fmt::Display for Impl {
@@ -356,9 +543,45 @@ impl fmt::Display for Impl {
     }
 }
 
+impl Empty for Impl {
+    type Input = Type;
+
+    fn empty(self_ty: impl Into<Self::Input>) -> Self {
+        Self::new(self_ty.into(), vec![])
+    }
+}
+
+impl Impl {
+    pub fn new(self_ty: Type, items: Vec<AssocItem>) -> Self {
+        Self {
+            of_trait: None,
+            self_ty,
+            items,
+        }
+    }
+
+    pub fn trait_impl(self_ty: Type, of_trait: Type, items: Vec<AssocItem>) -> Self {
+        Self {
+            of_trait: Some(of_trait),
+            self_ty,
+            items,
+        }
+    }
+
+    pub fn with_item(mut self, item: impl Into<AssocItem>) -> Self {
+        self.add_item(item);
+        self
+    }
+
+    pub fn add_item(&mut self, item: impl Into<AssocItem>) {
+        self.items.push(item.into());
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MacroDef {
     pub ident: String,
+    pub args: DelimArgs,
 }
 
 impl fmt::Display for MacroDef {
@@ -367,8 +590,30 @@ impl fmt::Display for MacroDef {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+impl Empty for MacroDef {
+    type Input = String;
+
+    fn empty(ident: impl Into<Self::Input>) -> Self {
+        Self::empty(ident)
+    }
+}
+
+impl MacroDef {
+    pub fn new(ident: impl Into<String>, args: DelimArgs) -> Self {
+        Self {
+            ident: ident.into(),
+            args,
+        }
+    }
+
+    pub fn empty(ident: impl Into<String>) -> Self {
+        Self::new(ident, DelimArgs::default())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum Visibility {
+    #[default]
     Inherited,
     Public,
 }
@@ -434,9 +679,9 @@ impl_display_for_enum!(ItemKind; Use, Fn, EnumDef, StructDef, UnionDef, TraitDef
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ConstItem {
-    ident: String,
-    ty: Type,
-    expr: Option<Expr>,
+    pub ident: String,
+    pub ty: Type,
+    pub expr: Option<Expr>,
 }
 
 impl fmt::Display for ConstItem {
@@ -451,8 +696,8 @@ impl fmt::Display for ConstItem {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TyAlias {
-    ident: String,
-    ty: Option<Type>,
+    pub ident: String,
+    pub ty: Option<Type>,
 }
 
 impl fmt::Display for TyAlias {
@@ -470,10 +715,10 @@ pub enum AssocItemKind {
     ConstItem(ConstItem),
     Fn(Fn),
     TyAlias(TyAlias),
-    MacroDef(MacroDef),
+    MacCall(MacCall),
 }
 
-impl_display_for_enum!(AssocItemKind; ConstItem, Fn, TyAlias, MacroDef);
+impl_display_for_enum!(AssocItemKind; ConstItem, Fn, TyAlias, MacCall);
 
 pub type AssocItem = Item<AssocItemKind>;
 

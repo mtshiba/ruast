@@ -1,6 +1,6 @@
 # `rast`
 
-Zero-dependency formattable Rust AST library
+Formattable Rust AST library
 
 ## Basic usage
 
@@ -47,6 +47,8 @@ println!("{}", krate[0]);
 [The Rust project](https://github.com/rust-lang/rust) has a submodule called [`rustc_ast`](https://github.com/rust-lang/rust/tree/master/compiler/rustc_ast) that defines an AST, but it is not published on crates.io and requires a huge build of `rust` itself. Also, `rustc_ast` is not designed for third parties to build ASTs by hand.
 
 There is a [`codegen`](https://github.com/carllerche/codegen) crate for Rust code generation, but this crate has not been maintained for some time and only supports basic syntax elements.
+
+There is also a [`syn`](https://github.com/dtolnay/syn) crate that can parse `proc_macro::TokenStream` into an AST, but its AST elements don't implement `Display` trait and are not designed for direct manipulation.
 
 ## Goals
 
