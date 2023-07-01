@@ -1,6 +1,6 @@
 # `rast`
 
-Formattable Rust AST library
+This crate provides a formattable Rust AST.
 
 ## Basic usage
 

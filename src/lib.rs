@@ -2,6 +2,8 @@ mod expr;
 mod stmt;
 mod token;
 mod ty;
+#[cfg(feature = "conversion")]
+mod conversion;
 
 use std::io::Write;
 use std::path::Path as Pt;
