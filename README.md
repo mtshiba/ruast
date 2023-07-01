@@ -1,6 +1,6 @@
 # `rast`
 
-Formattable Rust AST library
+Zero-dependency formattable Rust AST library
 
 ## Basic usage
 
@@ -44,8 +44,8 @@ println!("{}", krate[0]);
 
 ## Why this is needed?
 
-The Rust project has a submodule called `rustc_ast` that defines an AST, but it is not published on crates.io and requires a huge build of `rust` itself. Also, `rustc_ast` is not designed for third parties to build ASTs by hand.
+[The Rust project](https://github.com/rust-lang/rust) has a submodule called [`rustc_ast`](https://github.com/rust-lang/rust/tree/master/compiler/rustc_ast) that defines an AST, but it is not published on crates.io and requires a huge build of `rust` itself. Also, `rustc_ast` is not designed for third parties to build ASTs by hand.
 
-There is a `codegen` crate for Rust code generation, but this crate has not been maintained for some time and only supports basic syntax elements.
+There is a [`codegen`](https://github.com/carllerche/codegen) crate for Rust code generation, but this crate has not been maintained for some time and only supports basic syntax elements.
 
 The goal of this project is to provide a simple and portable Rust AST building/Rust code generation library.
