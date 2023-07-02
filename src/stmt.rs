@@ -1,20 +1,50 @@
-use std::fmt;
+use std::{fmt, hash::Hash};
 
-use crate::{expr::{Expr, MacCall, Path}, GenericArg, Type, impl_obvious_conversion, impl_display_for_enum, Attribute, DelimArgs};
+use crate::expr::{Expr, MacCall, Path};
+use crate::{GenericArg, Type, impl_obvious_conversion, impl_display_for_enum, Attribute, DelimArgs, impl_hasitem_methods};
+
+pub trait Ident {
+    fn ident(&self) -> &str;
+}
+pub trait MaybeIdent {
+    fn ident(&self) -> Option<&str>;
+}
+
+impl<I: Ident> MaybeIdent for I {
+    fn ident(&self) -> Option<&str> {
+        Some(self.ident())
+    }
+}
 
 pub trait Empty {
     type Input;
     fn empty(ident: impl Into<Self::Input>) -> Self;
 }
-pub trait HasItem<Itm = Item> {
+pub trait HasItem<Itm: MaybeIdent = Item> {
+    fn items(&self) -> &[Itm];
+    fn items_mut(&mut self) -> &mut Vec<Itm>;
     fn with_item(mut self, item: impl Into<Itm>) -> Self
     where Self: Sized {
         self.add_item(item);
         self
     }
-    fn add_item(&mut self, item: impl Into<Itm>);
-    fn remove_item(&mut self, index: usize) -> Option<Itm>;
-    fn remove_item_by_ident(&mut self, ident: &str) -> Option<Itm>;
+    fn add_item(&mut self, item: impl Into<Itm>) {
+        self.items_mut().push(item.into());
+    }
+    fn remove_item(&mut self, index: usize) -> Option<Itm> {
+        self.items_mut().get(index)?;
+        Some(self.items_mut().remove(index))
+    }
+    fn remove_item_by_id(&mut self, ident: &str) -> Option<Itm> {
+        let index = self.items().iter().position(|item| item.ident() == Some(ident))?;
+        Some(self.remove_item(index).unwrap())
+    }
+    fn get_item(&self, index: usize) -> Option<&Itm> {
+        self.items().get(index)
+    }
+    fn get_item_by_id(&self, ident: &str) -> Option<&Itm> {
+        self.items().iter().find(|item| item.ident() == Some(ident))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -55,6 +85,12 @@ impl fmt::Display for LocalKind {
 pub struct PatField {
     pub ident: String,
     pub pat: Pat,
+}
+
+impl Ident for PatField {
+    fn ident(&self) -> &str {
+        &self.ident
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -123,6 +159,12 @@ pub struct Param {
     pub ty: Type,
 }
 
+impl fmt::Display for Param {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{pat}: {ty}", pat = self.pat, ty = self.ty)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Fn {
     pub ident: String,
@@ -171,6 +213,12 @@ impl Empty for Fn {
     }
 }
 
+impl Ident for Fn {
+    fn ident(&self) -> &str {
+        &self.ident
+    }
+}
+
 impl Fn {
     pub fn main(output: Option<Type>, body: Block) -> Self {
         Self {
@@ -194,32 +242,106 @@ impl Fn {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LoadedMod {
+    pub ident: String,
+    pub items: Vec<Item>,
+}
+
+impl fmt::Display for LoadedMod {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "mod {} {{", self.ident)?;
+        for item in self.items.iter() {
+            writeln!(f, "{item}")?;
+        }
+        write!(f, "}}")
+    }
+}
+
+impl Empty for LoadedMod {
+    type Input = String;
+
+    fn empty(ident: impl Into<Self::Input>) -> Self {
+        Self::empty(ident)
+    }
+}
+
+impl Ident for LoadedMod {
+    fn ident(&self) -> &str {
+        &self.ident
+    }
+}
+
+impl HasItem for LoadedMod {
+    fn items(&self) -> &[Item] {
+        &self.items
+    }
+    fn items_mut(&mut self) -> &mut Vec<Item> {
+        &mut self.items
+    }
+}
+
+impl_hasitem_methods!(LoadedMod);
+
+impl LoadedMod {
+    pub fn new(ident: impl Into<String>, items: Vec<Item>) -> Self {
+        Self {
+            ident: ident.into(),
+            items,
+        }
+    }
+
+    pub fn empty(ident: impl Into<String>) -> Self {
+        Self::new(ident, Vec::new())
+    }
+
+    pub fn ident(&self) -> &str {
+        Ident::ident(self)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Mod {
-    Loaded { ident: String, items: Vec<Item> },
+    Loaded(LoadedMod),
     Unloaded(String),
 }
 
 impl fmt::Display for Mod {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Loaded { ident, items } => {
-                writeln!(f, "mod {} {{", ident)?;
-                for item in items.iter() {
-                    writeln!(f, "{item}")?;
-                }
-                write!(f, "}}")
-            }
-            Self::Unloaded(ident) => write!(f, "mod {};", ident),
+            Self::Loaded(module) => write!(f, "{module}"),
+            Self::Unloaded(ident) => write!(f, "mod {ident};"),
         }
     }
 }
 
-impl Mod {
-    pub fn ident(&self) -> &str {
+impl Ident for Mod {
+    fn ident(&self) -> &str {
         match self {
-            Self::Loaded { ident, .. } => ident,
+            Self::Loaded(module) => &module.ident,
             Self::Unloaded(ident) => ident,
         }
+    }
+}
+
+impl Empty for Mod {
+    type Input = String;
+
+    fn empty(ident: impl Into<Self::Input>) -> Self {
+        Self::empty(ident)
+    }
+}
+
+impl Mod {
+    pub fn new(ident: impl Into<String>, items: Vec<Item>) -> Self {
+        Self::Loaded(LoadedMod::new(ident, items))
+    }
+
+    pub fn empty(ident: impl Into<String>) -> Self {
+        Self::Loaded(LoadedMod::empty(ident))
+    }
+
+    pub fn ident(&self) -> &str {
+        Ident::ident(self)
     }
 }
 
@@ -246,6 +368,15 @@ impl<S: Into<Stmt>> From<S> for Block {
     }
 }
 
+impl HasItem<Stmt> for Block {
+    fn items(&self) -> &[Stmt] {
+        &self.stmts
+    }
+    fn items_mut(&mut self) -> &mut Vec<Stmt> {
+        &mut self.stmts
+    }
+}
+
 impl Block {
     pub fn new() -> Self {
         Self { stmts: Vec::new() }
@@ -260,13 +391,23 @@ impl Block {
         self.stmts.push(stmt.into());
     }
 
-    pub fn remove_stmt(&mut self, index: usize) -> Stmt {
-        self.stmts.remove(index)
+    pub fn remove_stmt(&mut self, index: usize) -> Option<Stmt> {
+        self.stmts.get(index)?;
+        Some(self.stmts.remove(index))
     }
 
-    pub fn remove_item_by_ident(&mut self, ident: &str) -> Option<Item> {
+    pub fn remove_item_by_id(&mut self, ident: &str) -> Option<Item> {
         let index = self.stmts.iter().position(|stmt| stmt.ident() == Some(ident))?;
-        let Stmt::Item(item) = self.remove_stmt(index) else { unreachable!() };
+        let Some(Stmt::Item(item)) = self.remove_stmt(index) else { unreachable!() };
+        Some(item)
+    }
+
+    pub fn get_stmt(&self, index: usize) -> Option<&Stmt> {
+        self.stmts.get(index)
+    }
+
+    pub fn get_item_by_id(&self, ident: &str) -> Option<&Item> {
+        let Stmt::Item(item) = self.stmts.iter().find(|stmt| stmt.ident() == Some(ident))? else { unreachable!() };
         Some(item)
     }
 }
@@ -292,6 +433,12 @@ impl fmt::Display for FieldDef {
     }
 }
 
+impl MaybeIdent for FieldDef {
+    fn ident(&self) -> Option<&str> {
+        self.ident.as_deref()
+    }
+}
+
 impl FieldDef {
     pub fn new(vis: Visibility, ident: Option<impl Into<String>>, ty: impl Into<Type>) -> Self {
         Self {
@@ -313,6 +460,10 @@ impl FieldDef {
 
     pub fn add_attr(&mut self, attr: impl Into<Attribute>) {
         self.attrs.push(attr.into());
+    }
+
+    pub fn remove_attr(&mut self, index: usize) -> Attribute {
+        self.attrs.remove(index)
     }
 }
 
@@ -352,6 +503,11 @@ impl fmt::Display for VariantData {
 }
 
 impl VariantData {
+    pub fn with_field(mut self, field: FieldDef) -> Self {
+        self.add_field(field);
+        self
+    }
+
     pub fn add_field(&mut self, field: FieldDef) {
         match self {
             Self::Unit => {
@@ -381,13 +537,21 @@ impl VariantData {
         }
     }
 
-    pub fn remove_field_by_ident(&mut self, ident: &str) -> Option<FieldDef> {
+    pub fn remove_field_by_id(&mut self, ident: &str) -> Option<FieldDef> {
         let index = match self {
             Self::Unit => return None,
             Self::Tuple(fields) => fields.iter().position(|field| field.ident.as_deref() == Some(ident))?,
             Self::Struct(fields) => fields.iter().position(|field| field.ident.as_deref() == Some(ident))?,
         };
         Some(self.remove_field(index).unwrap())
+    }
+
+    pub fn get_field_by_id(&self, ident: &str) -> Option<&FieldDef> {
+        match self {
+            Self::Unit => None,
+            Self::Tuple(fields) => fields.iter().find(|field| field.ident.as_deref() == Some(ident)),
+            Self::Struct(fields) => fields.iter().find(|field| field.ident.as_deref() == Some(ident)),
+        }
     }
 }
 
@@ -414,6 +578,12 @@ impl Empty for Variant {
 
     fn empty(ident: impl Into<Self::Input>) -> Self {
         Self::empty(ident)
+    }
+}
+
+impl Ident for Variant {
+    fn ident(&self) -> &str {
+        &self.ident
     }
 }
 
@@ -460,6 +630,21 @@ impl Empty for EnumDef {
     }
 }
 
+impl Ident for EnumDef {
+    fn ident(&self) -> &str {
+        &self.ident
+    }
+}
+
+impl HasItem<Variant> for EnumDef {
+    fn items(&self) -> &[Variant] {
+        &self.variants
+    }
+    fn items_mut(&mut self) -> &mut Vec<Variant> {
+        &mut self.variants
+    }
+}
+
 impl EnumDef {
     pub fn new(ident: impl Into<String>, generics: Vec<GenericArg>, variants: Vec<Variant>) -> Self {
         Self {
@@ -486,9 +671,17 @@ impl EnumDef {
         self.variants.remove(index)
     }
 
-    pub fn remove_variant_by_ident(&mut self, ident: &str) -> Option<Variant> {
+    pub fn remove_variant_by_id(&mut self, ident: &str) -> Option<Variant> {
         let index = self.variants.iter().position(|va| va.ident == ident)?;
         Some(self.remove_variant(index))
+    }
+
+    pub fn get_variant(&self, index: usize) -> Option<&Variant> {
+        self.variants.get(index)
+    }
+
+    pub fn get_variant_by_id(&self, ident: &str) -> Option<&Variant> {
+        self.variants.iter().find(|va| va.ident == ident)
     }
 }
 
@@ -513,6 +706,12 @@ impl Empty for StructDef {
     }
 }
 
+impl Ident for StructDef {
+    fn ident(&self) -> &str {
+        &self.ident
+    }
+}
+
 impl StructDef {
     pub fn new(ident: impl Into<String>, generics: Vec<GenericArg>, variant: VariantData) -> Self {
         Self {
@@ -526,21 +725,25 @@ impl StructDef {
         Self::new(ident, Vec::new(), VariantData::Unit)
     }
 
-    pub fn with_item(mut self, item: FieldDef) -> Self {
-        self.add_field(item);
+    pub fn with_field(mut self, field: FieldDef) -> Self {
+        self.add_field(field);
         self
     }
 
-    pub fn add_field(&mut self, item: FieldDef) {
-        self.variant.add_field(item);
+    pub fn add_field(&mut self, field: FieldDef) {
+        self.variant.add_field(field);
     }
 
     pub fn remove_field(&mut self, index: usize) -> Option<FieldDef> {
         self.variant.remove_field(index)
     }
 
-    pub fn remove_field_by_ident(&mut self, ident: &str) -> Option<FieldDef> {
-        self.variant.remove_field_by_ident(ident)
+    pub fn remove_field_by_id(&mut self, ident: &str) -> Option<FieldDef> {
+        self.variant.remove_field_by_id(ident)
+    }
+
+    pub fn get_field_by_id(&self, ident: &str) -> Option<&FieldDef> {
+        self.variant.get_field_by_id(ident)
     }
 }
 
@@ -562,6 +765,12 @@ impl Empty for UnionDef {
 
     fn empty(ident: impl Into<Self::Input>) -> Self {
         Self::empty(ident)
+    }
+}
+
+impl Ident for UnionDef {
+    fn ident(&self) -> &str {
+        &self.ident
     }
 }
 
@@ -604,6 +813,23 @@ impl Empty for TraitDef {
     }
 }
 
+impl Ident for TraitDef {
+    fn ident(&self) -> &str {
+        &self.ident
+    }
+}
+
+impl HasItem<AssocItem> for TraitDef {
+    fn items(&self) -> &[AssocItem] {
+        &self.items
+    }
+    fn items_mut(&mut self) -> &mut Vec<AssocItem> {
+        &mut self.items
+    }
+}
+
+impl_hasitem_methods!(TraitDef, AssocItem);
+
 impl TraitDef {
     pub fn new(ident: impl Into<String>, generics: Vec<GenericArg>, items: Vec<AssocItem>) -> Self {
         Self {
@@ -615,24 +841,6 @@ impl TraitDef {
 
     pub fn empty(ident: impl Into<String>) -> Self {
         Self::new(ident, Vec::new(), Vec::new())
-    }
-
-    pub fn with_item(mut self, item: impl Into<AssocItem>) -> Self {
-        self.add_item(item);
-        self
-    }
-
-    pub fn add_item(&mut self, item: impl Into<AssocItem>) {
-        self.items.push(item.into());
-    }
-
-    pub fn remove_item(&mut self, index: usize) -> AssocItem {
-        self.items.remove(index)
-    }
-
-    pub fn remove_item_by_ident(&mut self, ident: &str) -> Option<AssocItem> {
-        let index = self.items.iter().position(|item| item.ident() == Some(ident))?;
-        Some(self.remove_item(index))
     }
 }
 
@@ -665,6 +873,17 @@ impl Empty for Impl {
     }
 }
 
+impl HasItem<AssocItem> for Impl {
+    fn items(&self) -> &[AssocItem] {
+        &self.items
+    }
+    fn items_mut(&mut self) -> &mut Vec<AssocItem> {
+        &mut self.items
+    }
+}
+
+impl_hasitem_methods!(Impl, AssocItem);
+
 impl Impl {
     pub fn new(self_ty: Type, items: Vec<AssocItem>) -> Self {
         Self {
@@ -680,24 +899,6 @@ impl Impl {
             self_ty,
             items,
         }
-    }
-
-    pub fn with_item(mut self, item: impl Into<AssocItem>) -> Self {
-        self.add_item(item);
-        self
-    }
-
-    pub fn add_item(&mut self, item: impl Into<AssocItem>) {
-        self.items.push(item.into());
-    }
-
-    pub fn remove_item(&mut self, index: usize) -> AssocItem {
-        self.items.remove(index)
-    }
-
-    pub fn remove_item_by_ident(&mut self, ident: &str) -> Option<AssocItem> {
-        let index = self.items.iter().position(|item| item.ident() == Some(ident))?;
-        Some(self.remove_item(index))
     }
 }
 
@@ -718,6 +919,12 @@ impl Empty for MacroDef {
 
     fn empty(ident: impl Into<Self::Input>) -> Self {
         Self::empty(ident)
+    }
+}
+
+impl Ident for MacroDef {
+    fn ident(&self) -> &str {
+        &self.ident
     }
 }
 
@@ -768,6 +975,12 @@ impl<K: fmt::Display> fmt::Display for Item<K> {
     }
 }
 
+impl<K: MaybeIdent> MaybeIdent for Item<K> {
+    fn ident(&self) -> Option<&str> {
+        self.kind.ident()
+    }
+}
+
 impl Item {
     pub fn inherited(item: impl Into<ItemKind>) -> Self {
         Self {
@@ -783,12 +996,6 @@ impl Item {
         }
     }
 
-    pub fn ident(&self) -> Option<&str> {
-        self.kind.ident()
-    }
-}
-
-impl Item<AssocItemKind> {
     pub fn ident(&self) -> Option<&str> {
         self.kind.ident()
     }
@@ -812,8 +1019,8 @@ pub enum ItemKind {
 impl_obvious_conversion!(ItemKind; Fn, Mod, TyAlias, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCall);
 impl_display_for_enum!(ItemKind; Use, Fn, Mod, TyAlias, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCall);
 
-impl ItemKind {
-    pub fn ident(&self) -> Option<&str> {
+impl MaybeIdent for ItemKind {
+    fn ident(&self) -> Option<&str> {
         match self {
             Self::Use(_) => None,
             Self::Fn(item) => Some(&item.ident),
@@ -827,6 +1034,12 @@ impl ItemKind {
             Self::MacCall(_) => None,
             Self::MacroDef(item) => Some(&item.ident),
         }
+    }
+}
+
+impl ItemKind {
+    pub fn ident(&self) -> Option<&str> {
+        MaybeIdent::ident(self)
     }
 }
 
@@ -847,6 +1060,12 @@ impl fmt::Display for ConstItem {
     }
 }
 
+impl Ident for ConstItem {
+    fn ident(&self) -> &str {
+        &self.ident
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TyAlias {
     pub ident: String,
@@ -863,6 +1082,12 @@ impl fmt::Display for TyAlias {
     }
 }
 
+impl Ident for TyAlias {
+    fn ident(&self) -> &str {
+        &self.ident
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum AssocItemKind {
     ConstItem(ConstItem),
@@ -874,14 +1099,20 @@ pub enum AssocItemKind {
 impl_display_for_enum!(AssocItemKind; ConstItem, Fn, TyAlias, MacCall);
 impl_obvious_conversion!(AssocItemKind; ConstItem, Fn, TyAlias, MacCall);
 
-impl AssocItemKind {
-    pub fn ident(&self) -> Option<&str> {
+impl MaybeIdent for AssocItemKind {
+    fn ident(&self) -> Option<&str> {
         match self {
             Self::ConstItem(item) => Some(&item.ident),
             Self::Fn(item) => Some(&item.ident),
             Self::TyAlias(item) => Some(&item.ident),
             Self::MacCall(_) => None,
         }
+    }
+}
+
+impl AssocItemKind {
+    pub fn ident(&self) -> Option<&str> {
+        MaybeIdent::ident(self)
     }
 }
 
@@ -918,11 +1149,17 @@ impl<E: Into<Expr>> From<E> for Stmt {
     }
 }
 
-impl Stmt {
-    pub fn ident(&self) -> Option<&str> {
+impl MaybeIdent for Stmt {
+    fn ident(&self) -> Option<&str> {
         match self {
             Self::Item(item) => item.ident(),
             _ => None,
         }
+    }
+}
+
+impl Stmt {
+    pub fn ident(&self) -> Option<&str> {
+        MaybeIdent::ident(self)
     }
 }

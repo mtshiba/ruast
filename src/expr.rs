@@ -39,6 +39,14 @@ impl Expr {
     pub fn add_attr(&mut self, attr: Attribute) {
         self.attrs.push(attr);
     }
+
+    pub fn remove_attr(&mut self, attr: &Attribute) {
+        self.attrs.retain(|a| a != attr);
+    }
+
+    pub fn is_compound(&self) -> bool {
+        matches!(&self.kind, ExprKind::Binary(_) | ExprKind::Unary(_) | ExprKind::Field(_)| ExprKind::Range(_))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -87,7 +95,7 @@ impl fmt::Display for Tuple {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Binary {
     pub lhs: Box<Expr>,
-    pub op: Token,
+    pub op: BinOpKind,
     pub rhs: Box<Expr>,
 }
 
@@ -98,8 +106,25 @@ impl fmt::Display for Binary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum UnaryOpKind {
+    Deref,
+    Not,
+    Neg,
+}
+
+impl fmt::Display for UnaryOpKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Deref => write!(f, "*"),
+            Self::Not => write!(f, "!"),
+            Self::Neg => write!(f, "-"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Unary {
-    pub op: Token,
+    pub op: UnaryOpKind,
     pub expr: Box<Expr>,
 }
 
@@ -297,6 +322,31 @@ pub enum BinOpKind {
     Ne,
     Ge,
     Gt,
+}
+
+impl fmt::Display for BinOpKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Add => write!(f, "+"),
+            Self::Sub => write!(f, "-"),
+            Self::Mul => write!(f, "*"),
+            Self::Div => write!(f, "/"),
+            Self::Rem => write!(f, "%"),
+            Self::And => write!(f, "&&"),
+            Self::Or => write!(f, "||"),
+            Self::BitAnd => write!(f, "&"),
+            Self::BitOr => write!(f, "|"),
+            Self::BitXor => write!(f, "^"),
+            Self::Shl => write!(f, "<<"),
+            Self::Shr => write!(f, ">>"),
+            Self::Eq => write!(f, "=="),
+            Self::Lt => write!(f, "<"),
+            Self::Le => write!(f, "<="),
+            Self::Ne => write!(f, "!="),
+            Self::Ge => write!(f, ">="),
+            Self::Gt => write!(f, ">"),
+        }
+    }
 }
 
 impl BinOpKind {
@@ -623,6 +673,27 @@ impl From<Vec<Token>> for DelimArgs {
             delim: MacDelimiter::Parenthesis,
             tokens,
         }
+    }
+}
+
+impl DelimArgs {
+    pub fn new(delim: MacDelimiter, tokens: Vec<Token>) -> Self {
+        Self {
+            delim,
+            tokens,
+        }
+    }
+
+    pub fn add_token(&mut self, token: Token) {
+        self.tokens.push(token);
+    }
+
+    pub fn remove_token(&mut self, token: &Token) {
+        self.tokens.retain(|t| t != token);
+    }
+
+    pub fn get_token(&self, index: usize) -> Option<&Token> {
+        self.tokens.get(index)
     }
 }
 

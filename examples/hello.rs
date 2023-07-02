@@ -1,4 +1,4 @@
-fn main() -> Result<(), ()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     use rast::*;
 
     let mut krate = Crate::new();
@@ -11,5 +11,6 @@ fn main() -> Result<(), ()> {
     );
     krate.add_item(def);
     println!("{krate}");
+    krate.dump("hello.rs")?;
     Ok(())
 }

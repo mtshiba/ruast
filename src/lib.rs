@@ -44,6 +44,56 @@ macro_rules! impl_display_for_enum {
     };
 }
 
+#[macro_export]
+macro_rules! impl_hasitem_methods {
+    ($Ty: ident) => {
+        impl $Ty {
+            pub fn with_item(self, item: impl Into<Item>) -> Self {
+                HasItem::with_item(self, item)
+            }
+
+            pub fn add_item(&mut self, item: impl Into<Item>) {
+                HasItem::add_item(self, item);
+            }
+
+            pub fn remove_item(&mut self, index: usize) -> Option<Item> {
+                HasItem::remove_item(self, index)
+            }
+
+            pub fn get_item(&self, index: usize) -> Option<&Item> {
+                HasItem::get_item(self, index)
+            }
+
+            pub fn get_item_by_id(&self, ident: &str) -> Option<&Item> {
+                HasItem::get_item_by_id(self, ident)
+            }
+        }
+    };
+    ($Ty: ident, $Item: ident) => {
+        impl $Ty {
+            pub fn with_item(self, item: impl Into<$Item>) -> Self {
+                HasItem::with_item(self, item)
+            }
+
+            pub fn add_item(&mut self, item: impl Into<$Item>) {
+                HasItem::add_item(self, item);
+            }
+
+            pub fn remove_item(&mut self, index: usize) -> Option<$Item> {
+                HasItem::remove_item(self, index)
+            }
+
+            pub fn get_item(&self, index: usize) -> Option<&$Item> {
+                HasItem::get_item(self, index)
+            }
+
+            pub fn get_item_by_id(&self, ident: &str) -> Option<&$Item> {
+                HasItem::get_item_by_id(self, ident)
+            }
+        }
+    };
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Crate {
     pub attrs: Vec<Attribute>,
@@ -64,6 +114,24 @@ impl IndexMut<usize> for Crate {
     }
 }
 
+impl Empty for Crate {
+    type Input = ();
+    fn empty(_: impl Into<()>) -> Self {
+        Self::new()
+    }
+}
+
+impl HasItem for Crate {
+    fn items(&self) -> &[Item] {
+        &self.items
+    }
+    fn items_mut(&mut self) -> &mut Vec<Item> {
+        &mut self.items
+    }
+}
+
+impl_hasitem_methods!(Crate);
+
 impl fmt::Display for Crate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for item in self.items.iter() {
@@ -79,24 +147,6 @@ impl Crate {
             attrs: Vec::new(),
             items: Vec::new(),
         }
-    }
-
-    pub fn with_item(mut self, item: impl Into<Item>) -> Self {
-        self.add_item(item);
-        self
-    }
-
-    pub fn add_item(&mut self, item: impl Into<Item>) {
-        self.items.push(item.into());
-    }
-
-    pub fn remove_item(&mut self, index: usize) -> Item {
-        self.items.remove(index)
-    }
-
-    pub fn remove_item_by_ident(&mut self, ident: &str) -> Option<Item> {
-        let index = self.items.iter().position(|item| item.ident() == Some(ident))?;
-        Some(self.remove_item(index))
     }
 
     pub fn dump(self, path: impl AsRef<Pt>) -> Result<(), std::io::Error> {
