@@ -1,8 +1,10 @@
 # `rast`
 
-This crate provides a formattable Rust AST.
+This crate provides a formattable & modifiable Rust AST.
 
 ## Basic usage
+
+### Hello world
 
 ```rust
 use rast::*;
@@ -11,8 +13,7 @@ let mut krate = Crate::new();
 krate.add_item(Fn {
     ident: "main".to_string(),
     generics: vec![],
-    inputs: vec![],
-    output: None,
+    fn_decl: FnDecl::new(vec![], None),
     body: Some(Block::from(
         Stmt::Expr(Expr::new(MacCall {
             path: Path::single("println!"),
@@ -20,8 +21,10 @@ krate.add_item(Fn {
         })),
     )),
 });
-println!("crate:\n{krate}");
-println!("main:\n{}", krate[0]);
+println!("{krate}");
+krate.dump("test.rs")?;
+krate.remove_item_by_id("main");
+assert!(krate.is_empty());
 ```
 
 more simply:
@@ -39,7 +42,39 @@ let def = Fn::main(
 );
 krate.add_item(def);
 println!("{krate}");
-println!("{}", krate[0]);
+krate.dump("test.rs")?;
+krate.remove_item_by_id("main");
+assert!(krate.is_empty());
+```
+
+### Building struct, enum, and impl
+
+```rust
+use rast::*;
+
+let mut krate = Crate::new();
+let def = StructDef::empty("Foo")
+    .with_field(FieldDef::inherited("foo", Type::from("u32")))
+    .with_field(FieldDef::inherited("bar", Type::from("u32")));
+krate.add_item(def);
+let imp = Impl::empty("Foo")
+    .with_item(Fn::empty_method("test", Pat::ref_self()));
+krate.add_item(imp);
+println!("{krate}");
+```
+
+```rust
+use rast::*;
+
+let mut krate = Crate::new();
+let def = EnumDef::empty("Foo")
+    .with_variant(Variant::empty("Bar"))
+    .with_variant(Variant::tuple("Baz", vec![FieldDef::anonymous("u32")]));
+krate.add_item(def);
+let imp = Impl::empty("Foo")
+    .with_item(Fn::empty_method("test", Pat::ref_self()));
+krate.add_item(imp);
+println!("{krate}");
 ```
 
 ## Why this is needed?

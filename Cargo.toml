@@ -2,7 +2,7 @@
 name = "rast"
 version = "0.0.1"
 edition = "2021"
-description = "A formattable Rust AST"
+description = "A formattable & modifiable Rust AST"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

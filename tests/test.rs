@@ -12,6 +12,8 @@ fn test() -> Result<(), ()> {
     );
     krate.add_item(def);
     println!("{krate}");
+    krate.remove_item_by_id("main");
+    assert!(krate.is_empty());
     Ok(())
 }
 
@@ -21,8 +23,7 @@ fn test_general() -> Result<(), ()> {
     krate.add_item(Fn {
         ident: "main".to_string(),
         generics: vec![],
-        inputs: vec![],
-        output: None,
+        fn_decl: FnDecl::new(vec![], None),
         body: Some(Block::from(
             Stmt::Expr(Expr::new(MacCall {
                 path: Path::single("println!"),
@@ -30,7 +31,7 @@ fn test_general() -> Result<(), ()> {
             })),
         )),
     });
-    println!("crate:\n{krate}");
-    println!("main:\n{}", krate[0]);
+    println!("{krate}");
+    println!("{}", krate[0]);
     Ok(())
 }

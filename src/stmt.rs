@@ -1,4 +1,5 @@
-use std::{fmt, hash::Hash};
+use std::fmt;
+use std::hash::Hash;
 
 use crate::expr::{Expr, MacCall, Path};
 use crate::{GenericArg, Type, impl_obvious_conversion, impl_display_for_enum, Attribute, DelimArgs, impl_hasitem_methods};
@@ -94,6 +95,39 @@ impl Ident for PatField {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct IdentPat {
+    pub is_mut: bool,
+    pub ident: String,
+}
+
+impl fmt::Display for IdentPat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_mut {
+            write!(f, "mut ")?;
+        }
+        write!(f, "{ident}", ident = self.ident)
+    }
+}
+
+impl<S: Into<String>> From<S> for IdentPat {
+    fn from(ident: S) -> Self {
+        Self {
+            is_mut: false,
+            ident: ident.into(),
+        }
+    }
+}
+
+impl IdentPat {
+    pub fn mut_(ident: impl Into<String>) -> Self {
+        Self {
+            is_mut: true,
+            ident: ident.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StructPat {
     pub path: Path,
     pub fields: Vec<PatField>,
@@ -113,11 +147,45 @@ impl fmt::Display for StructPat {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RefPat {
+    pub is_mut: bool,
+    pub pat: Box<Pat>,
+}
+
+impl fmt::Display for RefPat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_mut {
+            write!(f, "&mut ")?;
+        } else {
+            write!(f, "&")?;
+        }
+        write!(f, "{}", self.pat)
+    }
+}
+
+impl RefPat {
+    pub fn immut(pat: Pat) -> Self {
+        Self {
+            is_mut: false,
+            pat: Box::new(pat),
+        }
+    }
+
+    pub fn mut_(pat: Pat) -> Self {
+        Self {
+            is_mut: true,
+            pat: Box::new(pat),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Pat {
     Wild,
-    Ident(String),
+    Ident(IdentPat),
     Tuple(Vec<Pat>),
     Struct(StructPat),
+    Ref(RefPat),
     Or(Vec<Pat>),
     Lit(Expr),
 }
@@ -138,6 +206,7 @@ impl fmt::Display for Pat {
                 write!(f, ")")
             }
             Self::Struct(struct_pat) => write!(f, "{struct_pat}"),
+            Self::Ref(ref_pat) => write!(f, "{ref_pat}"),
             Self::Or(pats) => {
                 write!(f, "(")?;
                 for (i, pat) in pats.iter().enumerate() {
@@ -153,6 +222,24 @@ impl fmt::Display for Pat {
     }
 }
 
+impl Pat {
+    pub fn slf() -> Self {
+        Self::Ident(IdentPat::from("self"))
+    }
+
+    pub fn ref_self() -> Self {
+        Self::Ref(RefPat::immut(Self::slf()))
+    }
+
+    pub fn ref_mut_self() -> Self {
+        Self::Ref(RefPat::mut_(Self::slf()))
+    }
+
+    pub fn mut_self() -> Self {
+        Self::Ident(IdentPat::mut_("self"))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Param {
     pub pat: Pat,
@@ -161,7 +248,55 @@ pub struct Param {
 
 impl fmt::Display for Param {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{pat}: {ty}", pat = self.pat, ty = self.ty)
+        if self.ty == Type::ImplicitSelf {
+            write!(f, "{pat}", pat = self.pat)
+        } else {
+            write!(f, "{pat}: {ty}", pat = self.pat, ty = self.ty)
+        }
+    }
+}
+
+impl Param {
+    pub fn new(pat: Pat, ty: Type) -> Self {
+        Self {
+            pat, ty
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct FnDecl {
+    pub inputs: Vec<Param>,
+    pub output: Option<Type>,
+}
+
+impl fmt::Display for FnDecl {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "(")?;
+        for (i, param) in self.inputs.iter().enumerate() {
+            if i != 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{param}")?;
+        }
+        write!(f, ")")?;
+        if let Some(output) = &self.output {
+            write!(f, " -> {ty}", ty = output)?;
+        }
+        Ok(())
+    }
+}
+
+impl FnDecl {
+    pub fn new(inputs: Vec<Param>, output: Option<Type>) -> Self {
+        Self {
+            inputs,
+            output,
+        }
+    }
+
+    pub fn empty() -> Self {
+        Self::new(Vec::new(), None)
     }
 }
 
@@ -169,8 +304,7 @@ impl fmt::Display for Param {
 pub struct Fn {
     pub ident: String,
     pub generics: Vec<GenericArg>,
-    pub inputs: Vec<Param>,
-    pub output: Option<Type>,
+    pub fn_decl: FnDecl,
     pub body: Option<Block>,
 }
 
@@ -187,17 +321,7 @@ impl fmt::Display for Fn {
             }
             write!(f, ">")?;
         }
-        write!(f, "(")?;
-        for (i, param) in self.inputs.iter().enumerate() {
-            if i != 0 {
-                write!(f, ", ")?;
-            }
-            write!(f, "{pat}: {ty}", pat = param.pat, ty = param.ty)?;
-        }
-        write!(f, ")")?;
-        if let Some(output) = &self.output {
-            write!(f, " -> {ty}", ty = output)?;
-        }
+        write!(f, "{}", self.fn_decl)?;
         if let Some(body) = &self.body {
             write!(f, " {body}")?;
         }
@@ -224,8 +348,7 @@ impl Fn {
         Self {
             ident: "main".to_string(),
             generics: Vec::new(),
-            inputs: Vec::new(),
-            output,
+            fn_decl: FnDecl::new(Vec::new(), output),
             body: Some(body),
         }
     }
@@ -234,9 +357,17 @@ impl Fn {
         Self {
             ident: ident.into(),
             generics: Vec::new(),
-            inputs: Vec::new(),
-            output: None,
+            fn_decl: FnDecl::empty(),
             body: None,
+        }
+    }
+
+    pub fn empty_method(ident: impl Into<String>, self_pat: Pat) -> Self {
+        Self {
+            ident: ident.into(),
+            generics: Vec::new(),
+            fn_decl: FnDecl::new(vec![Param::new(self_pat, Type::ImplicitSelf)], None),
+            body: Some(Block::new()),
         }
     }
 }
@@ -377,6 +508,8 @@ impl HasItem<Stmt> for Block {
     }
 }
 
+impl_hasitem_methods!(Block, Stmt, Deref);
+
 impl Block {
     pub fn new() -> Self {
         Self { stmts: Vec::new() }
@@ -449,8 +582,16 @@ impl FieldDef {
         }
     }
 
-    pub fn simple(ident: impl Into<String>, ty: impl Into<Type>) -> Self {
+    pub fn anonymous(ty: impl Into<Type>) -> Self {
+        Self::new(Visibility::Inherited, Option::<String>::None, ty)
+    }
+
+    pub fn inherited(ident: impl Into<String>, ty: impl Into<Type>) -> Self {
         Self::new(Visibility::Inherited, Some(ident), ty)
+    }
+
+    pub fn public(ident: impl Into<String>, ty: impl Into<Type>) -> Self {
+        Self::new(Visibility::Public, Some(ident), ty)
     }
 
     pub fn with_attr(mut self, attr: impl Into<Attribute>) -> Self {
@@ -501,6 +642,25 @@ impl fmt::Display for VariantData {
         }
     }
 }
+
+impl HasItem<FieldDef> for VariantData {
+    fn items(&self) -> &[FieldDef] {
+        match self {
+            Self::Unit => &[],
+            Self::Tuple(fields) => fields,
+            Self::Struct(fields) => fields,
+        }
+    }
+    fn items_mut(&mut self) -> &mut Vec<FieldDef> {
+        match self {
+            Self::Unit => panic!("unit variant"),
+            Self::Tuple(fields) => fields,
+            Self::Struct(fields) => fields,
+        }
+    }
+}
+
+impl_hasitem_methods!(VariantData, FieldDef, Deref);
 
 impl VariantData {
     pub fn with_field(mut self, field: FieldDef) -> Self {
@@ -600,6 +760,18 @@ impl Variant {
     pub fn empty(ident: impl Into<String>) -> Self {
         Self::new(Visibility::Inherited, ident, VariantData::Unit, None)
     }
+
+    pub fn inherited(ident: impl Into<String>, data: VariantData) -> Self {
+        Self::new(Visibility::Inherited, ident, data, None)
+    }
+
+    pub fn struct_(ident: impl Into<String>, fields: Vec<FieldDef>) -> Self {
+        Self::new(Visibility::Inherited, ident, VariantData::Struct(fields), None)
+    }
+
+    pub fn tuple(ident: impl Into<String>, fields: Vec<FieldDef>) -> Self {
+        Self::new(Visibility::Inherited, ident, VariantData::Tuple(fields), None)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -612,10 +784,7 @@ pub struct EnumDef {
 impl fmt::Display for EnumDef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "enum {} {{", self.ident)?;
-        for (i, variant) in self.variants.iter().enumerate() {
-            if i != 0 {
-                writeln!(f)?;
-            }
+        for variant in self.variants.iter() {
             writeln!(f, "{variant},")?;
         }
         write!(f, "}}")
@@ -644,6 +813,8 @@ impl HasItem<Variant> for EnumDef {
         &mut self.variants
     }
 }
+
+impl_hasitem_methods!(EnumDef, Variant);
 
 impl EnumDef {
     pub fn new(ident: impl Into<String>, generics: Vec<GenericArg>, variants: Vec<Variant>) -> Self {
@@ -712,6 +883,15 @@ impl Ident for StructDef {
     }
 }
 
+impl HasItem<FieldDef> for StructDef {
+    fn items(&self) -> &[FieldDef] {
+        self.variant.items()
+    }
+    fn items_mut(&mut self) -> &mut Vec<FieldDef> {
+        self.variant.items_mut()
+    }
+}
+
 impl StructDef {
     pub fn new(ident: impl Into<String>, generics: Vec<GenericArg>, variant: VariantData) -> Self {
         Self {
@@ -756,7 +936,7 @@ pub struct UnionDef {
 
 impl fmt::Display for UnionDef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "union {} {{}}", self.ident)
+        write!(f, "union {} {}", self.ident, self.variants)
     }
 }
 
@@ -857,9 +1037,9 @@ impl fmt::Display for Impl {
         if let Some(of_trait) = &self.of_trait {
             write!(f, "{of_trait} for ", of_trait = of_trait)?;
         }
-        write!(f, "{self_ty} {{", self_ty = self.self_ty)?;
+        writeln!(f, "{self_ty} {{", self_ty = self.self_ty)?;
         for item in self.items.iter() {
-            writeln!(f, "{item};")?;
+            writeln!(f, "{item}")?;
         }
         write!(f, "}}")
     }
@@ -963,9 +1143,14 @@ pub struct Item<K = ItemKind> {
     pub kind: K,
 }
 
-impl<I: Into<ItemKind>> From<I> for Item {
+impl<I: Into<ItemKind>> From<I> for Item<ItemKind> {
     fn from(item: I) -> Self {
-        Self::inherited(item.into())
+        Self::inherited(item)
+    }
+}
+impl<I: Into<AssocItemKind>> From<I> for Item<AssocItemKind> {
+    fn from(item: I) -> Self {
+        Self::inherited(item)
     }
 }
 
@@ -981,21 +1166,23 @@ impl<K: MaybeIdent> MaybeIdent for Item<K> {
     }
 }
 
-impl Item {
-    pub fn inherited(item: impl Into<ItemKind>) -> Self {
+impl<K> Item<K> {
+    pub fn inherited(item: impl Into<K>) -> Self {
         Self {
             vis: Visibility::Inherited,
             kind: item.into(),
         }
     }
 
-    pub fn public(item: impl Into<ItemKind>) -> Self {
+    pub fn public(item: impl Into<K>) -> Self {
         Self {
             vis: Visibility::Public,
             kind: item.into(),
         }
     }
+}
 
+impl<K: MaybeIdent> Item<K> {
     pub fn ident(&self) -> Option<&str> {
         self.kind.ident()
     }
@@ -1004,6 +1191,8 @@ impl Item {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ItemKind {
     Use(Path),
+    StaticItem(StaticItem),
+    ConstItem(ConstItem),
     Fn(Fn),
     Mod(Mod),
     TyAlias(TyAlias),
@@ -1016,13 +1205,15 @@ pub enum ItemKind {
     MacroDef(MacroDef),
 }
 
-impl_obvious_conversion!(ItemKind; Fn, Mod, TyAlias, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCall);
-impl_display_for_enum!(ItemKind; Use, Fn, Mod, TyAlias, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCall);
+impl_obvious_conversion!(ItemKind; StaticItem, ConstItem, Fn, Mod, TyAlias, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCall);
+impl_display_for_enum!(ItemKind; Use, StaticItem, ConstItem, Fn, Mod, TyAlias, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCall);
 
 impl MaybeIdent for ItemKind {
     fn ident(&self) -> Option<&str> {
         match self {
             Self::Use(_) => None,
+            Self::StaticItem(item) => Some(&item.ident),
+            Self::ConstItem(item) => Some(&item.ident),
             Self::Fn(item) => Some(&item.ident),
             Self::Mod(module) => Some(module.ident()),
             Self::TyAlias(item) => Some(&item.ident),
@@ -1040,6 +1231,29 @@ impl MaybeIdent for ItemKind {
 impl ItemKind {
     pub fn ident(&self) -> Option<&str> {
         MaybeIdent::ident(self)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct StaticItem {
+    pub ident: String,
+    pub ty: Type,
+    pub expr: Option<Expr>,
+}
+
+impl fmt::Display for StaticItem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "static {ident}: {ty}", ident = self.ident, ty = self.ty)?;
+        if let Some(expr) = &self.expr {
+            write!(f, " = {expr}", expr = expr)?;
+        }
+        Ok(())
+    }
+}
+
+impl Ident for StaticItem {
+    fn ident(&self) -> &str {
+        &self.ident
     }
 }
 

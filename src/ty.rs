@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::{Path, Param, Const};
+use crate::{Path, Param, Const, PathSegment};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MutTy {
@@ -127,6 +127,7 @@ pub enum Type {
     TraitObject(TraitObject),
     ImplTrait(ImplTrait),
     Infer,
+    ImplicitSelf,
     Err,
 }
 
@@ -142,7 +143,14 @@ impl fmt::Display for Type {
             Self::TraitObject(trait_object) => write!(f, "{trait_object}"),
             Self::ImplTrait(impl_trait) => write!(f, "{impl_trait}"),
             Self::Infer => write!(f, "_"),
+            Self::ImplicitSelf => write!(f, ""),
             Self::Err => write!(f, "<Err>"),
         }
+    }
+}
+
+impl<P: Into<PathSegment>> From<P> for Type {
+    fn from(p: P) -> Self {
+        Self::Path(Path::single(p))
     }
 }

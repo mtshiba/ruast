@@ -11,6 +11,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     krate.add_item(def);
     println!("{krate}");
-    krate.dump("hello.rs")?;
+    // krate.dump("hello.rs")?;
     Ok(())
 }

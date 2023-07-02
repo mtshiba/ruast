@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::{impl_display_for_enum, impl_obvious_conversion, Pat, Block};
+use crate::{impl_display_for_enum, impl_obvious_conversion, Pat, Block, FnDecl};
 use crate::token::Token;
 use crate::ty::Type;
 
@@ -155,7 +155,7 @@ pub struct If {
 
 impl fmt::Display for If {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "if {cond} {{ {then} }}", cond = self.cond, then = self.then)?;
+        write!(f, "if {cond} {then}", cond = self.cond, then = self.then)?;
         if let Some(else_) = &self.else_ {
             write!(f, " else {{ {else_} }}", else_ = else_)?;
         }
@@ -171,7 +171,7 @@ pub struct While {
 
 impl fmt::Display for While {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "while {cond} {{ {body} }}", cond = self.cond, body = self.body)
+        write!(f, "while {cond} {body}", cond = self.cond, body = self.body)
     }
 }
 
@@ -184,7 +184,18 @@ pub struct ForLoop {
 
 impl fmt::Display for ForLoop {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "for {pat} in {expr} {{ {body} }}", pat = self.pat, expr = self.expr, body = self.body)
+        write!(f, "for {pat} in {expr} {body}", pat = self.pat, expr = self.expr, body = self.body)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Loop {
+    pub body: Block,
+}
+
+impl fmt::Display for Loop {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "loop {body}", body = self.body)
     }
 }
 
@@ -222,6 +233,33 @@ impl fmt::Display for Match {
             writeln!(f, "{arm},", arm = arm)?;
         }
         write!(f, "}}")
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Closure {
+    pub is_const: bool,
+    pub is_async: bool,
+    pub is_move: bool,
+    pub fn_decl: FnDecl,
+    pub body: Box<Expr>,
+}
+
+impl fmt::Display for Closure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "|")?;
+        let mut iter = self.fn_decl.inputs.iter();
+        if let Some(input) = iter.next() {
+            write!(f, "{input}", input = input)?;
+            for input in iter {
+                write!(f, ", {input}", input = input)?;
+            }
+        }
+        write!(f, "| ")?;
+        if let Some(output) = &self.fn_decl.output {
+            write!(f, "-> {output} ", output = output)?;
+        }
+        write!(f, "{{ {} }}", self.body)
     }
 }
 
@@ -389,10 +427,13 @@ pub enum ExprKind {
     Binary(Binary),
     Unary(Unary),
     Lit(Lit),
+    Cast(Cast),
+    TypeAscription(TypeAscription),
     Let(Let),
     If(If),
     While(While),
     ForLoop(ForLoop),
+    Loop(Loop),
     Match(Match),
     Call(Call),
     MethodCall(MethodCall),
@@ -412,10 +453,13 @@ impl_display_for_enum!(ExprKind;
     Binary,
     Unary,
     Lit,
+    Cast,
+    TypeAscription,
     Let,
     If,
     While,
     ForLoop,
+    Loop,
     Match,
     Call,
     MethodCall,
@@ -434,10 +478,13 @@ impl_obvious_conversion!(ExprKind;
     Binary,
     Unary,
     Lit,
+    Cast,
+    TypeAscription,
     Let,
     If,
     While,
     ForLoop,
+    Loop,
     Match,
     Call,
     MethodCall,
@@ -482,6 +529,30 @@ impl<S: Into<String>> From<S> for Lit {
             kind: LitKind::Str,
             symbol: format!("\"{}\"", symbol.into()),
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Cast {
+    pub expr: Box<Expr>,
+    pub ty: Type,
+}
+
+impl fmt::Display for Cast {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "({expr} as {ty})", expr = self.expr, ty = self.ty)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TypeAscription {
+    pub expr: Box<Expr>,
+    pub ty: Type,
+}
+
+impl fmt::Display for TypeAscription {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "({expr}: {ty})", expr = self.expr, ty = self.ty)
     }
 }
 
@@ -550,6 +621,12 @@ impl fmt::Display for Path {
             }
         }
         Ok(())
+    }
+}
+
+impl<S: Into<PathSegment>> From<S> for Path {
+    fn from(ident: S) -> Self {
+        Self::single(ident)
     }
 }
 

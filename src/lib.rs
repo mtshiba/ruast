@@ -9,7 +9,6 @@ use std::io::Write;
 use std::path::Path as Pt;
 use std::fs::File;
 use std::fmt;
-use std::ops::{Index, IndexMut};
 
 pub use expr::*;
 pub use stmt::*;
@@ -60,12 +59,28 @@ macro_rules! impl_hasitem_methods {
                 HasItem::remove_item(self, index)
             }
 
+            pub fn remove_item_by_id(&mut self, ident: &str) -> Option<Item> {
+                HasItem::remove_item_by_id(self, ident)
+            }
+
             pub fn get_item(&self, index: usize) -> Option<&Item> {
                 HasItem::get_item(self, index)
             }
 
             pub fn get_item_by_id(&self, ident: &str) -> Option<&Item> {
                 HasItem::get_item_by_id(self, ident)
+            }
+        }
+        impl std::ops::Deref for $Ty {
+            type Target = [Item];
+
+            fn deref(&self) -> &Self::Target {
+                self.items()
+            }
+        }
+        impl std::ops::DerefMut for $Ty {
+            fn deref_mut(&mut self) -> &mut Self::Target {
+                self.items_mut()
             }
         }
     };
@@ -83,6 +98,10 @@ macro_rules! impl_hasitem_methods {
                 HasItem::remove_item(self, index)
             }
 
+            pub fn remove_item_by_id(&mut self, ident: &str) -> Option<$Item> {
+                HasItem::remove_item_by_id(self, ident)
+            }
+
             pub fn get_item(&self, index: usize) -> Option<&$Item> {
                 HasItem::get_item(self, index)
             }
@@ -91,27 +110,39 @@ macro_rules! impl_hasitem_methods {
                 HasItem::get_item_by_id(self, ident)
             }
         }
+        impl std::ops::Deref for $Ty {
+            type Target = [$Item];
+
+            fn deref(&self) -> &Self::Target {
+                self.items()
+            }
+        }
+        impl std::ops::DerefMut for $Ty {
+            fn deref_mut(&mut self) -> &mut Self::Target {
+                self.items_mut()
+            }
+        }
     };
+    ($Ty: ident, $Item: ident, Deref) => {
+        impl std::ops::Deref for $Ty {
+            type Target = [$Item];
+
+            fn deref(&self) -> &Self::Target {
+                self.items()
+            }
+        }
+        impl std::ops::DerefMut for $Ty {
+            fn deref_mut(&mut self) -> &mut Self::Target {
+                self.items_mut()
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Crate {
     pub attrs: Vec<Attribute>,
     pub items: Vec<Item>,
-}
-
-impl Index<usize> for Crate {
-    type Output = Item;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.items[index]
-    }
-}
-
-impl IndexMut<usize> for Crate {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.items[index]
-    }
 }
 
 impl Empty for Crate {
