@@ -18,6 +18,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Call::new(Path::from("Some"), vec![Call::new(Path::from("Type::from"), vec![Lit::from("Result<(), Box<dyn std::error::Error>>").into()]).into()]).into(),
                         Call::new(Path::from("Block::new"), vec![MacCall::bracket(Path::from("vec"), vec![
                             Call::new(Path::from("Use::new"), vec![Lit::from("rast::*").into()]),
+                            Call::new(Path::from("Local::simple"), vec![]),
+                            Call::new(Path::from("Local::simple"), vec![]),
                         ]).into()]).into(),
                     ],
                 ),

@@ -1,9 +1,80 @@
 use std::fmt;
+use std::ops::{Add, Sub, Mul, Div, Neg};
 
 use crate::{impl_display_for_enum, impl_obvious_conversion};
 use crate::stmt::{Pat, Block, FnDecl, EmptyItem};
 use crate::token::{Token, TokenStream, Delimiter};
 use crate::ty::Type;
+
+pub trait Callable {
+    fn call(self, args: Vec<Expr>) -> Call;
+}
+
+impl<E: Into<Expr>> Callable for E {
+    fn call(self, args: Vec<Expr>) -> Call {
+        Call::new(self, args)
+    }
+}
+
+pub trait MethodCallable {
+    fn method_call(self, seg: PathSegment, args: Vec<Expr>) -> MethodCall;
+}
+
+impl<E: Into<Expr>> MethodCallable for E {
+    fn method_call(self, seg: PathSegment, args: Vec<Expr>) -> MethodCall {
+        MethodCall::new(self, seg, args)
+    }
+}
+
+pub trait Castable {
+    fn cast(self, ty: impl Into<Type>) -> Cast;
+}
+
+impl<E: Into<Expr>> Castable for E {
+    fn cast(self, ty: impl Into<Type>) -> Cast {
+        Cast::new(self, ty)
+    }
+}
+
+pub trait Accessible {
+    fn field(self, ident: impl Into<String>) -> Field;
+}
+
+impl<E: Into<Expr>> Accessible for E {
+    fn field(self, ident: impl Into<String>) -> Field {
+        Field::new(self, ident)
+    }
+}
+
+pub trait Indexable {
+    fn index(self, index: impl Into<Expr>) -> Index;
+}
+
+impl<E: Into<Expr>> Indexable for E {
+    fn index(self, index: impl Into<Expr>) -> Index {
+        Index::new(self, index)
+    }
+}
+
+pub trait Awaitable {
+    fn await_(self) -> Await;
+}
+
+impl<E: Into<Expr>> Awaitable for E {
+    fn await_(self) -> Await {
+        Await::new(self)
+    }
+}
+
+pub trait Tryable {
+    fn try_(self) -> Try;
+}
+
+impl<E: Into<Expr>> Tryable for E {
+    fn try_(self) -> Try {
+        Try::new(self)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum AttrArgs {
@@ -194,6 +265,45 @@ impl From<Binary> for TokenStream {
     }
 }
 
+impl<E: Into<Expr>> Add<E> for Expr {
+    type Output = Binary;
+
+    fn add(self, rhs: E) -> Self::Output {
+        Binary::new(self, BinOpKind::Add, rhs)
+    }
+}
+impl<E: Into<Expr>> Sub<E> for Expr {
+    type Output = Binary;
+
+    fn sub(self, rhs: E) -> Self::Output {
+        Binary::new(self, BinOpKind::Sub, rhs)
+    }
+}
+impl<E: Into<Expr>> Mul<E> for Expr {
+    type Output = Binary;
+
+    fn mul(self, rhs: E) -> Self::Output {
+        Binary::new(self, BinOpKind::Mul, rhs)
+    }
+}
+impl<E: Into<Expr>> Div<E> for Expr {
+    type Output = Binary;
+
+    fn div(self, rhs: E) -> Self::Output {
+        Binary::new(self, BinOpKind::Div, rhs)
+    }
+}
+
+impl Binary {
+    pub fn new(lhs: impl Into<Expr>, op: BinOpKind, rhs: impl Into<Expr>) -> Self {
+        Self {
+            lhs: Box::new(lhs.into()),
+            op,
+            rhs: Box::new(rhs.into()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum UnaryOpKind {
     Deref,
@@ -226,6 +336,23 @@ impl fmt::Display for Unary {
 impl From<Unary> for TokenStream {
     fn from(_value: Unary) -> Self {
         todo!()
+    }
+}
+
+impl Neg for Expr {
+    type Output = Unary;
+
+    fn neg(self) -> Self::Output {
+        Unary::new(UnaryOpKind::Neg, self)
+    }
+}
+
+impl Unary {
+    pub fn new(op: UnaryOpKind, expr: impl Into<Expr>) -> Self {
+        Self {
+            op,
+            expr: Box::new(expr.into()),
+        }
     }
 }
 
@@ -464,8 +591,8 @@ impl From<Await> for TokenStream {
 }
 
 impl Await {
-    pub fn new(expr: Expr) -> Self {
-        Self { expr: Box::new(expr) }
+    pub fn new(expr: impl Into<Expr>) -> Self {
+        Self { expr: Box::new(expr.into()) }
     }
 }
 
@@ -518,6 +645,15 @@ impl From<Field> for TokenStream {
     }
 }
 
+impl Field {
+    pub fn new(expr: impl Into<Expr>, ident: impl Into<String>) -> Self {
+        Self {
+            expr: Box::new(expr.into()),
+            ident: ident.into(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Index {
     pub expr: Box<Expr>,
@@ -533,6 +669,15 @@ impl fmt::Display for Index {
 impl From<Index> for TokenStream {
     fn from(_value: Index) -> Self {
         todo!()
+    }
+}
+
+impl Index {
+    pub fn new(expr: impl Into<Expr>, index: impl Into<Expr>) -> Self {
+        Self {
+            expr: Box::new(expr.into()),
+            index: Box::new(index.into()),
+        }
     }
 }
 
@@ -897,6 +1042,16 @@ impl fmt::Display for MethodCall {
 impl From<MethodCall> for TokenStream {
     fn from(_value: MethodCall) -> Self {
         todo!()
+    }
+}
+
+impl MethodCall {
+    pub fn new(receiver: impl Into<Expr>, seg: impl Into<PathSegment>, args: Vec<Expr>) -> Self {
+        Self {
+            receiver: Box::new(receiver.into()),
+            seg: seg.into(),
+            args,
+        }
     }
 }
 
@@ -1492,6 +1647,12 @@ impl Expr {
 
     pub fn await_(self) -> Self {
         Self::new(ExprKind::Await(Await {
+            expr: Box::new(self),
+        }))
+    }
+
+    pub fn try_(self) -> Self {
+        Self::new(ExprKind::Try(Try {
             expr: Box::new(self),
         }))
     }
