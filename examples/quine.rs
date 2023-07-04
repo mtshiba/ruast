@@ -6,20 +6,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(Type::from("Result<(), Box<dyn std::error::Error>>")),
         Block::from(vec![
             Use::new("rast::*").into(),
-            Local::simple(
-                Pat::mut_("krate"),
-                Call::new(Path::from("Crate::new"), vec![]),
-            ).into(),
-            Local::simple(
-                Pat::from("def"),
-                Call::new(
-                    Path::from("Fn::main"),
+            Pat::mut_("krate").bind(Path::from("Crate::new").call(vec![])).into(),
+            Pat::from("def").bind(
+                Path::from("Fn::main").call(
                     vec![
-                        Call::new(Path::from("Some"), vec![Call::new(Path::from("Type::from"), vec![Lit::from("Result<(), Box<dyn std::error::Error>>").into()]).into()]).into(),
-                        Call::new(Path::from("Block::new"), vec![MacCall::bracket(Path::from("vec"), vec![
-                            Call::new(Path::from("Use::new"), vec![Lit::from("rast::*").into()]),
-                            Call::new(Path::from("Local::simple"), vec![]),
-                            Call::new(Path::from("Local::simple"), vec![]),
+                        Path::from("Some").call(vec![Path::from("Type::from").call(vec![Lit::from("Result<(), Box<dyn std::error::Error>>").into()]).into()]).into(),
+                        Path::from("Block::new").call(vec![MacCall::bracket(Path::from("vec"), vec![
+                            Path::from("Use::new").call(vec![Lit::from("rast::*").into()]),
+                            Path::from("Local::simple").call(vec![]),
+                            Path::from("Local::simple").call(vec![]),
                         ]).into()]).into(),
                     ],
                 ),

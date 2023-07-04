@@ -314,6 +314,10 @@ impl<I: Into<IdentPat>> From<I> for Pat {
 }
 
 impl Pat {
+    pub fn ident(ident: impl Into<String>) -> Self {
+        Self::Ident(IdentPat::from(ident.into()))
+    }
+
     pub fn slf() -> Self {
         Self::Ident(IdentPat::from("self"))
     }
@@ -332,6 +336,10 @@ impl Pat {
 
     pub fn mut_(ident: impl Into<String>) -> Self {
         Self::Ident(IdentPat::mut_(ident, None))
+    }
+
+    pub fn bind(self, kind: impl Into<LocalKind>) -> Local {
+        Local::new(self, None, kind)
     }
 }
 
@@ -1539,6 +1547,16 @@ impl From<ConstItem> for TokenStream {
 impl Ident for ConstItem {
     fn ident(&self) -> &str {
         &self.ident
+    }
+}
+
+impl ConstItem {
+    pub fn new(ident: impl Into<String>, ty: impl Into<Type>, expr: Option<Expr>) -> Self {
+        Self {
+            ident: ident.into(),
+            ty: ty.into(),
+            expr,
+        }
     }
 }
 

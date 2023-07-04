@@ -1,7 +1,7 @@
 use std::fmt;
 use std::ops::{Add, Sub, Mul, Div, Neg};
 
-use crate::{impl_display_for_enum, impl_obvious_conversion};
+use crate::{impl_display_for_enum, impl_obvious_conversion, Use};
 use crate::stmt::{Pat, Block, FnDecl, EmptyItem};
 use crate::token::{Token, TokenStream, Delimiter};
 use crate::ty::Type;
@@ -73,6 +73,16 @@ pub trait Tryable {
 impl<E: Into<Expr>> Tryable for E {
     fn try_(self) -> Try {
         Try::new(self)
+    }
+}
+
+pub trait Assignable {
+    fn assign(self, rhs: impl Into<Expr>) -> Assign;
+}
+
+impl<E: Into<Expr>> Assignable for E {
+    fn assign(self, rhs: impl Into<Expr>) -> Assign {
+        Assign::new(self, rhs)
     }
 }
 
@@ -1090,6 +1100,18 @@ impl Path {
         Self {
             segments: vec![ident.into()],
         }
+    }
+
+    pub fn mac_call(self, args: impl Into<DelimArgs>) -> MacCall {
+        MacCall::new(self, args)
+    }
+
+    pub fn struct_(self, fields: Vec<ExprField>) -> Struct {
+        Struct::new(self, fields)
+    }
+
+    pub fn use_(self) -> Use {
+        Use::new(self)
     }
 }
 

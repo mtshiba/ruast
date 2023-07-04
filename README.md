@@ -10,6 +10,23 @@ This crate provides a formattable & modifiable Rust AST.
 use rast::*;
 
 let mut krate = Crate::new();
+let def = Fn::main(
+    None,
+    Block::from(Path::single("println").mac_call(vec![Token::lit("Hello, world!")])),
+);
+krate.add_item(def);
+println!("{krate}");
+krate.dump("test.rs")?;
+krate.remove_item_by_id("main");
+assert!(krate.is_empty());
+```
+
+This is equivalent to:
+
+```rust
+use rast::*;
+
+let mut krate = Crate::new();
 krate.add_item(Fn {
     ident: "main".to_string(),
     generics: vec![],
@@ -21,26 +38,6 @@ krate.add_item(Fn {
         })),
     )),
 });
-println!("{krate}");
-krate.dump("test.rs")?;
-krate.remove_item_by_id("main");
-assert!(krate.is_empty());
-```
-
-more simply:
-
-```rust
-use rast::*;
-
-let mut krate = Crate::new();
-let def = Fn::main(
-    None,
-    Block::from(MacCall::new(
-        Path::single("println"),
-        vec![Token::lit("Hello, world!")],
-    ))
-);
-krate.add_item(def);
 println!("{krate}");
 krate.dump("test.rs")?;
 krate.remove_item_by_id("main");
