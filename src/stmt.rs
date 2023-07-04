@@ -2,7 +2,7 @@ use std::fmt;
 use std::hash::Hash;
 
 use crate::expr::{Expr, MacCall, Path};
-use crate::{GenericArg, Type, impl_obvious_conversion, impl_display_for_enum, Attribute, DelimArgs, impl_hasitem_methods};
+use crate::{GenericArg, Type, impl_obvious_conversion, impl_display_for_enum, Attribute, DelimArgs, impl_hasitem_methods, TokenStream};
 
 pub trait Ident {
     fn ident(&self) -> &str;
@@ -17,7 +17,7 @@ impl<I: Ident> MaybeIdent for I {
     }
 }
 
-pub trait Empty {
+pub trait EmptyItem {
     type Input;
     fn empty(ident: impl Into<Self::Input>) -> Self;
 }
@@ -65,6 +65,30 @@ impl fmt::Display for Local {
     }
 }
 
+impl From<Local> for TokenStream {
+    fn from(_value: Local) -> Self {
+        todo!()
+    }
+}
+
+impl Local {
+    pub fn new(pat: impl Into<Pat>, ty: Option<Type>, kind: impl Into<LocalKind>) -> Self {
+        Self {
+            pat: pat.into(),
+            ty,
+            kind: kind.into(),
+        }
+    }
+
+    pub fn simple(pat: impl Into<Pat>, expr: impl Into<Expr>) -> Self {
+        Self::new(pat, None, LocalKind::Init(expr.into()))
+    }
+
+    pub fn let_else(pat: impl Into<Pat>, expr: impl Into<Expr>, block: Block) -> Self {
+        Self::new(pat, None, LocalKind::InitElse(expr.into(), block))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum LocalKind {
     Decl,
@@ -79,6 +103,12 @@ impl fmt::Display for LocalKind {
             Self::Init(expr) => write!(f, " = {expr}"),
             Self::InitElse(expr, block) => write!(f, " = {expr} else {{ {block} }}"),
         }
+    }
+}
+
+impl<E: Into<Expr>> From<E> for LocalKind {
+    fn from(expr: E) -> Self {
+        Self::Init(expr.into())
     }
 }
 
@@ -222,6 +252,12 @@ impl fmt::Display for Pat {
     }
 }
 
+impl<I: Into<IdentPat>> From<I> for Pat {
+    fn from(ident: I) -> Self {
+        Self::Ident(ident.into())
+    }
+}
+
 impl Pat {
     pub fn slf() -> Self {
         Self::Ident(IdentPat::from("self"))
@@ -238,6 +274,10 @@ impl Pat {
     pub fn mut_self() -> Self {
         Self::Ident(IdentPat::mut_("self"))
     }
+
+    pub fn mut_(ident: impl Into<String>) -> Self {
+        Self::Ident(IdentPat::mut_(ident))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -253,6 +293,12 @@ impl fmt::Display for Param {
         } else {
             write!(f, "{pat}: {ty}", pat = self.pat, ty = self.ty)
         }
+    }
+}
+
+impl From<Param> for TokenStream {
+    fn from(_value: Param) -> Self {
+        todo!()
     }
 }
 
@@ -284,6 +330,12 @@ impl fmt::Display for FnDecl {
             write!(f, " -> {ty}", ty = output)?;
         }
         Ok(())
+    }
+}
+
+impl From<FnDecl> for TokenStream {
+    fn from(_value: FnDecl) -> Self {
+        todo!()
     }
 }
 
@@ -329,7 +381,13 @@ impl fmt::Display for Fn {
     }
 }
 
-impl Empty for Fn {
+impl From<Fn> for TokenStream {
+    fn from(_value: Fn) -> Self {
+        todo!()
+    }
+}
+
+impl EmptyItem for Fn {
     type Input = String;
 
     fn empty(ident: impl Into<Self::Input>) -> Self {
@@ -367,8 +425,21 @@ impl Fn {
             ident: ident.into(),
             generics: Vec::new(),
             fn_decl: FnDecl::new(vec![Param::new(self_pat, Type::ImplicitSelf)], None),
-            body: Some(Block::new()),
+            body: Some(Block::empty()),
         }
+    }
+
+    pub fn add_stmt(&mut self, stmt: impl Into<Stmt>) {
+        self.body.get_or_insert_with(Block::empty).add_stmt(stmt);
+    }
+
+    pub fn with_stmt(mut self, stmt: impl Into<Stmt>) -> Self {
+        self.add_stmt(stmt);
+        self
+    }
+
+    pub fn remove_stmt(&mut self, index: usize) -> Option<Stmt> {
+        self.body.as_mut()?.remove_stmt(index)
     }
 }
 
@@ -388,7 +459,13 @@ impl fmt::Display for LoadedMod {
     }
 }
 
-impl Empty for LoadedMod {
+impl From<LoadedMod> for TokenStream {
+    fn from(_value: LoadedMod) -> Self {
+        todo!()
+    }
+}
+
+impl EmptyItem for LoadedMod {
     type Input = String;
 
     fn empty(ident: impl Into<Self::Input>) -> Self {
@@ -445,6 +522,12 @@ impl fmt::Display for Mod {
     }
 }
 
+impl From<Mod> for TokenStream {
+    fn from(_value: Mod) -> Self {
+        todo!()
+    }
+}
+
 impl Ident for Mod {
     fn ident(&self) -> &str {
         match self {
@@ -454,7 +537,7 @@ impl Ident for Mod {
     }
 }
 
-impl Empty for Mod {
+impl EmptyItem for Mod {
     type Input = String;
 
     fn empty(ident: impl Into<Self::Input>) -> Self {
@@ -493,9 +576,15 @@ impl fmt::Display for Block {
 
 impl<S: Into<Stmt>> From<S> for Block {
     fn from(stmt: S) -> Self {
-        let mut block = Block::new();
+        let mut block = Block::empty();
         block.add_stmt(stmt);
         block
+    }
+}
+
+impl From<Block> for TokenStream {
+    fn from(_value: Block) -> Self {
+        todo!()
     }
 }
 
@@ -511,7 +600,11 @@ impl HasItem<Stmt> for Block {
 impl_hasitem_methods!(Block, Stmt, Deref);
 
 impl Block {
-    pub fn new() -> Self {
+    pub fn new(stmts: Vec<Stmt>) -> Self {
+        Self { stmts }
+    }
+
+    pub fn empty() -> Self {
         Self { stmts: Vec::new() }
     }
 
@@ -563,6 +656,12 @@ impl fmt::Display for FieldDef {
             write!(f, "{ident}: ")?;
         }
         write!(f, "{ty}", ty = self.ty)
+    }
+}
+
+impl From<FieldDef> for TokenStream {
+    fn from(_value: FieldDef) -> Self {
+        todo!()
     }
 }
 
@@ -640,6 +739,12 @@ impl fmt::Display for VariantData {
                 write!(f, "}}")
             }
         }
+    }
+}
+
+impl From<VariantData> for TokenStream {
+    fn from(_value: VariantData) -> Self {
+        todo!()
     }
 }
 
@@ -733,7 +838,13 @@ impl fmt::Display for Variant {
     }
 }
 
-impl Empty for Variant {
+impl From<Variant> for TokenStream {
+    fn from(_value: Variant) -> Self {
+        todo!()
+    }
+}
+
+impl EmptyItem for Variant {
     type Input = String;
 
     fn empty(ident: impl Into<Self::Input>) -> Self {
@@ -791,7 +902,13 @@ impl fmt::Display for EnumDef {
     }
 }
 
-impl Empty for EnumDef {
+impl From<EnumDef> for TokenStream {
+    fn from(_value: EnumDef) -> Self {
+        todo!()
+    }
+}
+
+impl EmptyItem for EnumDef {
     type Input = String;
 
     fn empty(ident: impl Into<Self::Input>) -> Self {
@@ -869,7 +986,13 @@ impl fmt::Display for StructDef {
     }
 }
 
-impl Empty for StructDef {
+impl From<StructDef> for TokenStream {
+    fn from(_value: StructDef) -> Self {
+        todo!()
+    }
+}
+
+impl EmptyItem for StructDef {
     type Input = String;
 
     fn empty(ident: impl Into<Self::Input>) -> Self {
@@ -940,7 +1063,13 @@ impl fmt::Display for UnionDef {
     }
 }
 
-impl Empty for UnionDef {
+impl From<UnionDef> for TokenStream {
+    fn from(_value: UnionDef) -> Self {
+        todo!()
+    }
+}
+
+impl EmptyItem for UnionDef {
     type Input = String;
 
     fn empty(ident: impl Into<Self::Input>) -> Self {
@@ -985,7 +1114,13 @@ impl fmt::Display for TraitDef {
     }
 }
 
-impl Empty for TraitDef {
+impl From<TraitDef> for TokenStream {
+    fn from(_value: TraitDef) -> Self {
+        todo!()
+    }
+}
+
+impl EmptyItem for TraitDef {
     type Input = String;
 
     fn empty(ident: impl Into<Self::Input>) -> Self {
@@ -1045,7 +1180,13 @@ impl fmt::Display for Impl {
     }
 }
 
-impl Empty for Impl {
+impl From<Impl> for TokenStream {
+    fn from(_value: Impl) -> Self {
+        todo!()
+    }
+}
+
+impl EmptyItem for Impl {
     type Input = Type;
 
     fn empty(self_ty: impl Into<Self::Input>) -> Self {
@@ -1094,7 +1235,13 @@ impl fmt::Display for MacroDef {
     }
 }
 
-impl Empty for MacroDef {
+impl From<MacroDef> for TokenStream {
+    fn from(_value: MacroDef) -> Self {
+        todo!()
+    }
+}
+
+impl EmptyItem for MacroDef {
     type Input = String;
 
     fn empty(ident: impl Into<Self::Input>) -> Self {
@@ -1160,6 +1307,12 @@ impl<K: fmt::Display> fmt::Display for Item<K> {
     }
 }
 
+impl<K> From<Item<K>> for TokenStream {
+    fn from(_value: Item<K>) -> Self {
+        todo!()
+    }
+}
+
 impl<K: MaybeIdent> MaybeIdent for Item<K> {
     fn ident(&self) -> Option<&str> {
         self.kind.ident()
@@ -1190,7 +1343,7 @@ impl<K: MaybeIdent> Item<K> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ItemKind {
-    Use(Path),
+    Use(Use),
     StaticItem(StaticItem),
     ConstItem(ConstItem),
     Fn(Fn),
@@ -1205,7 +1358,7 @@ pub enum ItemKind {
     MacroDef(MacroDef),
 }
 
-impl_obvious_conversion!(ItemKind; StaticItem, ConstItem, Fn, Mod, TyAlias, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCall);
+impl_obvious_conversion!(ItemKind; Use, StaticItem, ConstItem, Fn, Mod, TyAlias, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCall);
 impl_display_for_enum!(ItemKind; Use, StaticItem, ConstItem, Fn, Mod, TyAlias, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCall);
 
 impl MaybeIdent for ItemKind {
@@ -1235,6 +1388,27 @@ impl ItemKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Use(Path);
+
+impl fmt::Display for Use {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "use {}", self.0)
+    }
+}
+
+impl From<Use> for TokenStream {
+    fn from(_value: Use) -> Self {
+        todo!()
+    }
+}
+
+impl Use {
+    pub fn new(path: impl Into<Path>) -> Self {
+        Self(path.into())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StaticItem {
     pub ident: String,
     pub ty: Type,
@@ -1248,6 +1422,12 @@ impl fmt::Display for StaticItem {
             write!(f, " = {expr}", expr = expr)?;
         }
         Ok(())
+    }
+}
+
+impl From<StaticItem> for TokenStream {
+    fn from(_value: StaticItem) -> Self {
+        todo!()
     }
 }
 
@@ -1274,6 +1454,12 @@ impl fmt::Display for ConstItem {
     }
 }
 
+impl From<ConstItem> for TokenStream {
+    fn from(_value: ConstItem) -> Self {
+        todo!()
+    }
+}
+
 impl Ident for ConstItem {
     fn ident(&self) -> &str {
         &self.ident
@@ -1293,6 +1479,12 @@ impl fmt::Display for TyAlias {
             write!(f, " = {ty}", ty = ty)?;
         }
         Ok(())
+    }
+}
+
+impl From<TyAlias> for TokenStream {
+    fn from(_value: TyAlias) -> Self {
+        todo!()
     }
 }
 
@@ -1332,17 +1524,108 @@ impl AssocItemKind {
 
 pub type AssocItem = Item<AssocItemKind>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct Empty {}
+
+impl fmt::Display for Empty {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "")
+    }
+}
+
+impl From<Empty> for TokenStream {
+    fn from(_: Empty) -> Self {
+        TokenStream::new()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Semi(Expr);
+
+impl fmt::Display for Semi {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{};", self.0)
+    }
+}
+
+impl From<Semi> for TokenStream {
+    fn from(_value: Semi) -> Self {
+        todo!()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Stmt {
     Local(Local),
     Item(Item),
     Expr(Expr),
-    Semi(Expr),
-    Empty,
+    Semi(Semi),
+    Empty(Empty),
     MacCall(MacCall),
 }
 
-impl_obvious_conversion!(Stmt; Local, Item, MacCall);
+impl_obvious_conversion!(Stmt; Local, Item, Expr, Semi, Empty, MacCall);
+
+impl From<Use> for Stmt {
+    fn from(item: Use) -> Self {
+        Self::Item(Item::inherited(item))
+    }
+}
+impl From<StaticItem> for Stmt {
+    fn from(item: StaticItem) -> Self {
+        Self::Item(Item::inherited(item))
+    }
+}
+impl From<ConstItem> for Stmt {
+    fn from(item: ConstItem) -> Self {
+        Self::Item(Item::inherited(item))
+    }
+}
+impl From<Fn> for Stmt {
+    fn from(item: Fn) -> Self {
+        Self::Item(Item::inherited(item))
+    }
+}
+impl From<Mod> for Stmt {
+    fn from(item: Mod) -> Self {
+        Self::Item(Item::inherited(item))
+    }
+}
+impl From<TyAlias> for Stmt {
+    fn from(item: TyAlias) -> Self {
+        Self::Item(Item::inherited(item))
+    }
+}
+impl From<EnumDef> for Stmt {
+    fn from(item: EnumDef) -> Self {
+        Self::Item(Item::inherited(item))
+    }
+}
+impl From<StructDef> for Stmt {
+    fn from(item: StructDef) -> Self {
+        Self::Item(Item::inherited(item))
+    }
+}
+impl From<UnionDef> for Stmt {
+    fn from(item: UnionDef) -> Self {
+        Self::Item(Item::inherited(item))
+    }
+}
+impl From<TraitDef> for Stmt {
+    fn from(item: TraitDef) -> Self {
+        Self::Item(Item::inherited(item))
+    }
+}
+impl From<Impl> for Stmt {
+    fn from(item: Impl) -> Self {
+        Self::Item(Item::inherited(item))
+    }
+}
+impl From<MacroDef> for Stmt {
+    fn from(item: MacroDef) -> Self {
+        Self::Item(Item::inherited(item))
+    }
+}
 
 impl fmt::Display for Stmt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -1350,16 +1633,10 @@ impl fmt::Display for Stmt {
             Self::Local(local) => write!(f, "{local}"),
             Self::Item(item) => write!(f, "{item}"),
             Self::Expr(expr) => write!(f, "{expr}"),
-            Self::Semi(expr) => write!(f, "{expr};"),
-            Self::Empty => write!(f, ""),
+            Self::Semi(semi) => write!(f, "{semi}"),
+            Self::Empty(_) => write!(f, ""),
             Self::MacCall(mac_call) => write!(f, "{mac_call}"),
         }
-    }
-}
-
-impl<E: Into<Expr>> From<E> for Stmt {
-    fn from(expr: E) -> Self {
-        Self::Expr(expr.into())
     }
 }
 

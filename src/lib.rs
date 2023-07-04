@@ -25,6 +25,13 @@ macro_rules! impl_obvious_conversion {
                 }
             }
         )*
+        impl From<$Enum> for $crate::TokenStream {
+            fn from(item: $Enum) -> Self {
+                match item {
+                    $($Enum::$Variant(v) => v.into(),)*
+                }
+            }
+        }
     };
 }
 
@@ -145,7 +152,7 @@ pub struct Crate {
     pub items: Vec<Item>,
 }
 
-impl Empty for Crate {
+impl EmptyItem for Crate {
     type Input = ();
     fn empty(_: impl Into<()>) -> Self {
         Self::new()

@@ -1,15 +1,56 @@
 use std::fmt;
 
-use crate::{impl_display_for_enum, impl_obvious_conversion, Pat, Block, FnDecl};
+use crate::{impl_display_for_enum, impl_obvious_conversion, Pat, Block, FnDecl, TokenStream, Delimiter};
 use crate::token::Token;
 use crate::ty::Type;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
-pub struct Attribute(String);
+pub enum AttrArgs {
+    #[default]
+    Empty,
+    Delimited(DelimArgs),
+    Eq(Expr),
+}
+
+impl fmt::Display for AttrArgs {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => write!(f, ""),
+            Self::Delimited(delim) => write!(f, "{delim}"),
+            Self::Eq(expr) => write!(f, " = {expr}"),
+        }
+    }
+}
+
+impl From<AttrArgs> for TokenStream {
+    fn from(attr: AttrArgs) -> Self {
+        match attr {
+            AttrArgs::Empty => TokenStream::from(vec![]),
+            AttrArgs::Delimited(delim) => delim.into(),
+            AttrArgs::Eq(expr) => TokenStream::from(expr).and(TokenStream::from(vec![Token::Eq])),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Attribute {
+    path: Path,
+    args: AttrArgs,
+}
 
 impl fmt::Display for Attribute {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "#[{}]", self.0)
+        write!(f, "#[{}{}]", self.path, self.args)
+    }
+}
+
+impl From<Attribute> for TokenStream {
+    fn from(attr: Attribute) -> Self {
+        let mut ts = TokenStream::from(vec![Token::Pound, Token::OpenDelim(Delimiter::Bracket)]);
+        ts.extend(TokenStream::from(attr.path));
+        ts.extend(TokenStream::from(attr.args));
+        ts.push(Token::CloseDelim(Delimiter::Bracket));
+        ts
     }
 }
 
@@ -25,6 +66,23 @@ impl fmt::Display for Expr {
             writeln!(f, "{attr}")?;
         }
         self.kind.fmt(f)
+    }
+}
+
+impl<E: Into<ExprKind>> From<E> for Expr {
+    fn from(item: E) -> Self {
+        Self::new(item)
+    }
+}
+
+impl From<Expr> for TokenStream {
+    fn from(value: Expr) -> Self {
+        let mut ts = TokenStream::new();
+        for attr in value.attrs.iter() {
+            ts.extend(TokenStream::from(attr.clone()));
+        }
+        ts.extend(TokenStream::from(value.kind));
+        ts
     }
 }
 
@@ -75,6 +133,12 @@ impl fmt::Display for Array {
     }
 }
 
+impl From<Array> for TokenStream {
+    fn from(_value: Array) -> Self {
+        todo!()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Tuple(Vec<Expr>);
 
@@ -92,6 +156,12 @@ impl fmt::Display for Tuple {
     }
 }
 
+impl From<Tuple> for TokenStream {
+    fn from(_value: Tuple) -> Self {
+        todo!()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Binary {
     pub lhs: Box<Expr>,
@@ -102,6 +172,12 @@ pub struct Binary {
 impl fmt::Display for Binary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "({lhs} {op} {rhs})", lhs = self.lhs, op = self.op, rhs = self.rhs)
+    }
+}
+
+impl From<Binary> for TokenStream {
+    fn from(_value: Binary) -> Self {
+        todo!()
     }
 }
 
@@ -134,6 +210,12 @@ impl fmt::Display for Unary {
     }
 }
 
+impl From<Unary> for TokenStream {
+    fn from(_value: Unary) -> Self {
+        todo!()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Let {
     pub pat: Box<Pat>,
@@ -143,6 +225,21 @@ pub struct Let {
 impl fmt::Display for Let {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "let {pat} = {expr}", pat = self.pat, expr = self.expr)
+    }
+}
+
+impl From<Let> for TokenStream {
+    fn from(_value: Let) -> Self {
+        todo!()
+    }
+}
+
+impl Let {
+    pub fn new(pat: impl Into<Pat>, expr: impl Into<Expr>) -> Self {
+        Self {
+            pat: Box::new(pat.into()),
+            expr: Box::new(expr.into()),
+        }
     }
 }
 
@@ -163,6 +260,12 @@ impl fmt::Display for If {
     }
 }
 
+impl From<If> for TokenStream {
+    fn from(_value: If) -> Self {
+        todo!()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct While {
     pub cond: Box<Expr>,
@@ -172,6 +275,12 @@ pub struct While {
 impl fmt::Display for While {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "while {cond} {body}", cond = self.cond, body = self.body)
+    }
+}
+
+impl From<While> for TokenStream {
+    fn from(_value: While) -> Self {
+        todo!()
     }
 }
 
@@ -188,6 +297,12 @@ impl fmt::Display for ForLoop {
     }
 }
 
+impl From<ForLoop> for TokenStream {
+    fn from(_value: ForLoop) -> Self {
+        todo!()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Loop {
     pub body: Block,
@@ -196,6 +311,12 @@ pub struct Loop {
 impl fmt::Display for Loop {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "loop {body}", body = self.body)
+    }
+}
+
+impl From<Loop> for TokenStream {
+    fn from(_value: Loop) -> Self {
+        todo!()
     }
 }
 
@@ -220,6 +341,12 @@ impl fmt::Display for Arm {
     }
 }
 
+impl From<Arm> for TokenStream {
+    fn from(_value: Arm) -> Self {
+        todo!()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Match {
     pub expr: Box<Expr>,
@@ -233,6 +360,12 @@ impl fmt::Display for Match {
             writeln!(f, "{arm},", arm = arm)?;
         }
         write!(f, "}}")
+    }
+}
+
+impl From<Match> for TokenStream {
+    fn from(_value: Match) -> Self {
+        todo!()
     }
 }
 
@@ -263,6 +396,12 @@ impl fmt::Display for Closure {
     }
 }
 
+impl From<Closure> for TokenStream {
+    fn from(_value: Closure) -> Self {
+        todo!()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Field {
     pub expr: Box<Expr>,
@@ -275,6 +414,12 @@ impl fmt::Display for Field {
     }
 }
 
+impl From<Field> for TokenStream {
+    fn from(_value: Field) -> Self {
+        todo!()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Index {
     pub expr: Box<Expr>,
@@ -284,6 +429,12 @@ pub struct Index {
 impl fmt::Display for Index {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{expr}[{index}]", expr = self.expr, index = self.index)
+    }
+}
+
+impl From<Index> for TokenStream {
+    fn from(_value: Index) -> Self {
+        todo!()
     }
 }
 
@@ -313,6 +464,12 @@ impl fmt::Display for Range {
     }
 }
 
+impl From<Range> for TokenStream {
+    fn from(_value: Range) -> Self {
+        todo!()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Return {
     pub expr: Option<Box<Expr>>,
@@ -328,6 +485,20 @@ impl fmt::Display for Return {
     }
 }
 
+impl From<Return> for TokenStream {
+    fn from(_value: Return) -> Self {
+        todo!()
+    }
+}
+
+impl Return {
+    pub fn new(expr: Option<impl Into<Expr>>) -> Self {
+        Self {
+            expr: expr.map(|e| Box::new(e.into())),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Assign {
     pub lhs: Box<Expr>,
@@ -337,6 +508,21 @@ pub struct Assign {
 impl fmt::Display for Assign {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{lhs} = {rhs}", lhs = self.lhs, rhs = self.rhs)
+    }
+}
+
+impl From<Assign> for TokenStream {
+    fn from(_value: Assign) -> Self {
+        todo!()
+    }
+}
+
+impl Assign {
+    pub fn new(lhs: impl Into<Expr>, rhs: impl Into<Expr>) -> Self {
+        Self {
+            lhs: Box::new(lhs.into()),
+            rhs: Box::new(rhs.into()),
+        }
     }
 }
 
@@ -420,6 +606,22 @@ impl fmt::Display for AssignOp {
     }
 }
 
+impl From<AssignOp> for TokenStream {
+    fn from(_value: AssignOp) -> Self {
+        todo!()
+    }
+}
+
+impl AssignOp {
+    pub fn new(lhs: impl Into<Expr>, op: BinOpKind, rhs: impl Into<Expr>) -> Self {
+        Self {
+            lhs: Box::new(lhs.into()),
+            op,
+            rhs: Box::new(rhs.into()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ExprKind {
     Array(Array),
@@ -441,6 +643,7 @@ pub enum ExprKind {
     Field(Field),
     Index(Index),
     Range(Range),
+    Path(Path),
     Return(Return),
     Assign(Assign),
     AssignOp(AssignOp),
@@ -467,6 +670,7 @@ impl_display_for_enum!(ExprKind;
     Field,
     Index,
     Range,
+    Path,
     Return,
     Assign,
     AssignOp,
@@ -492,6 +696,7 @@ impl_obvious_conversion!(ExprKind;
     Field,
     Index,
     Range,
+    Path,
     Return,
     Assign,
     AssignOp,
@@ -532,6 +737,21 @@ impl<S: Into<String>> From<S> for Lit {
     }
 }
 
+impl From<Lit> for TokenStream {
+    fn from(_value: Lit) -> Self {
+        todo!()
+    }
+}
+
+impl Lit {
+    pub fn new(kind: LitKind, symbol: impl Into<String>) -> Self {
+        Self {
+            kind,
+            symbol: symbol.into(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Cast {
     pub expr: Box<Expr>,
@@ -544,6 +764,21 @@ impl fmt::Display for Cast {
     }
 }
 
+impl From<Cast> for TokenStream {
+    fn from(_value: Cast) -> Self {
+        todo!()
+    }
+}
+
+impl Cast {
+    pub fn new(expr: impl Into<Expr>, ty: impl Into<Type>) -> Self {
+        Self {
+            expr: Box::new(expr.into()),
+            ty: ty.into(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypeAscription {
     pub expr: Box<Expr>,
@@ -553,6 +788,21 @@ pub struct TypeAscription {
 impl fmt::Display for TypeAscription {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "({expr}: {ty})", expr = self.expr, ty = self.ty)
+    }
+}
+
+impl From<TypeAscription> for TokenStream {
+    fn from(_value: TypeAscription) -> Self {
+        todo!()
+    }
+}
+
+impl TypeAscription {
+    pub fn new(expr: impl Into<Expr>, ty: impl Into<Type>) -> Self {
+        Self {
+            expr: Box::new(expr.into()),
+            ty: ty.into(),
+        }
     }
 }
 
@@ -573,6 +823,12 @@ impl fmt::Display for Call {
             }
         }
         write!(f, ")")
+    }
+}
+
+impl From<Call> for TokenStream {
+    fn from(_value: Call) -> Self {
+        todo!()
     }
 }
 
@@ -606,6 +862,12 @@ impl fmt::Display for MethodCall {
     }
 }
 
+impl From<MethodCall> for TokenStream {
+    fn from(_value: MethodCall) -> Self {
+        todo!()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Path {
     pub segments: Vec<PathSegment>,
@@ -627,6 +889,12 @@ impl fmt::Display for Path {
 impl<S: Into<PathSegment>> From<S> for Path {
     fn from(ident: S) -> Self {
         Self::single(ident)
+    }
+}
+
+impl From<Path> for TokenStream {
+    fn from(_value: Path) -> Self {
+        todo!()
     }
 }
 
@@ -671,6 +939,12 @@ impl<S: Into<String>> From<S> for PathSegment {
     }
 }
 
+impl From<PathSegment> for TokenStream {
+    fn from(_value: PathSegment) -> Self {
+        todo!()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum GenericArg {
     Lifetime(String),
@@ -688,6 +962,12 @@ impl fmt::Display for GenericArg {
     }
 }
 
+impl From<GenericArg> for TokenStream {
+    fn from(_value: GenericArg) -> Self {
+        todo!()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MacDelimiter {
     Parenthesis,
@@ -698,7 +978,7 @@ pub enum MacDelimiter {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DelimArgs {
     pub delim: MacDelimiter,
-    pub tokens: Vec<Token>,
+    pub tokens: TokenStream,
 }
 
 impl fmt::Display for DelimArgs {
@@ -714,13 +994,7 @@ impl fmt::Display for DelimArgs {
                 write!(f, "{{")?;
             },
         }
-        let mut iter = self.tokens.iter();
-        if let Some(token) = iter.next() {
-            write!(f, "{token}")?;
-            for token in iter {
-                write!(f, ", {token}")?;
-            }
-        }
+        write!(f, "{}", self.tokens)?;
         match self.delim {
             MacDelimiter::Parenthesis => {
                 write!(f, ")")
@@ -739,7 +1013,7 @@ impl Default for DelimArgs {
     fn default() -> Self {
         Self {
             delim: MacDelimiter::Parenthesis,
-            tokens: Vec::new(),
+            tokens: TokenStream::new(),
         }
     }
 }
@@ -748,17 +1022,35 @@ impl From<Vec<Token>> for DelimArgs {
     fn from(tokens: Vec<Token>) -> Self {
         Self {
             delim: MacDelimiter::Parenthesis,
-            tokens,
+            tokens: TokenStream::from(tokens),
         }
     }
 }
 
+impl From<DelimArgs> for TokenStream {
+    fn from(_value: DelimArgs) -> Self {
+        todo!()
+    }
+}
+
 impl DelimArgs {
-    pub fn new(delim: MacDelimiter, tokens: Vec<Token>) -> Self {
+    pub fn new(delim: MacDelimiter, tokens: TokenStream) -> Self {
         Self {
             delim,
             tokens,
         }
+    }
+
+    pub fn parenthesis(tokens: TokenStream) -> Self {
+        Self::new(MacDelimiter::Parenthesis, tokens)
+    }
+
+    pub fn bracket(tokens: TokenStream) -> Self {
+        Self::new(MacDelimiter::Bracket, tokens)
+    }
+
+    pub fn brace(tokens: TokenStream) -> Self {
+        Self::new(MacDelimiter::Brace, tokens)
     }
 
     pub fn add_token(&mut self, token: Token) {
@@ -788,11 +1080,26 @@ impl fmt::Display for MacCall {
     }
 }
 
+impl From<MacCall> for TokenStream {
+    fn from(_value: MacCall) -> Self {
+        todo!()
+    }
+}
+
 impl MacCall {
     pub fn new(path: Path, args: impl Into<DelimArgs>) -> Self {
         Self {
             path,
             args: args.into(),
+        }
+    }
+
+    pub fn bracket(path: Path, tokens: Vec<impl Into<TokenStream>>) -> Self {
+        Self {
+            path,
+            args: DelimArgs::bracket(
+                TokenStream::aggregate(tokens.into_iter().map(|t| t.into())),
+            )
         }
     }
 }
