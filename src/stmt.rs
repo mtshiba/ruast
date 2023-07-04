@@ -1,8 +1,10 @@
 use std::fmt;
 use std::hash::Hash;
 
-use crate::expr::{Expr, MacCall, Path};
-use crate::{GenericArg, Type, impl_obvious_conversion, impl_display_for_enum, Attribute, DelimArgs, impl_hasitem_methods, TokenStream};
+use crate::expr::{Attribute, DelimArgs, Expr, GenericArg, MacCall, Path, Async, TryBlock, Range};
+use crate::ty::Type;
+use crate::token::TokenStream;
+use crate::{impl_obvious_conversion, impl_display_for_enum, impl_hasitem_methods};
 
 pub trait Ident {
     fn ident(&self) -> &str;
@@ -128,6 +130,7 @@ impl Ident for PatField {
 pub struct IdentPat {
     pub is_mut: bool,
     pub ident: String,
+    pub pat: Option<Box<Pat>>,
 }
 
 impl fmt::Display for IdentPat {
@@ -135,7 +138,11 @@ impl fmt::Display for IdentPat {
         if self.is_mut {
             write!(f, "mut ")?;
         }
-        write!(f, "{ident}", ident = self.ident)
+        write!(f, "{ident}", ident = self.ident)?;
+        if let Some(pat) = &self.pat {
+            write!(f, " @ {pat}")?;
+        }
+        Ok(())
     }
 }
 
@@ -144,16 +151,22 @@ impl<S: Into<String>> From<S> for IdentPat {
         Self {
             is_mut: false,
             ident: ident.into(),
+            pat: None,
         }
     }
 }
 
 impl IdentPat {
-    pub fn mut_(ident: impl Into<String>) -> Self {
+    pub fn mut_(ident: impl Into<String>, pat: Option<Pat>) -> Self {
         Self {
             is_mut: true,
             ident: ident.into(),
+            pat: pat.map(Box::new),
         }
+    }
+
+    pub fn simple(ident: impl Into<String>) -> Self {
+        Self::from(ident.into())
     }
 }
 
@@ -173,6 +186,25 @@ impl fmt::Display for StructPat {
             write!(f, "{ident}: {pat}", ident = field.ident, pat = field.pat)?;
         }
         write!(f, "}}")
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TupleStructPat {
+    pub path: Path,
+    pub pats: Vec<Pat>,
+}
+
+impl fmt::Display for TupleStructPat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{path}(", path = self.path)?;
+        for (i, pat) in self.pats.iter().enumerate() {
+            if i != 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{pat}")?;
+        }
+        write!(f, ")")
     }
 }
 
@@ -213,11 +245,18 @@ impl RefPat {
 pub enum Pat {
     Wild,
     Ident(IdentPat),
-    Tuple(Vec<Pat>),
     Struct(StructPat),
-    Ref(RefPat),
+    TupleStruct(TupleStructPat),
     Or(Vec<Pat>),
+    Tuple(Vec<Pat>),
+    Box(Box<Pat>),
+    Ref(RefPat),
     Lit(Expr),
+    Range(Range),
+    Slice(Vec<Pat>),
+    Rest,
+    Paren(Box<Pat>),
+    MacCall(MacCall),
 }
 
 impl fmt::Display for Pat {
@@ -236,6 +275,8 @@ impl fmt::Display for Pat {
                 write!(f, ")")
             }
             Self::Struct(struct_pat) => write!(f, "{struct_pat}"),
+            Self::TupleStruct(tuple_struct_pat) => write!(f, "{tuple_struct_pat}"),
+            Self::Box(pat) => write!(f, "box {pat}"),
             Self::Ref(ref_pat) => write!(f, "{ref_pat}"),
             Self::Or(pats) => {
                 write!(f, "(")?;
@@ -248,6 +289,20 @@ impl fmt::Display for Pat {
                 write!(f, ")")
             }
             Self::Lit(expr) => write!(f, "{expr}"),
+            Self::Range(range) => write!(f, "{range}"),
+            Self::Slice(pats) => {
+                write!(f, "[")?;
+                for (i, pat) in pats.iter().enumerate() {
+                    if i != 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{pat}", pat = pat)?;
+                }
+                write!(f, "]")
+            }
+            Self::Rest => write!(f, "..."),
+            Self::Paren(pat) => write!(f, "({pat})"),
+            Self::MacCall(mac_call) => write!(f, "{mac_call}"),
         }
     }
 }
@@ -272,11 +327,11 @@ impl Pat {
     }
 
     pub fn mut_self() -> Self {
-        Self::Ident(IdentPat::mut_("self"))
+        Self::Ident(IdentPat::mut_("self", None))
     }
 
     pub fn mut_(ident: impl Into<String>) -> Self {
-        Self::Ident(IdentPat::mut_(ident))
+        Self::Ident(IdentPat::mut_(ident, None))
     }
 }
 
@@ -561,11 +616,15 @@ impl Mod {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Block {
+    pub label: Option<String>,
     pub stmts: Vec<Stmt>,
 }
 
 impl fmt::Display for Block {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(label) = &self.label {
+            write!(f, "'{label}: ")?;
+        }
         writeln!(f, "{{")?;
         for stmt in self.stmts.iter() {
             writeln!(f, "{stmt};")?;
@@ -579,6 +638,15 @@ impl<S: Into<Stmt>> From<S> for Block {
         let mut block = Block::empty();
         block.add_stmt(stmt);
         block
+    }
+}
+
+impl From<Vec<Stmt>> for Block {
+    fn from(stmts: Vec<Stmt>) -> Self {
+        Self {
+            label: None,
+            stmts,
+        }
     }
 }
 
@@ -600,12 +668,20 @@ impl HasItem<Stmt> for Block {
 impl_hasitem_methods!(Block, Stmt, Deref);
 
 impl Block {
-    pub fn new(stmts: Vec<Stmt>) -> Self {
-        Self { stmts }
+    pub fn new(stmts: Vec<Stmt>, label: Option<String>) -> Self {
+        Self { stmts, label }
     }
 
     pub fn empty() -> Self {
-        Self { stmts: Vec::new() }
+        Self { stmts: Vec::new(), label: None }
+    }
+
+    pub fn async_(self) -> Async {
+        Async::new(self)
+    }
+
+    pub fn try_(self) -> TryBlock {
+        TryBlock::new(self)
     }
 
     pub fn with_stmt(mut self, stmt: impl Into<Stmt>) -> Self {

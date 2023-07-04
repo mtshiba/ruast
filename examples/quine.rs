@@ -4,7 +4,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut krate = Crate::new();
     let def = Fn::main(
         Some(Type::from("Result<(), Box<dyn std::error::Error>>")),
-        Block::new(vec![
+        Block::from(vec![
             Use::new("rast::*").into(),
             Local::simple(
                 Pat::mut_("krate"),

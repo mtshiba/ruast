@@ -1,4 +1,5 @@
-use std::{fmt, ops::{Deref, DerefMut}};
+use std::fmt;
+use std::ops::{Deref, DerefMut};
 
 use crate::expr::Lit;
 

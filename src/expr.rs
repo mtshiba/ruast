@@ -1,7 +1,8 @@
 use std::fmt;
 
-use crate::{impl_display_for_enum, impl_obvious_conversion, Pat, Block, FnDecl, TokenStream, Delimiter};
-use crate::token::Token;
+use crate::{impl_display_for_enum, impl_obvious_conversion};
+use crate::stmt::{Pat, Block, FnDecl, EmptyItem};
+use crate::token::{Token, TokenStream, Delimiter};
 use crate::ty::Type;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
@@ -133,6 +134,12 @@ impl fmt::Display for Array {
     }
 }
 
+impl From<Vec<Expr>> for Array {
+    fn from(value: Vec<Expr>) -> Self {
+        Self(value)
+    }
+}
+
 impl From<Array> for TokenStream {
     fn from(_value: Array) -> Self {
         todo!()
@@ -153,6 +160,12 @@ impl fmt::Display for Tuple {
             }
         }
         write!(f, ")")
+    }
+}
+
+impl From<Vec<Expr>> for Tuple {
+    fn from(value: Vec<Expr>) -> Self {
+        Self(value)
     }
 }
 
@@ -357,7 +370,7 @@ impl fmt::Display for Match {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "match {expr} {{", expr = self.expr)?;
         for arm in self.arms.iter() {
-            writeln!(f, "{arm},", arm = arm)?;
+            writeln!(f, "{arm},")?;
         }
         write!(f, "}}")
     }
@@ -383,14 +396,14 @@ impl fmt::Display for Closure {
         write!(f, "|")?;
         let mut iter = self.fn_decl.inputs.iter();
         if let Some(input) = iter.next() {
-            write!(f, "{input}", input = input)?;
+            write!(f, "{input}")?;
             for input in iter {
-                write!(f, ", {input}", input = input)?;
+                write!(f, ", {input}")?;
             }
         }
         write!(f, "| ")?;
         if let Some(output) = &self.fn_decl.output {
-            write!(f, "-> {output} ", output = output)?;
+            write!(f, "-> {output} ")?;
         }
         write!(f, "{{ {} }}", self.body)
     }
@@ -399,6 +412,91 @@ impl fmt::Display for Closure {
 impl From<Closure> for TokenStream {
     fn from(_value: Closure) -> Self {
         todo!()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Async {
+    pub block: Block,
+}
+
+impl fmt::Display for Async {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "async {block}", block = self.block)
+    }
+}
+
+impl From<Async> for TokenStream {
+    fn from(_value: Async) -> Self {
+        todo!()
+    }
+}
+
+impl EmptyItem for Async {
+    type Input = ();
+
+    fn empty(_block: impl Into<()>) -> Self {
+        Self::new(Block::empty())
+    }
+}
+
+impl Async {
+    pub fn new(block: Block) -> Self {
+        Self { block }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Await {
+    pub expr: Box<Expr>,
+}
+
+impl fmt::Display for Await {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{expr}.await", expr = self.expr)
+    }
+}
+
+impl From<Await> for TokenStream {
+    fn from(_value: Await) -> Self {
+        todo!()
+    }
+}
+
+impl Await {
+    pub fn new(expr: Expr) -> Self {
+        Self { expr: Box::new(expr) }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TryBlock {
+    pub block: Block,
+}
+
+impl fmt::Display for TryBlock {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "try {block}", block = self.block)
+    }
+}
+
+impl From<TryBlock> for TokenStream {
+    fn from(_value: TryBlock) -> Self {
+        todo!()
+    }
+}
+
+impl EmptyItem for TryBlock {
+    type Input = ();
+
+    fn empty(_block: impl Into<()>) -> Self {
+        Self::new(Block::empty())
+    }
+}
+
+impl TryBlock {
+    pub fn new(block: Block) -> Self {
+        Self { block }
     }
 }
 
@@ -471,6 +569,21 @@ impl From<Range> for TokenStream {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Underscore {}
+
+impl fmt::Display for Underscore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "_")
+    }
+}
+
+impl From<Underscore> for TokenStream {
+    fn from(_value: Underscore) -> Self {
+        todo!()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Return {
     pub expr: Option<Box<Expr>>,
 }
@@ -478,7 +591,7 @@ pub struct Return {
 impl fmt::Display for Return {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(expr) = &self.expr {
-            write!(f, "return {expr}", expr = expr)
+            write!(f, "return {expr}")
         } else {
             write!(f, "return")
         }
@@ -621,87 +734,6 @@ impl AssignOp {
         }
     }
 }
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum ExprKind {
-    Array(Array),
-    Tuple(Tuple),
-    Binary(Binary),
-    Unary(Unary),
-    Lit(Lit),
-    Cast(Cast),
-    TypeAscription(TypeAscription),
-    Let(Let),
-    If(If),
-    While(While),
-    ForLoop(ForLoop),
-    Loop(Loop),
-    Match(Match),
-    Call(Call),
-    MethodCall(MethodCall),
-    Block(Block),
-    Field(Field),
-    Index(Index),
-    Range(Range),
-    Path(Path),
-    Return(Return),
-    Assign(Assign),
-    AssignOp(AssignOp),
-    MacCall(MacCall),
-}
-
-impl_display_for_enum!(ExprKind;
-    Array,
-    Tuple,
-    Binary,
-    Unary,
-    Lit,
-    Cast,
-    TypeAscription,
-    Let,
-    If,
-    While,
-    ForLoop,
-    Loop,
-    Match,
-    Call,
-    MethodCall,
-    Block,
-    Field,
-    Index,
-    Range,
-    Path,
-    Return,
-    Assign,
-    AssignOp,
-    MacCall,
-);
-impl_obvious_conversion!(ExprKind;
-    Array,
-    Tuple,
-    Binary,
-    Unary,
-    Lit,
-    Cast,
-    TypeAscription,
-    Let,
-    If,
-    While,
-    ForLoop,
-    Loop,
-    Match,
-    Call,
-    MethodCall,
-    Block,
-    Field,
-    Index,
-    Range,
-    Path,
-    Return,
-    Assign,
-    AssignOp,
-    MacCall,
-);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum LitKind {
@@ -945,6 +977,97 @@ impl From<PathSegment> for TokenStream {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BorrowKind {
+    Ref,
+    Raw,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum Mutability {
+    #[default]
+    Not,
+    Mut,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AddrOf {
+    pub kind: BorrowKind,
+    pub mutability: Mutability,
+    pub expr: Box<Expr>,
+}
+
+impl fmt::Display for AddrOf {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "&")?;
+        match (self.kind, self.mutability) {
+            (BorrowKind::Ref, Mutability::Not) => {},
+            (BorrowKind::Ref, Mutability::Mut) => {
+                write!(f, "mut ")?;
+            },
+            (BorrowKind::Raw, Mutability::Not) => {
+                write!(f, "raw const ")?;
+            },
+            (BorrowKind::Raw, Mutability::Mut) => {
+                write!(f, "raw mut ")?;
+            },
+        }
+        write!(f, "{expr}", expr = self.expr)
+    }
+}
+
+impl From<AddrOf> for TokenStream {
+    fn from(_value: AddrOf) -> Self {
+        todo!()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Break {
+    pub label: Option<String>,
+    pub expr: Option<Box<Expr>>,
+}
+
+impl fmt::Display for Break {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "break")?;
+        if let Some(label) = &self.label {
+            write!(f, " '{label}")?;
+        }
+        if let Some(expr) = &self.expr {
+            write!(f, " {expr}")?;
+        }
+        Ok(())
+    }
+}
+
+impl From<Break> for TokenStream {
+    fn from(_value: Break) -> Self {
+        todo!()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Continue {
+    pub label: Option<String>,
+}
+
+impl fmt::Display for Continue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "continue")?;
+        if let Some(label) = &self.label {
+            write!(f, " '{label}")?;
+        }
+        Ok(())
+    }
+}
+
+impl From<Continue> for TokenStream {
+    fn from(_value: Continue) -> Self {
+        todo!()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum GenericArg {
     Lifetime(String),
@@ -1101,5 +1224,275 @@ impl MacCall {
                 TokenStream::aggregate(tokens.into_iter().map(|t| t.into())),
             )
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ExprField {
+    ident: String,
+    expr: Expr,
+}
+
+impl fmt::Display for ExprField {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{ident}: {expr}", ident = self.ident, expr = self.expr)
+    }
+}
+
+impl ExprField {
+    pub fn new(ident: impl Into<String>, expr: impl Into<Expr>) -> Self {
+        Self {
+            ident: ident.into(),
+            expr: expr.into(),
+        }
+    }
+
+    pub fn shortened(ident: impl Into<String>) -> Self {
+        let ident = ident.into();
+        Self {
+            ident: ident.clone(),
+            expr: Expr::new(ExprKind::Path(Path::single(ident))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Struct {
+    pub path: Path,
+    pub fields: Vec<ExprField>,
+}
+
+impl fmt::Display for Struct {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {{", self.path)?;
+        for field in self.fields.iter() {
+            writeln!(f, "{field},")?;
+        }
+        write!(f, "}}")
+    }
+}
+
+impl From<Struct> for TokenStream {
+    fn from(_value: Struct) -> Self {
+        todo!()
+    }
+}
+
+impl Struct {
+    pub fn new(path: impl Into<Path>, fields: Vec<ExprField>) -> Self {
+        Self {
+            path: path.into(),
+            fields,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Repeat {
+    pub expr: Box<Expr>,
+    pub len: Box<Const>,
+}
+
+impl fmt::Display for Repeat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[{expr}; {len}]", expr = self.expr, len = self.len)
+    }
+}
+
+impl From<Repeat> for TokenStream {
+    fn from(_value: Repeat) -> Self {
+        todo!()
+    }
+}
+
+impl Repeat {
+    pub fn new(expr: impl Into<Expr>, len: impl Into<Const>) -> Self {
+        Self {
+            expr: Box::new(expr.into()),
+            len: Box::new(len.into()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Try {
+    pub expr: Box<Expr>,
+}
+
+impl fmt::Display for Try {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{expr}?", expr = self.expr)
+    }
+}
+
+impl From<Try> for TokenStream {
+    fn from(_value: Try) -> Self {
+        todo!()
+    }
+}
+
+impl Try {
+    pub fn new(expr: impl Into<Expr>) -> Self {
+        Self {
+            expr: Box::new(expr.into()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ExprKind {
+    Array(Array),
+    Call(Call),
+    MethodCall(MethodCall),
+    Tuple(Tuple),
+    Binary(Binary),
+    Unary(Unary),
+    Lit(Lit),
+    Cast(Cast),
+    TypeAscription(TypeAscription),
+    Let(Let),
+    If(If),
+    While(While),
+    ForLoop(ForLoop),
+    Loop(Loop),
+    Match(Match),
+    Closure(Closure),
+    Block(Block),
+    Async(Async),
+    Await(Await),
+    TryBlock(TryBlock),
+    Assign(Assign),
+    AssignOp(AssignOp),
+    Field(Field),
+    Index(Index),
+    Range(Range),
+    Underscore(Underscore),
+    Path(Path),
+    AddrOf(AddrOf),
+    Break(Break),
+    Continue(Continue),
+    Return(Return),
+    MacCall(MacCall),
+    Struct(Struct),
+    Repeat(Repeat),
+    Try(Try),
+}
+
+impl_display_for_enum!(ExprKind;
+    Array,
+    Call,
+    MethodCall,
+    Tuple,
+    Binary,
+    Unary,
+    Lit,
+    Cast,
+    TypeAscription,
+    Let,
+    If,
+    While,
+    ForLoop,
+    Loop,
+    Match,
+    Closure,
+    Block,
+    Async,
+    Await,
+    TryBlock,
+    Assign,
+    AssignOp,
+    Field,
+    Index,
+    Range,
+    Underscore,
+    Path,
+    AddrOf,
+    Break,
+    Continue,
+    Return,
+    MacCall,
+    Struct,
+    Repeat,
+    Try,
+);
+impl_obvious_conversion!(ExprKind;
+    Array,
+    Call,
+    MethodCall,
+    Tuple,
+    Binary,
+    Unary,
+    Lit,
+    Cast,
+    TypeAscription,
+    Let,
+    If,
+    While,
+    ForLoop,
+    Loop,
+    Match,
+    Closure,
+    Block,
+    Async,
+    Await,
+    TryBlock,
+    Assign,
+    AssignOp,
+    Field,
+    Index,
+    Range,
+    Underscore,
+    Path,
+    AddrOf,
+    Break,
+    Continue,
+    Return,
+    MacCall,
+    Struct,
+    Repeat,
+    Try,
+);
+
+impl Expr {
+    pub fn call(self, args: Vec<Expr>) -> Self {
+        Self::new(ExprKind::Call(Call {
+            func: Box::new(self),
+            args,
+        }))
+    }
+
+    pub fn method_call(self, seg: PathSegment, args: Vec<Expr>) -> Self {
+        Self::new(ExprKind::MethodCall(MethodCall {
+            receiver: Box::new(self),
+            seg,
+            args,
+        }))
+    }
+
+    pub fn cast(self, ty: impl Into<Type>) -> Self {
+        Self::new(ExprKind::Cast(Cast {
+            expr: Box::new(self),
+            ty: ty.into(),
+        }))
+    }
+
+    pub fn field(self, ident: impl Into<String>) -> Self {
+        Self::new(ExprKind::Field(Field {
+            expr: Box::new(self),
+            ident: ident.into(),
+        }))
+    }
+
+    pub fn index(self, index: impl Into<Expr>) -> Self {
+        Self::new(ExprKind::Index(Index {
+            expr: Box::new(self),
+            index: Box::new(index.into()),
+        }))
+    }
+
+    pub fn await_(self) -> Self {
+        Self::new(ExprKind::Await(Await {
+            expr: Box::new(self),
+        }))
     }
 }
