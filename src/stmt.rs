@@ -1,9 +1,9 @@
 use std::fmt;
 use std::hash::Hash;
 
-use crate::expr::{Attribute, DelimArgs, Expr, GenericArg, MacCall, Path, Async, TryBlock, Range};
+use crate::expr::{Attribute, DelimArgs, Expr, GenericArg, MacCall, Path, Async, TryBlock, Range, Call, MethodCall};
 use crate::ty::Type;
-use crate::token::TokenStream;
+use crate::token::{Token, TokenStream, KeywordToken, BinOpToken, Delimiter};
 use crate::{impl_obvious_conversion, impl_display_for_enum, impl_hasitem_methods};
 
 pub trait Ident {
@@ -68,8 +68,16 @@ impl fmt::Display for Local {
 }
 
 impl From<Local> for TokenStream {
-    fn from(_value: Local) -> Self {
-        todo!()
+    fn from(value: Local) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::Let));
+        ts.extend(TokenStream::from(value.pat));
+        if let Some(ty) = value.ty {
+            ts.push(Token::Colon);
+            ts.extend(TokenStream::from(ty));
+        }
+        ts.extend(TokenStream::from(value.kind));
+        ts
     }
 }
 
@@ -103,7 +111,7 @@ impl fmt::Display for LocalKind {
         match self {
             Self::Decl => write!(f, ""),
             Self::Init(expr) => write!(f, " = {expr}"),
-            Self::InitElse(expr, block) => write!(f, " = {expr} else {{ {block} }}"),
+            Self::InitElse(expr, block) => write!(f, " = {expr} else {block}"),
         }
     }
 }
@@ -111,6 +119,28 @@ impl fmt::Display for LocalKind {
 impl<E: Into<Expr>> From<E> for LocalKind {
     fn from(expr: E) -> Self {
         Self::Init(expr.into())
+    }
+}
+
+impl From<LocalKind> for TokenStream {
+    fn from(value: LocalKind) -> Self {
+        match value {
+            LocalKind::Decl => TokenStream::new(),
+            LocalKind::Init(expr) => {
+                let mut ts = TokenStream::new();
+                ts.push(Token::Eq);
+                ts.extend(TokenStream::from(expr));
+                ts
+            }
+            LocalKind::InitElse(expr, block) => {
+                let mut ts = TokenStream::new();
+                ts.push(Token::Eq);
+                ts.extend(TokenStream::from(expr));
+                ts.push(Token::Keyword(KeywordToken::Else));
+                ts.extend(TokenStream::from(block));
+                ts
+            }
+        }
     }
 }
 
@@ -123,6 +153,22 @@ pub struct PatField {
 impl Ident for PatField {
     fn ident(&self) -> &str {
         &self.ident
+    }
+}
+
+impl fmt::Display for PatField {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{ident}: {pat}", ident = self.ident, pat = self.pat)
+    }
+}
+
+impl From<PatField> for TokenStream {
+    fn from(value: PatField) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::ident(value.ident));
+        ts.push(Token::Colon);
+        ts.extend(TokenStream::from(value.pat));
+        ts
     }
 }
 
@@ -156,6 +202,21 @@ impl<S: Into<String>> From<S> for IdentPat {
     }
 }
 
+impl From<IdentPat> for TokenStream {
+    fn from(value: IdentPat) -> Self {
+        let mut ts = TokenStream::new();
+        if value.is_mut {
+            ts.push(Token::Keyword(KeywordToken::Mut));
+        }
+        ts.push(Token::ident(value.ident));
+        if let Some(pat) = value.pat {
+            ts.push(Token::At);
+            ts.extend(TokenStream::from(*pat));
+        }
+        ts
+    }
+}
+
 impl IdentPat {
     pub fn mut_(ident: impl Into<String>, pat: Option<Pat>) -> Self {
         Self {
@@ -183,9 +244,25 @@ impl fmt::Display for StructPat {
             if i != 0 {
                 write!(f, ", ")?;
             }
-            write!(f, "{ident}: {pat}", ident = field.ident, pat = field.pat)?;
+            write!(f, "{field}")?;
         }
         write!(f, "}}")
+    }
+}
+
+impl From<StructPat> for TokenStream {
+    fn from(value: StructPat) -> Self {
+        let mut ts = TokenStream::new();
+        ts.extend(TokenStream::from(value.path));
+        ts.push(Token::OpenDelim(Delimiter::Brace));
+        for (i, field) in value.fields.iter().enumerate() {
+            if i != 0 {
+                ts.push(Token::Comma);
+            }
+            ts.extend(TokenStream::from(field.clone()));
+        }
+        ts.push(Token::CloseDelim(Delimiter::Brace));
+        ts
     }
 }
 
@@ -208,6 +285,22 @@ impl fmt::Display for TupleStructPat {
     }
 }
 
+impl From<TupleStructPat> for TokenStream {
+    fn from(value: TupleStructPat) -> Self {
+        let mut ts = TokenStream::new();
+        ts.extend(TokenStream::from(value.path));
+        ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+        for (i, pat) in value.pats.iter().enumerate() {
+            if i != 0 {
+                ts.push(Token::Comma);
+            }
+            ts.extend(TokenStream::from(pat.clone()));
+        }
+        ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        ts
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RefPat {
     pub is_mut: bool,
@@ -222,6 +315,18 @@ impl fmt::Display for RefPat {
             write!(f, "&")?;
         }
         write!(f, "{}", self.pat)
+    }
+}
+
+impl From<RefPat> for TokenStream {
+    fn from(value: RefPat) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::BinOp(BinOpToken::And));
+        if value.is_mut {
+            ts.push(Token::Keyword(KeywordToken::Mut));
+        }
+        ts.extend(TokenStream::from(*value.pat));
+        ts
     }
 }
 
@@ -313,6 +418,71 @@ impl<I: Into<IdentPat>> From<I> for Pat {
     }
 }
 
+impl From<Pat> for TokenStream {
+    fn from(value: Pat) -> Self {
+        match value {
+            Pat::Wild => TokenStream::from(vec![Token::ident("_")]),
+            Pat::Ident(ident) => TokenStream::from(ident),
+            Pat::Struct(struct_pat) => TokenStream::from(struct_pat),
+            Pat::TupleStruct(tuple_struct_pat) => TokenStream::from(tuple_struct_pat),
+            Pat::Or(pats) => {
+                let mut ts = TokenStream::new();
+                ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+                for (i, pat) in pats.iter().enumerate() {
+                    if i != 0 {
+                        ts.push(Token::BinOp(BinOpToken::Or));
+                    }
+                    ts.extend(TokenStream::from(pat.clone()));
+                }
+                ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+                ts
+            }
+            Pat::Tuple(pats) => {
+                let mut ts = TokenStream::new();
+                ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+                for (i, pat) in pats.iter().enumerate() {
+                    if i != 0 {
+                        ts.push(Token::Comma);
+                    }
+                    ts.extend(TokenStream::from(pat.clone()));
+                }
+                ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+                ts
+            }
+            Pat::Box(pat) => {
+                let mut ts = TokenStream::new();
+                ts.push(Token::Keyword(KeywordToken::Box));
+                ts.extend(TokenStream::from(*pat));
+                ts
+            }
+            Pat::Ref(ref_pat) => TokenStream::from(ref_pat),
+            Pat::Lit(expr) => TokenStream::from(expr),
+            Pat::Range(range) => TokenStream::from(range),
+            Pat::Slice(pats) => {
+                let mut ts = TokenStream::new();
+                ts.push(Token::OpenDelim(Delimiter::Bracket));
+                for (i, pat) in pats.iter().enumerate() {
+                    if i != 0 {
+                        ts.push(Token::Comma);
+                    }
+                    ts.extend(TokenStream::from(pat.clone()));
+                }
+                ts.push(Token::CloseDelim(Delimiter::Bracket));
+                ts
+            }
+            Pat::Rest => TokenStream::from(vec![Token::DotDotDot]),
+            Pat::Paren(pat) => {
+                let mut ts = TokenStream::new();
+                ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+                ts.extend(TokenStream::from(*pat));
+                ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+                ts
+            }
+            Pat::MacCall(mac_call) => TokenStream::from(mac_call),
+        }
+    }
+}
+
 impl Pat {
     pub fn ident(ident: impl Into<String>) -> Self {
         Self::Ident(IdentPat::from(ident.into()))
@@ -360,8 +530,14 @@ impl fmt::Display for Param {
 }
 
 impl From<Param> for TokenStream {
-    fn from(_value: Param) -> Self {
-        todo!()
+    fn from(value: Param) -> Self {
+        let mut ts = TokenStream::new();
+        ts.extend(TokenStream::from(value.pat));
+        if value.ty != Type::ImplicitSelf {
+            ts.push(Token::Colon);
+            ts.extend(TokenStream::from(value.ty));
+        }
+        ts
     }
 }
 
@@ -390,15 +566,28 @@ impl fmt::Display for FnDecl {
         }
         write!(f, ")")?;
         if let Some(output) = &self.output {
-            write!(f, " -> {ty}", ty = output)?;
+            write!(f, " -> {output}")?;
         }
         Ok(())
     }
 }
 
 impl From<FnDecl> for TokenStream {
-    fn from(_value: FnDecl) -> Self {
-        todo!()
+    fn from(value: FnDecl) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+        for (i, param) in value.inputs.iter().enumerate() {
+            if i != 0 {
+                ts.push(Token::Comma);
+            }
+            ts.extend(TokenStream::from(param.clone()));
+        }
+        ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        if let Some(output) = value.output {
+            ts.push(Token::RArrow);
+            ts.extend(TokenStream::from(output));
+        }
+        ts
     }
 }
 
@@ -445,8 +634,25 @@ impl fmt::Display for Fn {
 }
 
 impl From<Fn> for TokenStream {
-    fn from(_value: Fn) -> Self {
-        todo!()
+    fn from(value: Fn) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::Fn));
+        ts.push(Token::ident(value.ident));
+        if !value.generics.is_empty() {
+            ts.push(Token::Lt);
+            for (i, generic) in value.generics.iter().enumerate() {
+                if i != 0 {
+                    ts.push(Token::Comma);
+                }
+                ts.extend(TokenStream::from(generic.clone()));
+            }
+            ts.push(Token::Gt);
+        }
+        ts.extend(TokenStream::from(value.fn_decl));
+        if let Some(body) = value.body {
+            ts.extend(TokenStream::from(body));
+        }
+        ts
     }
 }
 
@@ -523,8 +729,16 @@ impl fmt::Display for LoadedMod {
 }
 
 impl From<LoadedMod> for TokenStream {
-    fn from(_value: LoadedMod) -> Self {
-        todo!()
+    fn from(value: LoadedMod) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::Mod));
+        ts.push(Token::ident(value.ident));
+        ts.push(Token::OpenDelim(Delimiter::Brace));
+        for item in value.items.iter() {
+            ts.extend(TokenStream::from(item.clone()));
+        }
+        ts.push(Token::CloseDelim(Delimiter::Brace));
+        ts
     }
 }
 
@@ -586,8 +800,17 @@ impl fmt::Display for Mod {
 }
 
 impl From<Mod> for TokenStream {
-    fn from(_value: Mod) -> Self {
-        todo!()
+    fn from(value: Mod) -> Self {
+        match value {
+            Mod::Loaded(module) => TokenStream::from(module),
+            Mod::Unloaded(ident) => {
+                let mut ts = TokenStream::new();
+                ts.push(Token::Keyword(KeywordToken::Mod));
+                ts.push(Token::ident(ident));
+                ts.push(Token::Semi);
+                ts
+            }
+        }
     }
 }
 
@@ -659,8 +882,19 @@ impl From<Vec<Stmt>> for Block {
 }
 
 impl From<Block> for TokenStream {
-    fn from(_value: Block) -> Self {
-        todo!()
+    fn from(value: Block) -> Self {
+        let mut ts = TokenStream::new();
+        if let Some(label) = value.label {
+            ts.push(Token::lifetime(label));
+            ts.push(Token::Colon);
+        }
+        ts.push(Token::OpenDelim(Delimiter::Brace));
+        for stmt in value.stmts.iter() {
+            ts.extend(TokenStream::from(stmt.clone()));
+            ts.push(Token::Semi);
+        }
+        ts.push(Token::CloseDelim(Delimiter::Brace));
+        ts
     }
 }
 
@@ -744,8 +978,18 @@ impl fmt::Display for FieldDef {
 }
 
 impl From<FieldDef> for TokenStream {
-    fn from(_value: FieldDef) -> Self {
-        todo!()
+    fn from(value: FieldDef) -> Self {
+        let mut ts = TokenStream::new();
+        for attr in value.attrs.iter() {
+            ts.extend(TokenStream::from(attr.clone()));
+        }
+        ts.extend(TokenStream::from(value.vis));
+        if let Some(ident) = value.ident {
+            ts.push(Token::ident(ident));
+            ts.push(Token::Colon);
+        }
+        ts.extend(TokenStream::from(value.ty));
+        ts
     }
 }
 
@@ -827,8 +1071,34 @@ impl fmt::Display for VariantData {
 }
 
 impl From<VariantData> for TokenStream {
-    fn from(_value: VariantData) -> Self {
-        todo!()
+    fn from(value: VariantData) -> Self {
+        match value {
+            VariantData::Unit => TokenStream::new(),
+            VariantData::Tuple(fields) => {
+                let mut ts = TokenStream::new();
+                ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+                for (i, field) in fields.iter().enumerate() {
+                    if i != 0 {
+                        ts.push(Token::Comma);
+                    }
+                    ts.extend(TokenStream::from(field.clone()));
+                }
+                ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+                ts
+            }
+            VariantData::Struct(fields) => {
+                let mut ts = TokenStream::new();
+                ts.push(Token::OpenDelim(Delimiter::Brace));
+                for (i, field) in fields.iter().enumerate() {
+                    if i != 0 {
+                        ts.push(Token::Comma);
+                    }
+                    ts.extend(TokenStream::from(field.clone()));
+                }
+                ts.push(Token::CloseDelim(Delimiter::Brace));
+                ts
+            }
+        }
     }
 }
 
@@ -923,8 +1193,16 @@ impl fmt::Display for Variant {
 }
 
 impl From<Variant> for TokenStream {
-    fn from(_value: Variant) -> Self {
-        todo!()
+    fn from(value: Variant) -> Self {
+        let mut ts = TokenStream::new();
+        ts.extend(TokenStream::from(value.vis));
+        ts.push(Token::ident(value.ident));
+        ts.extend(TokenStream::from(value.data));
+        if let Some(disr_expr) = value.disr_expr {
+            ts.push(Token::Eq);
+            ts.extend(TokenStream::from(disr_expr));
+        }
+        ts
     }
 }
 
@@ -978,7 +1256,18 @@ pub struct EnumDef {
 
 impl fmt::Display for EnumDef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "enum {} {{", self.ident)?;
+        writeln!(f, "enum {}", self.ident)?;
+        if !self.generics.is_empty() {
+            write!(f, "<")?;
+            for (i, generic) in self.generics.iter().enumerate() {
+                if i != 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{generic}")?;
+            }
+            write!(f, ">")?;
+        }
+        writeln!(f, "{{")?;
         for variant in self.variants.iter() {
             writeln!(f, "{variant},")?;
         }
@@ -987,8 +1276,27 @@ impl fmt::Display for EnumDef {
 }
 
 impl From<EnumDef> for TokenStream {
-    fn from(_value: EnumDef) -> Self {
-        todo!()
+    fn from(value: EnumDef) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::Enum));
+        ts.push(Token::ident(value.ident));
+        if !value.generics.is_empty() {
+            ts.push(Token::Lt);
+            for (i, generic) in value.generics.iter().enumerate() {
+                if i != 0 {
+                    ts.push(Token::Comma);
+                }
+                ts.extend(TokenStream::from(generic.clone()));
+            }
+            ts.push(Token::Gt);
+        }
+        ts.push(Token::OpenDelim(Delimiter::Brace));
+        for variant in value.variants.iter() {
+            ts.extend(TokenStream::from(variant.clone()));
+            ts.push(Token::Comma);
+        }
+        ts.push(Token::CloseDelim(Delimiter::Brace));
+        ts
     }
 }
 
@@ -1066,13 +1374,38 @@ pub struct StructDef {
 
 impl fmt::Display for StructDef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "struct {} {}", self.ident, self.variant)
+        write!(f, "struct {}", self.ident)?;
+        if !self.generics.is_empty() {
+            write!(f, "<")?;
+            for (i, generic) in self.generics.iter().enumerate() {
+                if i != 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{generic}")?;
+            }
+            write!(f, ">")?;
+        }
+        write!(f, "{}", self.variant)
     }
 }
 
 impl From<StructDef> for TokenStream {
-    fn from(_value: StructDef) -> Self {
-        todo!()
+    fn from(value: StructDef) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::Struct));
+        ts.push(Token::ident(value.ident));
+        if !value.generics.is_empty() {
+            ts.push(Token::Lt);
+            for (i, generic) in value.generics.iter().enumerate() {
+                if i != 0 {
+                    ts.push(Token::Comma);
+                }
+                ts.extend(TokenStream::from(generic.clone()));
+            }
+            ts.push(Token::Gt);
+        }
+        ts.extend(TokenStream::from(value.variant));
+        ts
     }
 }
 
@@ -1143,13 +1476,38 @@ pub struct UnionDef {
 
 impl fmt::Display for UnionDef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "union {} {}", self.ident, self.variants)
+        write!(f, "union {}", self.ident)?;
+        if !self.generics.is_empty() {
+            write!(f, "<")?;
+            for (i, generic) in self.generics.iter().enumerate() {
+                if i != 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{generic}")?;
+            }
+            write!(f, ">")?;
+        }
+        write!(f, "{}", self.variants)
     }
 }
 
 impl From<UnionDef> for TokenStream {
-    fn from(_value: UnionDef) -> Self {
-        todo!()
+    fn from(value: UnionDef) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::ident("union"));
+        ts.push(Token::ident(value.ident));
+        if !value.generics.is_empty() {
+            ts.push(Token::Lt);
+            for (i, generic) in value.generics.iter().enumerate() {
+                if i != 0 {
+                    ts.push(Token::Comma);
+                }
+                ts.extend(TokenStream::from(generic.clone()));
+            }
+            ts.push(Token::Gt);
+        }
+        ts.extend(TokenStream::from(value.variants));
+        ts
     }
 }
 
@@ -1190,7 +1548,18 @@ pub struct TraitDef {
 
 impl fmt::Display for TraitDef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "trait {} {{", self.ident)?;
+        writeln!(f, "trait {}", self.ident)?;
+        if !self.generics.is_empty() {
+            write!(f, "<")?;
+            for (i, generic) in self.generics.iter().enumerate() {
+                if i != 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{generic}")?;
+            }
+            write!(f, ">")?;
+        }
+        write!(f, "{{")?;
         for item in self.items.iter() {
             writeln!(f, "{item};")?;
         }
@@ -1199,8 +1568,27 @@ impl fmt::Display for TraitDef {
 }
 
 impl From<TraitDef> for TokenStream {
-    fn from(_value: TraitDef) -> Self {
-        todo!()
+    fn from(value: TraitDef) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::Trait));
+        ts.push(Token::ident(value.ident));
+        if !value.generics.is_empty() {
+            ts.push(Token::Lt);
+            for (i, generic) in value.generics.iter().enumerate() {
+                if i != 0 {
+                    ts.push(Token::Comma);
+                }
+                ts.extend(TokenStream::from(generic.clone()));
+            }
+            ts.push(Token::Gt);
+        }
+        ts.push(Token::OpenDelim(Delimiter::Brace));
+        for item in value.items.iter() {
+            ts.extend(TokenStream::from(item.clone()));
+            ts.push(Token::Semi);
+        }
+        ts.push(Token::CloseDelim(Delimiter::Brace));
+        ts
     }
 }
 
@@ -1245,6 +1633,7 @@ impl TraitDef {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Impl {
+    pub generics: Vec<GenericArg>,
     pub of_trait: Option<Type>,
     pub self_ty: Type,
     pub items: Vec<AssocItem>,
@@ -1252,9 +1641,20 @@ pub struct Impl {
 
 impl fmt::Display for Impl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "impl ")?;
+        write!(f, "impl")?;
+        if !self.generics.is_empty() {
+            write!(f, "<")?;
+            for (i, generic) in self.generics.iter().enumerate() {
+                if i != 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{generic}")?;
+            }
+            write!(f, ">")?;
+        }
+        write!(f, " ")?;
         if let Some(of_trait) = &self.of_trait {
-            write!(f, "{of_trait} for ", of_trait = of_trait)?;
+            write!(f, "{of_trait} for ")?;
         }
         writeln!(f, "{self_ty} {{", self_ty = self.self_ty)?;
         for item in self.items.iter() {
@@ -1265,8 +1665,31 @@ impl fmt::Display for Impl {
 }
 
 impl From<Impl> for TokenStream {
-    fn from(_value: Impl) -> Self {
-        todo!()
+    fn from(value: Impl) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::Impl));
+        if !value.generics.is_empty() {
+            ts.push(Token::Lt);
+            for (i, generic) in value.generics.iter().enumerate() {
+                if i != 0 {
+                    ts.push(Token::Comma);
+                }
+                ts.extend(TokenStream::from(generic.clone()));
+            }
+            ts.push(Token::Gt);
+        }
+        if let Some(of_trait) = value.of_trait {
+            ts.extend(TokenStream::from(of_trait));
+            ts.push(Token::Keyword(KeywordToken::For));
+        }
+        ts.extend(TokenStream::from(value.self_ty));
+        ts.push(Token::OpenDelim(Delimiter::Brace));
+        for item in value.items.iter() {
+            ts.extend(TokenStream::from(item.clone()));
+            ts.push(Token::Semi);
+        }
+        ts.push(Token::CloseDelim(Delimiter::Brace));
+        ts
     }
 }
 
@@ -1274,7 +1697,7 @@ impl EmptyItem for Impl {
     type Input = Type;
 
     fn empty(self_ty: impl Into<Self::Input>) -> Self {
-        Self::new(self_ty.into(), vec![])
+        Self::new(vec![], self_ty.into(), vec![])
     }
 }
 
@@ -1290,16 +1713,18 @@ impl HasItem<AssocItem> for Impl {
 impl_hasitem_methods!(Impl, AssocItem);
 
 impl Impl {
-    pub fn new(self_ty: Type, items: Vec<AssocItem>) -> Self {
+    pub fn new(generics: Vec<GenericArg>, self_ty: Type, items: Vec<AssocItem>) -> Self {
         Self {
+            generics,
             of_trait: None,
             self_ty,
             items,
         }
     }
 
-    pub fn trait_impl(self_ty: Type, of_trait: Type, items: Vec<AssocItem>) -> Self {
+    pub fn trait_impl(generics: Vec<GenericArg>, self_ty: Type, of_trait: Type, items: Vec<AssocItem>) -> Self {
         Self {
+            generics,
             of_trait: Some(of_trait),
             self_ty,
             items,
@@ -1315,13 +1740,18 @@ pub struct MacroDef {
 
 impl fmt::Display for MacroDef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "macro_rules! {} {{}}", self.ident)
+        write!(f, "macro_rules! {} {}", self.ident, self.args)
     }
 }
 
 impl From<MacroDef> for TokenStream {
-    fn from(_value: MacroDef) -> Self {
-        todo!()
+    fn from(value: MacroDef) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::ident("macro_rules"));
+        ts.push(Token::Not);
+        ts.push(Token::ident(value.ident));
+        ts.extend(TokenStream::from(value.args));
+        ts
     }
 }
 
@@ -1368,6 +1798,17 @@ impl fmt::Display for Visibility {
     }
 }
 
+impl From<Visibility> for TokenStream {
+    fn from(value: Visibility) -> Self {
+        match value {
+            Visibility::Inherited => TokenStream::new(),
+            Visibility::Public => {
+                TokenStream::from(vec![Token::Keyword(KeywordToken::Pub)])
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Item<K = ItemKind> {
     pub vis: Visibility,
@@ -1391,9 +1832,12 @@ impl<K: fmt::Display> fmt::Display for Item<K> {
     }
 }
 
-impl<K> From<Item<K>> for TokenStream {
-    fn from(_value: Item<K>) -> Self {
-        todo!()
+impl<K: Into<TokenStream>> From<Item<K>> for TokenStream {
+    fn from(value: Item<K>) -> Self {
+        let mut ts = TokenStream::new();
+        ts.extend(TokenStream::from(value.vis));
+        ts.extend(value.kind.into());
+        ts
     }
 }
 
@@ -1481,8 +1925,11 @@ impl fmt::Display for Use {
 }
 
 impl From<Use> for TokenStream {
-    fn from(_value: Use) -> Self {
-        todo!()
+    fn from(value: Use) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::Use));
+        ts.extend(TokenStream::from(value.0));
+        ts
     }
 }
 
@@ -1510,8 +1957,17 @@ impl fmt::Display for StaticItem {
 }
 
 impl From<StaticItem> for TokenStream {
-    fn from(_value: StaticItem) -> Self {
-        todo!()
+    fn from(value: StaticItem) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::Static));
+        ts.push(Token::ident(value.ident));
+        ts.push(Token::Colon);
+        ts.extend(TokenStream::from(value.ty));
+        if let Some(expr) = value.expr {
+            ts.push(Token::Eq);
+            ts.extend(TokenStream::from(expr));
+        }
+        ts
     }
 }
 
@@ -1539,8 +1995,17 @@ impl fmt::Display for ConstItem {
 }
 
 impl From<ConstItem> for TokenStream {
-    fn from(_value: ConstItem) -> Self {
-        todo!()
+    fn from(value: ConstItem) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::Const));
+        ts.push(Token::ident(value.ident));
+        ts.push(Token::Colon);
+        ts.extend(TokenStream::from(value.ty));
+        if let Some(expr) = value.expr {
+            ts.push(Token::Eq);
+            ts.extend(TokenStream::from(expr));
+        }
+        ts
     }
 }
 
@@ -1577,8 +2042,15 @@ impl fmt::Display for TyAlias {
 }
 
 impl From<TyAlias> for TokenStream {
-    fn from(_value: TyAlias) -> Self {
-        todo!()
+    fn from(value: TyAlias) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::Type));
+        ts.push(Token::ident(value.ident));
+        if let Some(ty) = value.ty {
+            ts.push(Token::Eq);
+            ts.extend(TokenStream::from(ty));
+        }
+        ts
     }
 }
 
@@ -1643,8 +2115,11 @@ impl fmt::Display for Semi {
 }
 
 impl From<Semi> for TokenStream {
-    fn from(_value: Semi) -> Self {
-        todo!()
+    fn from(value: Semi) -> Self {
+        let mut ts = TokenStream::new();
+        ts.extend(TokenStream::from(value.0));
+        ts.push(Token::Semi);
+        ts
     }
 }
 
@@ -1718,6 +2193,16 @@ impl From<Impl> for Stmt {
 impl From<MacroDef> for Stmt {
     fn from(item: MacroDef) -> Self {
         Self::Item(Item::inherited(item))
+    }
+}
+impl From<Call> for Stmt {
+    fn from(item: Call) -> Self {
+        Self::Expr(item.into())
+    }
+}
+impl From<MethodCall> for Stmt {
+    fn from(item: MethodCall) -> Self {
+        Self::Expr(item.into())
     }
 }
 

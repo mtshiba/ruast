@@ -1,6 +1,8 @@
 use std::fmt;
 
-use crate::{Path, Param, Const, PathSegment};
+use crate::expr::{Path, Const, PathSegment};
+use crate::stmt::Param;
+use crate::token::{TokenStream, Token, Delimiter, KeywordToken, BinOpToken};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MutTy {
@@ -17,6 +19,17 @@ impl fmt::Display for MutTy {
     }
 }
 
+impl From<MutTy> for TokenStream {
+    fn from(value: MutTy) -> Self {
+        let mut ts = TokenStream::new();
+        if value.mutable {
+            ts.push(Token::Keyword(KeywordToken::Mut));
+        }
+        ts.extend(TokenStream::from(*value.ty));
+        ts
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Ref {
     pub lifetime: Option<String>,
@@ -26,11 +39,22 @@ pub struct Ref {
 impl fmt::Display for Ref {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "&")?;
-        match &self.lifetime {
-            Some(lifetime) => write!(f, "'{lifetime} ")?,
-            None => (),
+        if let Some(lifetime) = &self.lifetime {
+            write!(f, "'{lifetime} ")?;
         }
         write!(f, "{ty}", ty = self.ty)
+    }
+}
+
+impl From<Ref> for TokenStream {
+    fn from(value: Ref) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::BinOp(BinOpToken::And));
+        if let Some(lifetime) = value.lifetime {
+            ts.push(Token::Lifetime(lifetime));
+        }
+        ts.extend(TokenStream::from(value.ty));
+        ts
     }
 }
 
@@ -51,6 +75,24 @@ impl fmt::Display for BareFn {
             write!(f, "{param}")?;
         }
         write!(f, ") -> {}", self.output)
+    }
+}
+
+impl From<BareFn> for TokenStream {
+    fn from(value: BareFn) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::Fn));
+        ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+        for (i, param) in value.inputs.iter().enumerate() {
+            if i > 0 {
+                ts.push(Token::Comma);
+            }
+            ts.extend(TokenStream::from(param.clone()));
+        }
+        ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        ts.push(Token::RArrow);
+        ts.extend(TokenStream::from(*value.output));
+        ts
     }
 }
 
@@ -75,6 +117,12 @@ impl fmt::Display for PolyTraitRef {
     }
 }
 
+impl From<PolyTraitRef> for TokenStream {
+    fn from(value: PolyTraitRef) -> Self {
+        TokenStream::from(value.trait_ref)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum GenericBound {
     Trait(PolyTraitRef),
@@ -86,6 +134,15 @@ impl fmt::Display for GenericBound {
         match self {
             Self::Trait(trait_ref) => write!(f, "{trait_ref}"),
             Self::Outlives(lifetime) => write!(f, "'{lifetime}"),
+        }
+    }
+}
+
+impl From<GenericBound> for TokenStream {
+    fn from(value: GenericBound) -> Self {
+        match value {
+            GenericBound::Trait(trait_ref) => TokenStream::from(trait_ref),
+            GenericBound::Outlives(lifetime) => TokenStream::from(vec![Token::Lifetime(lifetime)]),
         }
     }
 }
@@ -105,6 +162,22 @@ impl fmt::Display for TraitObject {
     }
 }
 
+impl From<TraitObject> for TokenStream {
+    fn from(value: TraitObject) -> Self {
+        let mut ts = TokenStream::new();
+        if value.is_dyn {
+            ts.push(Token::Keyword(KeywordToken::Dyn));
+        }
+        for (i, bound) in value.bounds.into_iter().enumerate() {
+            if i > 0 {
+                ts.push(Token::BinOp(BinOpToken::Plus));
+            }
+            ts.extend(TokenStream::from(bound.clone()));
+        }
+        ts
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ImplTrait {
     pub bounds: Vec<GenericBound>,
@@ -113,6 +186,20 @@ pub struct ImplTrait {
 impl fmt::Display for ImplTrait {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "impl {bounds}", bounds = self.bounds.iter().map(|b| format!("{b}")).collect::<Vec<_>>().join(" + "))
+    }
+}
+
+impl From<ImplTrait> for TokenStream {
+    fn from(value: ImplTrait) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::Impl));
+        for (i, bound) in value.bounds.into_iter().enumerate() {
+            if i > 0 {
+                ts.push(Token::BinOp(BinOpToken::Plus));
+            }
+            ts.extend(TokenStream::from(bound));
+        }
+        ts
     }
 }
 
@@ -152,5 +239,37 @@ impl fmt::Display for Type {
 impl<P: Into<PathSegment>> From<P> for Type {
     fn from(p: P) -> Self {
         Self::Path(Path::single(p))
+    }
+}
+
+impl From<Type> for TokenStream {
+    fn from(value: Type) -> Self {
+        match value {
+            Type::Slice(ty) => {
+                let mut ts = TokenStream::new();
+                ts.push(Token::OpenDelim(Delimiter::Bracket));
+                ts.extend(TokenStream::from(*ty));
+                ts.push(Token::CloseDelim(Delimiter::Bracket));
+                ts
+            },
+            Type::Array(ty, len) => {
+                let mut ts = TokenStream::new();
+                ts.push(Token::OpenDelim(Delimiter::Bracket));
+                ts.extend(TokenStream::from(*ty));
+                ts.push(Token::Semi);
+                ts.extend(TokenStream::from(*len));
+                ts.push(Token::CloseDelim(Delimiter::Bracket));
+                ts
+            },
+            Type::Ref(ref_) => TokenStream::from(ref_),
+            Type::BareFn(bare_fn) => TokenStream::from(bare_fn),
+            Type::Never => TokenStream::from(vec![Token::Not]),
+            Type::Path(path) => TokenStream::from(path),
+            Type::TraitObject(trait_object) => TokenStream::from(trait_object),
+            Type::ImplTrait(impl_trait) => TokenStream::from(impl_trait),
+            Type::Infer => TokenStream::from(vec![Token::ident("_")]),
+            Type::ImplicitSelf => TokenStream::new(),
+            Type::Err => TokenStream::from(vec![Token::ident("<Err>")]),
+        }
     }
 }

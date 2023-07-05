@@ -1,13 +1,21 @@
 use std::fmt;
 use std::ops::{Add, Sub, Mul, Div, Neg};
 
-use crate::{impl_display_for_enum, impl_obvious_conversion, Use};
-use crate::stmt::{Pat, Block, FnDecl, EmptyItem};
-use crate::token::{Token, TokenStream, Delimiter};
+use crate::{impl_display_for_enum, impl_obvious_conversion};
+use crate::stmt::{Use, Pat, Block, FnDecl, EmptyItem};
+use crate::token::{Token, TokenStream, BinOpToken, KeywordToken, Delimiter};
 use crate::ty::Type;
 
 pub trait Callable {
     fn call(self, args: Vec<Expr>) -> Call;
+    fn call1(self, arg: impl Into<Expr>) -> Call
+    where Self: Sized {
+        self.call(vec![arg.into()])
+    }
+    fn call2(self, arg1: impl Into<Expr>, args2: impl Into<Expr>) -> Call
+    where Self: Sized {
+        self.call(vec![arg1.into(), args2.into()])
+    }
 }
 
 impl<E: Into<Expr>> Callable for E {
@@ -17,11 +25,19 @@ impl<E: Into<Expr>> Callable for E {
 }
 
 pub trait MethodCallable {
-    fn method_call(self, seg: PathSegment, args: Vec<Expr>) -> MethodCall;
+    fn method_call(self, seg: impl Into<PathSegment>, args: Vec<Expr>) -> MethodCall;
+    fn method_call1(self, seg: impl Into<PathSegment>, arg: impl Into<Expr>) -> MethodCall
+    where Self: Sized {
+        self.method_call(seg, vec![arg.into()])
+    }
+    fn method_call2(self, seg: impl Into<PathSegment>, arg1: impl Into<Expr>, arg2: impl Into<Expr>) -> MethodCall
+    where Self: Sized {
+        self.method_call(seg, vec![arg1.into(), arg2.into()])
+    }
 }
 
 impl<E: Into<Expr>> MethodCallable for E {
-    fn method_call(self, seg: PathSegment, args: Vec<Expr>) -> MethodCall {
+    fn method_call(self, seg: impl Into<PathSegment>, args: Vec<Expr>) -> MethodCall {
         MethodCall::new(self, seg, args)
     }
 }
@@ -83,6 +99,16 @@ pub trait Assignable {
 impl<E: Into<Expr>> Assignable for E {
     fn assign(self, rhs: impl Into<Expr>) -> Assign {
         Assign::new(self, rhs)
+    }
+}
+
+pub trait IntoTokens {
+    fn into_tokens(self) -> TokenStream;
+}
+
+impl<I: Into<TokenStream>> IntoTokens for I {
+    fn into_tokens(self) -> TokenStream {
+        self.into()
     }
 }
 
@@ -198,6 +224,12 @@ impl fmt::Display for Const {
     }
 }
 
+impl From<Const> for TokenStream {
+    fn from(value: Const) -> Self {
+        TokenStream::from(value.0)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Array(Vec<Expr>);
 
@@ -222,8 +254,17 @@ impl From<Vec<Expr>> for Array {
 }
 
 impl From<Array> for TokenStream {
-    fn from(_value: Array) -> Self {
-        todo!()
+    fn from(value: Array) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::OpenDelim(Delimiter::Bracket));
+        for (i, expr) in value.0.into_iter().enumerate() {
+            if i > 0 {
+                ts.push(Token::Comma);
+            }
+            ts.extend(TokenStream::from(expr));
+        }
+        ts.push(Token::CloseDelim(Delimiter::Bracket));
+        ts
     }
 }
 
@@ -251,8 +292,27 @@ impl From<Vec<Expr>> for Tuple {
 }
 
 impl From<Tuple> for TokenStream {
-    fn from(_value: Tuple) -> Self {
-        todo!()
+    fn from(value: Tuple) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+        for (i, expr) in value.0.into_iter().enumerate() {
+            if i > 0 {
+                ts.push(Token::Comma);
+            }
+            ts.extend(TokenStream::from(expr));
+        }
+        ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        ts
+    }
+}
+
+impl Tuple {
+    pub fn new(exprs: Vec<Expr>) -> Self {
+        Self(exprs)
+    }
+
+    pub fn unit() -> Self {
+        Self::new(vec![])
     }
 }
 
@@ -270,8 +330,12 @@ impl fmt::Display for Binary {
 }
 
 impl From<Binary> for TokenStream {
-    fn from(_value: Binary) -> Self {
-        todo!()
+    fn from(value: Binary) -> Self {
+        let mut ts = TokenStream::new();
+        ts.extend(TokenStream::from(*value.lhs));
+        ts.push(Token::from(value.op));
+        ts.extend(TokenStream::from(*value.rhs));
+        ts
     }
 }
 
@@ -331,6 +395,16 @@ impl fmt::Display for UnaryOpKind {
     }
 }
 
+impl From<UnaryOpKind> for Token {
+    fn from(value: UnaryOpKind) -> Self {
+        match value {
+            UnaryOpKind::Deref => Token::BinOp(BinOpToken::Star),
+            UnaryOpKind::Not => Token::Not,
+            UnaryOpKind::Neg => Token::BinOp(BinOpToken::Minus),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Unary {
     pub op: UnaryOpKind,
@@ -344,8 +418,11 @@ impl fmt::Display for Unary {
 }
 
 impl From<Unary> for TokenStream {
-    fn from(_value: Unary) -> Self {
-        todo!()
+    fn from(value: Unary) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::from(value.op));
+        ts.extend(TokenStream::from(*value.expr));
+        ts
     }
 }
 
@@ -379,8 +456,13 @@ impl fmt::Display for Let {
 }
 
 impl From<Let> for TokenStream {
-    fn from(_value: Let) -> Self {
-        todo!()
+    fn from(value: Let) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::Let));
+        ts.extend(TokenStream::from(*value.pat));
+        ts.push(Token::Eq);
+        ts.extend(TokenStream::from(*value.expr));
+        ts
     }
 }
 
@@ -411,8 +493,18 @@ impl fmt::Display for If {
 }
 
 impl From<If> for TokenStream {
-    fn from(_value: If) -> Self {
-        todo!()
+    fn from(value: If) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::If));
+        ts.extend(TokenStream::from(*value.cond));
+        ts.extend(TokenStream::from(value.then));
+        if let Some(else_) = value.else_ {
+            ts.push(Token::Keyword(KeywordToken::Else));
+            ts.push(Token::OpenDelim(Delimiter::Brace));
+            ts.extend(TokenStream::from(*else_));
+            ts.push(Token::CloseDelim(Delimiter::Brace));
+        }
+        ts
     }
 }
 
@@ -429,8 +521,12 @@ impl fmt::Display for While {
 }
 
 impl From<While> for TokenStream {
-    fn from(_value: While) -> Self {
-        todo!()
+    fn from(value: While) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::While));
+        ts.extend(TokenStream::from(*value.cond));
+        ts.extend(TokenStream::from(value.body));
+        ts
     }
 }
 
@@ -448,8 +544,14 @@ impl fmt::Display for ForLoop {
 }
 
 impl From<ForLoop> for TokenStream {
-    fn from(_value: ForLoop) -> Self {
-        todo!()
+    fn from(value: ForLoop) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::For));
+        ts.extend(TokenStream::from(*value.pat));
+        ts.push(Token::Keyword(KeywordToken::In));
+        ts.extend(TokenStream::from(*value.expr));
+        ts.extend(TokenStream::from(value.body));
+        ts
     }
 }
 
@@ -465,8 +567,11 @@ impl fmt::Display for Loop {
 }
 
 impl From<Loop> for TokenStream {
-    fn from(_value: Loop) -> Self {
-        todo!()
+    fn from(value: Loop) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::Loop));
+        ts.extend(TokenStream::from(value.body));
+        ts
     }
 }
 
@@ -492,8 +597,19 @@ impl fmt::Display for Arm {
 }
 
 impl From<Arm> for TokenStream {
-    fn from(_value: Arm) -> Self {
-        todo!()
+    fn from(value: Arm) -> Self {
+        let mut ts = TokenStream::new();
+        for attr in value.attrs.iter() {
+            ts.extend(TokenStream::from(attr.clone()));
+        }
+        ts.extend(TokenStream::from(*value.pat));
+        if let Some(guard) = value.guard {
+            ts.push(Token::Keyword(KeywordToken::If));
+            ts.extend(TokenStream::from(*guard));
+        }
+        ts.push(Token::FatArrow);
+        ts.extend(TokenStream::from(*value.body));
+        ts
     }
 }
 
@@ -514,8 +630,17 @@ impl fmt::Display for Match {
 }
 
 impl From<Match> for TokenStream {
-    fn from(_value: Match) -> Self {
-        todo!()
+    fn from(value: Match) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::Match));
+        ts.extend(TokenStream::from(*value.expr));
+        ts.push(Token::OpenDelim(Delimiter::Brace));
+        for arm in value.arms {
+            ts.extend(TokenStream::from(arm));
+            ts.push(Token::Comma);
+        }
+        ts.push(Token::CloseDelim(Delimiter::Brace));
+        ts
     }
 }
 
@@ -547,8 +672,23 @@ impl fmt::Display for Closure {
 }
 
 impl From<Closure> for TokenStream {
-    fn from(_value: Closure) -> Self {
-        todo!()
+    fn from(value: Closure) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::BinOp(BinOpToken::Or));
+        let mut iter = value.fn_decl.inputs.iter();
+        if let Some(input) = iter.next() {
+            ts.extend(TokenStream::from(input.clone()));
+            for input in iter {
+                ts.push(Token::Comma);
+                ts.extend(TokenStream::from(input.clone()));
+            }
+        }
+        ts.push(Token::BinOp(BinOpToken::Or));
+        ts.push(Token::FatArrow);
+        ts.push(Token::OpenDelim(Delimiter::Brace));
+        ts.extend(TokenStream::from(*value.body));
+        ts.push(Token::CloseDelim(Delimiter::Brace));
+        ts
     }
 }
 
@@ -564,8 +704,11 @@ impl fmt::Display for Async {
 }
 
 impl From<Async> for TokenStream {
-    fn from(_value: Async) -> Self {
-        todo!()
+    fn from(value: Async) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::Async));
+        ts.extend(TokenStream::from(value.block));
+        ts
     }
 }
 
@@ -595,8 +738,12 @@ impl fmt::Display for Await {
 }
 
 impl From<Await> for TokenStream {
-    fn from(_value: Await) -> Self {
-        todo!()
+    fn from(value: Await) -> Self {
+        let mut ts = TokenStream::new();
+        ts.extend(TokenStream::from(*value.expr));
+        ts.push(Token::Dot);
+        ts.push(Token::Keyword(KeywordToken::Await));
+        ts
     }
 }
 
@@ -618,8 +765,11 @@ impl fmt::Display for TryBlock {
 }
 
 impl From<TryBlock> for TokenStream {
-    fn from(_value: TryBlock) -> Self {
-        todo!()
+    fn from(value: TryBlock) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::Try));
+        ts.extend(TokenStream::from(value.block));
+        ts
     }
 }
 
@@ -650,8 +800,12 @@ impl fmt::Display for Field {
 }
 
 impl From<Field> for TokenStream {
-    fn from(_value: Field) -> Self {
-        todo!()
+    fn from(value: Field) -> Self {
+        let mut ts = TokenStream::new();
+        ts.extend(TokenStream::from(*value.expr));
+        ts.push(Token::Dot);
+        ts.push(Token::ident(value.ident));
+        ts
     }
 }
 
@@ -677,8 +831,13 @@ impl fmt::Display for Index {
 }
 
 impl From<Index> for TokenStream {
-    fn from(_value: Index) -> Self {
-        todo!()
+    fn from(value: Index) -> Self {
+        let mut ts = TokenStream::new();
+        ts.extend(TokenStream::from(*value.expr));
+        ts.push(Token::OpenDelim(Delimiter::Bracket));
+        ts.extend(TokenStream::from(*value.index));
+        ts.push(Token::CloseDelim(Delimiter::Bracket));
+        ts
     }
 }
 
@@ -718,8 +877,23 @@ impl fmt::Display for Range {
 }
 
 impl From<Range> for TokenStream {
-    fn from(_value: Range) -> Self {
-        todo!()
+    fn from(value: Range) -> Self {
+        let mut ts = TokenStream::new();
+        if let Some(start) = value.start {
+            ts.extend(TokenStream::from(*start));
+        }
+        match value.op {
+            RangeLimits::HalfOpen => {
+                ts.push(Token::DotDot);
+            },
+            RangeLimits::Closed => {
+                ts.push(Token::DotDotEq);
+            },
+        }
+        if let Some(end) = value.end {
+            ts.extend(TokenStream::from(*end));
+        }
+        ts
     }
 }
 
@@ -733,8 +907,8 @@ impl fmt::Display for Underscore {
 }
 
 impl From<Underscore> for TokenStream {
-    fn from(_value: Underscore) -> Self {
-        todo!()
+    fn from(_: Underscore) -> Self {
+        TokenStream::from(vec![Token::ident("_")])
     }
 }
 
@@ -754,8 +928,13 @@ impl fmt::Display for Return {
 }
 
 impl From<Return> for TokenStream {
-    fn from(_value: Return) -> Self {
-        todo!()
+    fn from(value: Return) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::Return));
+        if let Some(expr) = value.expr {
+            ts.extend(TokenStream::from(*expr));
+        }
+        ts
     }
 }
 
@@ -780,8 +959,12 @@ impl fmt::Display for Assign {
 }
 
 impl From<Assign> for TokenStream {
-    fn from(_value: Assign) -> Self {
-        todo!()
+    fn from(value: Assign) -> Self {
+        let mut ts = TokenStream::new();
+        ts.extend(TokenStream::from(*value.lhs));
+        ts.push(Token::Eq);
+        ts.extend(TokenStream::from(*value.rhs));
+        ts
     }
 }
 
@@ -861,6 +1044,37 @@ impl BinOpKind {
     }
 }
 
+impl From<BinOpKind> for Token {
+    fn from(value: BinOpKind) -> Self {
+        match value {
+            BinOpKind::Add => Token::BinOp(BinOpToken::Plus),
+            BinOpKind::Sub => Token::BinOp(BinOpToken::Minus),
+            BinOpKind::Mul => Token::BinOp(BinOpToken::Star),
+            BinOpKind::Div => Token::BinOp(BinOpToken::Slash),
+            BinOpKind::Rem => Token::BinOp(BinOpToken::Percent),
+            BinOpKind::And => Token::BinOp(BinOpToken::And),
+            BinOpKind::Or => Token::BinOp(BinOpToken::Or),
+            BinOpKind::BitAnd => Token::AndAnd,
+            BinOpKind::BitOr => Token::OrOr,
+            BinOpKind::BitXor => Token::BinOp(BinOpToken::Caret),
+            BinOpKind::Shl => Token::BinOp(BinOpToken::Shl),
+            BinOpKind::Shr => Token::BinOp(BinOpToken::Shr),
+            BinOpKind::Eq => Token::EqEq,
+            BinOpKind::Lt => Token::Lt,
+            BinOpKind::Le => Token::Le,
+            BinOpKind::Ne => Token::Ne,
+            BinOpKind::Ge => Token::Ge,
+            BinOpKind::Gt => Token::Gt,
+        }
+    }
+}
+
+impl From<BinOpKind> for TokenStream {
+    fn from(value: BinOpKind) -> Self {
+        Self::from(vec![Token::from(value)])
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AssignOp {
     pub lhs: Box<Expr>,
@@ -875,8 +1089,12 @@ impl fmt::Display for AssignOp {
 }
 
 impl From<AssignOp> for TokenStream {
-    fn from(_value: AssignOp) -> Self {
-        todo!()
+    fn from(value: AssignOp) -> Self {
+        let mut ts = TokenStream::new();
+        ts.extend(TokenStream::from(*value.lhs));
+        ts.push(Token::from(value.op));
+        ts.extend(TokenStream::from(*value.rhs));
+        ts
     }
 }
 
@@ -925,8 +1143,8 @@ impl<S: Into<String>> From<S> for Lit {
 }
 
 impl From<Lit> for TokenStream {
-    fn from(_value: Lit) -> Self {
-        todo!()
+    fn from(value: Lit) -> Self {
+        TokenStream::from(vec![Token::Lit(value)])
     }
 }
 
@@ -952,8 +1170,14 @@ impl fmt::Display for Cast {
 }
 
 impl From<Cast> for TokenStream {
-    fn from(_value: Cast) -> Self {
-        todo!()
+    fn from(value: Cast) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+        ts.extend(TokenStream::from(*value.expr));
+        ts.push(Token::Keyword(KeywordToken::As));
+        ts.extend(TokenStream::from(value.ty));
+        ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        ts
     }
 }
 
@@ -979,8 +1203,14 @@ impl fmt::Display for TypeAscription {
 }
 
 impl From<TypeAscription> for TokenStream {
-    fn from(_value: TypeAscription) -> Self {
-        todo!()
+    fn from(value: TypeAscription) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+        ts.extend(TokenStream::from(*value.expr));
+        ts.push(Token::Colon);
+        ts.extend(TokenStream::from(value.ty));
+        ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        ts
     }
 }
 
@@ -1002,20 +1232,29 @@ pub struct Call {
 impl fmt::Display for Call {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}(", self.func)?;
-        let mut iter = self.args.iter();
-        if let Some(arg) = iter.next() {
-            write!(f, "{arg}")?;
-            for arg in iter {
-                write!(f, ", {arg}")?;
+        for (i, arg) in self.args.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
             }
+            write!(f, "{arg}")?;
         }
         write!(f, ")")
     }
 }
 
 impl From<Call> for TokenStream {
-    fn from(_value: Call) -> Self {
-        todo!()
+    fn from(value: Call) -> Self {
+        let mut ts = TokenStream::new();
+        ts.extend(TokenStream::from(*value.func));
+        ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+        for (i, arg) in value.args.iter().enumerate() {
+            if i > 0 {
+                ts.push(Token::Comma);
+            }
+            ts.extend(TokenStream::from(arg.clone()));
+        }
+        ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        ts
     }
 }
 
@@ -1038,20 +1277,31 @@ pub struct MethodCall {
 impl fmt::Display for MethodCall {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}.{}(", self.receiver, self.seg)?;
-        let mut iter = self.args.iter();
-        if let Some(arg) = iter.next() {
-            write!(f, "{arg}")?;
-            for arg in iter {
-                write!(f, ", {arg}")?;
+        for (i, arg) in self.args.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
             }
+            write!(f, "{arg}")?;
         }
         write!(f, ")")
     }
 }
 
 impl From<MethodCall> for TokenStream {
-    fn from(_value: MethodCall) -> Self {
-        todo!()
+    fn from(value: MethodCall) -> Self {
+        let mut ts = TokenStream::new();
+        ts.extend(TokenStream::from(*value.receiver));
+        ts.push(Token::Dot);
+        ts.extend(TokenStream::from(value.seg));
+        ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+        for (i, arg) in value.args.iter().enumerate() {
+            if i > 0 {
+                ts.push(Token::Comma);
+            }
+            ts.extend(TokenStream::from(arg.clone()));
+        }
+        ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        ts
     }
 }
 
@@ -1090,8 +1340,17 @@ impl<S: Into<PathSegment>> From<S> for Path {
 }
 
 impl From<Path> for TokenStream {
-    fn from(_value: Path) -> Self {
-        todo!()
+    fn from(value: Path) -> Self {
+        let mut ts = TokenStream::new();
+        let mut iter = value.segments.iter();
+        if let Some(segment) = iter.next() {
+            ts.extend(TokenStream::from(segment.clone()));
+            for segment in iter {
+                ts.push(Token::ModSep);
+                ts.extend(TokenStream::from(segment.clone()));
+            }
+        }
+        ts
     }
 }
 
@@ -1126,12 +1385,11 @@ impl fmt::Display for PathSegment {
         write!(f, "{}", self.ident)?;
         if let Some(args) = &self.args {
             write!(f, "::<")?;
-            let mut iter = args.iter();
-            if let Some(arg) = iter.next() {
-                write!(f, "{arg}")?;
-                for arg in iter {
-                    write!(f, ", {arg}")?;
+            for (i, arg) in args.iter().enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
                 }
+                write!(f, "{arg}")?;
             }
             write!(f, ">")?;
         }
@@ -1149,8 +1407,33 @@ impl<S: Into<String>> From<S> for PathSegment {
 }
 
 impl From<PathSegment> for TokenStream {
-    fn from(_value: PathSegment) -> Self {
-        todo!()
+    fn from(value: PathSegment) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::ident(value.ident));
+        if let Some(args) = value.args {
+            ts.push(Token::OpenDelim(Delimiter::Bracket));
+            for (i, arg) in args.iter().enumerate() {
+                if i > 0 {
+                    ts.push(Token::Comma);
+                }
+                ts.extend(TokenStream::from(arg.clone()));
+            }
+            ts.push(Token::CloseDelim(Delimiter::Bracket));
+        }
+        ts
+    }
+}
+
+impl PathSegment {
+    pub fn new(ident: impl Into<String>, args: Option<Vec<GenericArg>>) -> Self {
+        Self {
+            ident: ident.into(),
+            args,
+        }
+    }
+
+    pub fn simple(ident: impl Into<String>) -> Self {
+        Self::new(ident, None)
     }
 }
 
@@ -1194,8 +1477,25 @@ impl fmt::Display for AddrOf {
 }
 
 impl From<AddrOf> for TokenStream {
-    fn from(_value: AddrOf) -> Self {
-        todo!()
+    fn from(value: AddrOf) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::BinOp(BinOpToken::And));
+        match (value.kind, value.mutability) {
+            (BorrowKind::Ref, Mutability::Not) => {},
+            (BorrowKind::Ref, Mutability::Mut) => {
+                ts.push(Token::Keyword(KeywordToken::Mut));
+            },
+            (BorrowKind::Raw, Mutability::Not) => {
+                ts.push(Token::ident("raw"));
+                ts.push(Token::Keyword(KeywordToken::Const));
+            },
+            (BorrowKind::Raw, Mutability::Mut) => {
+                ts.push(Token::ident("raw"));
+                ts.push(Token::Keyword(KeywordToken::Mut));
+            },
+        }
+        ts.extend(TokenStream::from(*value.expr));
+        ts
     }
 }
 
@@ -1219,8 +1519,16 @@ impl fmt::Display for Break {
 }
 
 impl From<Break> for TokenStream {
-    fn from(_value: Break) -> Self {
-        todo!()
+    fn from(value: Break) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::Break));
+        if let Some(label) = value.label {
+            ts.push(Token::lifetime(label));
+        }
+        if let Some(expr) = value.expr {
+            ts.extend(TokenStream::from(*expr));
+        }
+        ts
     }
 }
 
@@ -1240,8 +1548,13 @@ impl fmt::Display for Continue {
 }
 
 impl From<Continue> for TokenStream {
-    fn from(_value: Continue) -> Self {
-        todo!()
+    fn from(value: Continue) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::Continue));
+        if let Some(label) = value.label {
+            ts.push(Token::lifetime(label));
+        }
+        ts
     }
 }
 
@@ -1263,8 +1576,12 @@ impl fmt::Display for GenericArg {
 }
 
 impl From<GenericArg> for TokenStream {
-    fn from(_value: GenericArg) -> Self {
-        todo!()
+    fn from(value: GenericArg) -> Self {
+        match value {
+            GenericArg::Lifetime(lifetime) => TokenStream::from(vec![Token::lifetime(lifetime)]),
+            GenericArg::Type(ty) => TokenStream::from(ty),
+            GenericArg::Const(constant) => TokenStream::from(constant),
+        }
     }
 }
 
@@ -1328,8 +1645,32 @@ impl From<Vec<Token>> for DelimArgs {
 }
 
 impl From<DelimArgs> for TokenStream {
-    fn from(_value: DelimArgs) -> Self {
-        todo!()
+    fn from(value: DelimArgs) -> Self {
+        let mut ts = TokenStream::new();
+        match value.delim {
+            MacDelimiter::Parenthesis => {
+                ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+            },
+            MacDelimiter::Bracket => {
+                ts.push(Token::OpenDelim(Delimiter::Bracket));
+            },
+            MacDelimiter::Brace => {
+                ts.push(Token::OpenDelim(Delimiter::Brace));
+            },
+        }
+        ts.extend(value.tokens);
+        match value.delim {
+            MacDelimiter::Parenthesis => {
+                ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+            },
+            MacDelimiter::Bracket => {
+                ts.push(Token::CloseDelim(Delimiter::Bracket));
+            },
+            MacDelimiter::Brace => {
+                ts.push(Token::CloseDelim(Delimiter::Brace));
+            },
+        }
+        ts
     }
 }
 
@@ -1381,8 +1722,12 @@ impl fmt::Display for MacCall {
 }
 
 impl From<MacCall> for TokenStream {
-    fn from(_value: MacCall) -> Self {
-        todo!()
+    fn from(value: MacCall) -> Self {
+        let mut ts = TokenStream::new();
+        ts.extend(TokenStream::from(value.path));
+        ts.push(Token::Not);
+        ts.extend(TokenStream::from(value.args));
+        ts
     }
 }
 
@@ -1398,7 +1743,11 @@ impl MacCall {
         Self {
             path,
             args: DelimArgs::bracket(
-                TokenStream::aggregate(tokens.into_iter().map(|t| t.into())),
+                TokenStream::aggregate(tokens.into_iter().map(|t| {
+                    let mut ts = t.into();
+                    ts.push(Token::Comma);
+                    ts
+                })),
             )
         }
     }
@@ -1413,6 +1762,16 @@ pub struct ExprField {
 impl fmt::Display for ExprField {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{ident}: {expr}", ident = self.ident, expr = self.expr)
+    }
+}
+
+impl From<ExprField> for TokenStream {
+    fn from(value: ExprField) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::ident(value.ident));
+        ts.push(Token::Colon);
+        ts.extend(TokenStream::from(value.expr));
+        ts
     }
 }
 
@@ -1442,16 +1801,29 @@ pub struct Struct {
 impl fmt::Display for Struct {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} {{", self.path)?;
-        for field in self.fields.iter() {
-            writeln!(f, "{field},")?;
+        for (i, field) in self.fields.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            writeln!(f, "{field}")?;
         }
         write!(f, "}}")
     }
 }
 
 impl From<Struct> for TokenStream {
-    fn from(_value: Struct) -> Self {
-        todo!()
+    fn from(value: Struct) -> Self {
+        let mut ts = TokenStream::new();
+        ts.extend(TokenStream::from(value.path));
+        ts.push(Token::OpenDelim(Delimiter::Brace));
+        for (i, field) in value.fields.iter().enumerate() {
+            if i > 0 {
+                ts.push(Token::Comma);
+            }
+            ts.extend(TokenStream::from(field.clone()));
+        }
+        ts.push(Token::CloseDelim(Delimiter::Brace));
+        ts
     }
 }
 
@@ -1477,8 +1849,14 @@ impl fmt::Display for Repeat {
 }
 
 impl From<Repeat> for TokenStream {
-    fn from(_value: Repeat) -> Self {
-        todo!()
+    fn from(value: Repeat) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::OpenDelim(Delimiter::Bracket));
+        ts.extend(TokenStream::from(*value.expr));
+        ts.push(Token::Semi);
+        ts.extend(TokenStream::from(*value.len));
+        ts.push(Token::CloseDelim(Delimiter::Bracket));
+        ts
     }
 }
 
@@ -1503,8 +1881,11 @@ impl fmt::Display for Try {
 }
 
 impl From<Try> for TokenStream {
-    fn from(_value: Try) -> Self {
-        todo!()
+    fn from(value: Try) -> Self {
+        let mut ts = TokenStream::new();
+        ts.extend(TokenStream::from(*value.expr));
+        ts.push(Token::Question);
+        ts
     }
 }
 

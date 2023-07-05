@@ -50,6 +50,7 @@ impl ToTokens for Token {
             Self::At => tokens.extend([TokenTree::Punct(Punct::new('@', Spacing::Alone))]),
             Self::Dot => tokens.extend([TokenTree::Punct(Punct::new('.', Spacing::Alone))]),
             Self::DotDot => tokens.extend([TokenTree::Punct(Punct::new('.', Spacing::Joint)), TokenTree::Punct(Punct::new('.', Spacing::Alone))]),
+            Self::DotDotDot => tokens.extend([TokenTree::Punct(Punct::new('.', Spacing::Joint)), TokenTree::Punct(Punct::new('.', Spacing::Joint)), TokenTree::Punct(Punct::new('.', Spacing::Alone))]),
             Self::DotDotEq => tokens.extend([TokenTree::Punct(Punct::new('.', Spacing::Joint)), TokenTree::Punct(Punct::new('.', Spacing::Joint)), TokenTree::Punct(Punct::new('=', Spacing::Alone))]),
             Self::Comma => tokens.extend([TokenTree::Punct(Punct::new(',', Spacing::Alone))]),
             Self::Semi => tokens.extend([TokenTree::Punct(Punct::new(';', Spacing::Alone))]),
@@ -77,6 +78,7 @@ impl ToTokens for Token {
             Self::Lit(lit) => lit.to_tokens(tokens),
             Self::Ident(ident) => tokens.extend([TokenTree::Ident(Ident::new(ident, Span::call_site()))]),
             Self::Lifetime(lifetime) => tokens.extend([TokenTree::Ident(Ident::new(lifetime, Span::call_site()))]),
+            Self::Keyword(keyword) => tokens.extend([TokenTree::Ident(Ident::new(&keyword.to_string(), Span::call_site()))]),
             Self::Eof => {},
         }
     }
