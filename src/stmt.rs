@@ -6,8 +6,22 @@ use crate::ty::Type;
 use crate::token::{Token, TokenStream, KeywordToken, BinOpToken, Delimiter};
 use crate::{impl_obvious_conversion, impl_display_for_enum, impl_hasitem_methods};
 
+#[cfg(feature = "tokenize")]
+crate::impl_to_tokens!(
+    Local, LocalKind,
+    PatField, IdentPat, StructPat, TupleStructPat, RefPat, Pat,
+    Param, FnDecl, Fn, LoadedMod, Mod, Block,
+    FieldDef, VariantData, Variant, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef,
+    Item, ItemKind, Use, StaticItem, ConstItem, TyAlias,
+    AssocItemKind, AssocItem, Empty, Semi, Stmt,
+);
+
 pub trait Ident {
     fn ident(&self) -> &str;
+}
+pub trait AddVisibility<K> {
+    fn inherited(item: impl Into<K>) -> Self;
+    fn public(item: impl Into<K>) -> Self;
 }
 pub trait MaybeIdent {
     fn ident(&self) -> Option<&str>;
@@ -34,6 +48,16 @@ pub trait HasItem<Itm: MaybeIdent = Item> {
     fn add_item(&mut self, item: impl Into<Itm>) {
         self.items_mut().push(item.into());
     }
+    fn add_pub_item<K>(&mut self, item: impl Into<K>)
+    where Itm: AddVisibility<K> {
+        let item = Itm::public(item);
+        self.items_mut().push(item);
+    }
+    fn with_pub_item<K>(mut self, item: impl Into<K>) -> Self
+    where Self: Sized, Itm: AddVisibility<K> {
+        self.add_pub_item(item);
+        self
+    }
     fn remove_item(&mut self, index: usize) -> Option<Itm> {
         self.items_mut().get(index)?;
         Some(self.items_mut().remove(index))
@@ -50,6 +74,16 @@ pub trait HasItem<Itm: MaybeIdent = Item> {
     }
 }
 
+pub trait Semicolon {
+    fn semi(self) -> Semi;
+}
+
+impl<E: Into<Expr>> Semicolon for E {
+    fn semi(self) -> Semi {
+        Semi::new(self)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Local {
     pub pat: Pat,
@@ -63,7 +97,7 @@ impl fmt::Display for Local {
         if let Some(ty) = &self.ty {
             write!(f, ": {ty}")?;
         }
-        write!(f, "{kind}", kind = self.kind)
+        write!(f, "{kind};", kind = self.kind)
     }
 }
 
@@ -77,6 +111,7 @@ impl From<Local> for TokenStream {
             ts.extend(TokenStream::from(ty));
         }
         ts.extend(TokenStream::from(value.kind));
+        ts.push(Token::Semi);
         ts
     }
 }
@@ -547,6 +582,22 @@ impl Param {
             pat, ty
         }
     }
+
+    pub fn slf() -> Self {
+        Self::new(Pat::slf(), Type::ImplicitSelf)
+    }
+
+    pub fn ref_self() -> Self {
+        Self::new(Pat::ref_self(), Type::ImplicitSelf)
+    }
+
+    pub fn ref_mut_self() -> Self {
+        Self::new(Pat::ref_mut_self(), Type::ImplicitSelf)
+    }
+
+    pub fn mut_self() -> Self {
+        Self::new(Pat::mut_self(), Type::ImplicitSelf)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -671,6 +722,15 @@ impl Ident for Fn {
 }
 
 impl Fn {
+    pub fn new(ident: impl Into<String>, generics: Vec<GenericArg>, fn_decl: FnDecl, body: Block) -> Self {
+        Self {
+            ident: ident.into(),
+            generics,
+            fn_decl,
+            body: Some(body),
+        }
+    }
+
     pub fn main(output: Option<Type>, body: Block) -> Self {
         Self {
             ident: "main".to_string(),
@@ -702,8 +762,17 @@ impl Fn {
         self.body.get_or_insert_with(Block::empty).add_stmt(stmt);
     }
 
+    pub fn add_semi_stmt(&mut self, expr: impl Into<Expr>) {
+        self.body.get_or_insert_with(Block::empty).add_stmt(Semi::new(expr));
+    }
+
     pub fn with_stmt(mut self, stmt: impl Into<Stmt>) -> Self {
         self.add_stmt(stmt);
+        self
+    }
+
+    pub fn with_semi_stmt(mut self, expr: impl Into<Expr>) -> Self {
+        self.add_semi_stmt(expr);
         self
     }
 
@@ -858,7 +927,7 @@ impl fmt::Display for Block {
         }
         writeln!(f, "{{")?;
         for stmt in self.stmts.iter() {
-            writeln!(f, "{stmt};")?;
+            writeln!(f, "{stmt}")?;
         }
         write!(f, "}}")
     }
@@ -891,7 +960,7 @@ impl From<Block> for TokenStream {
         ts.push(Token::OpenDelim(Delimiter::Brace));
         for stmt in value.stmts.iter() {
             ts.extend(TokenStream::from(stmt.clone()));
-            ts.push(Token::Semi);
+            // ts.push(Token::Semi);
         }
         ts.push(Token::CloseDelim(Delimiter::Brace));
         ts
@@ -912,6 +981,10 @@ impl_hasitem_methods!(Block, Stmt, Deref);
 impl Block {
     pub fn new(stmts: Vec<Stmt>, label: Option<String>) -> Self {
         Self { stmts, label }
+    }
+
+    pub fn single(expr: impl Into<Expr>) -> Self {
+        Self::new(vec![Stmt::Expr(expr.into())], None)
     }
 
     pub fn empty() -> Self {
@@ -1585,7 +1658,7 @@ impl From<TraitDef> for TokenStream {
         ts.push(Token::OpenDelim(Delimiter::Brace));
         for item in value.items.iter() {
             ts.extend(TokenStream::from(item.clone()));
-            ts.push(Token::Semi);
+            // ts.push(Token::Semi);
         }
         ts.push(Token::CloseDelim(Delimiter::Brace));
         ts
@@ -1686,7 +1759,7 @@ impl From<Impl> for TokenStream {
         ts.push(Token::OpenDelim(Delimiter::Brace));
         for item in value.items.iter() {
             ts.extend(TokenStream::from(item.clone()));
-            ts.push(Token::Semi);
+            // ts.push(Token::Semi);
         }
         ts.push(Token::CloseDelim(Delimiter::Brace));
         ts
@@ -1823,6 +1896,15 @@ impl<I: Into<ItemKind>> From<I> for Item<ItemKind> {
 impl<I: Into<AssocItemKind>> From<I> for Item<AssocItemKind> {
     fn from(item: I) -> Self {
         Self::inherited(item)
+    }
+}
+
+impl<K> AddVisibility<K> for Item<K> {
+    fn inherited(item: impl Into<K>) -> Self {
+        Self::inherited(item)
+    }
+    fn public(item: impl Into<K>) -> Self {
+        Self::public(item)
     }
 }
 
@@ -2120,6 +2202,12 @@ impl From<Semi> for TokenStream {
         ts.extend(TokenStream::from(value.0));
         ts.push(Token::Semi);
         ts
+    }
+}
+
+impl Semi {
+    pub fn new(expr: impl Into<Expr>) -> Self {
+        Self(expr.into())
     }
 }
 

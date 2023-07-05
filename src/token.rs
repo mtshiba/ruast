@@ -125,7 +125,7 @@ impl fmt::Display for BinOpToken {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Delimiter {
     /// ()
     Parenthesis,
@@ -152,6 +152,18 @@ impl Delimiter {
             Self::Brace => "}",
             Self::Bracket => "]",
             Self::Invisible => "",
+        }
+    }
+}
+
+#[cfg(feature = "tokenize")]
+impl From<Delimiter> for proc_macro2::Delimiter {
+    fn from(delim: Delimiter) -> Self {
+        match delim {
+            Delimiter::Parenthesis => Self::Parenthesis,
+            Delimiter::Brace => Self::Brace,
+            Delimiter::Bracket => Self::Bracket,
+            Delimiter::Invisible => Self::None,
         }
     }
 }
@@ -255,6 +267,8 @@ impl Token {
     }
 }
 
+/// This structure is not related to `proc_macro2::TokenStream`.
+/// However, it can be converted to `proc_marco2::TokenStream` by enabling the `quote` feature.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct TokenStream(Vec<Token>);
 
@@ -264,7 +278,7 @@ impl fmt::Display for TokenStream {
             if i > 0 {
                 write!(f, " ")?;
             }
-            write!(f, "{}", token)?;
+            write!(f, "{token}")?;
         }
         Ok(())
     }

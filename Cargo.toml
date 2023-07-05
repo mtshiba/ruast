@@ -9,7 +9,7 @@ license = "MIT OR Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-conversion = ["dep:proc-macro2", "dep:quote"]
+tokenize = ["dep:proc-macro2", "dep:quote"]
 
 [dependencies]
 proc-macro2 = { version = "1.0", optional = true }

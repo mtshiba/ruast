@@ -2,7 +2,7 @@ mod expr;
 mod stmt;
 mod token;
 mod ty;
-#[cfg(feature = "conversion")]
+#[cfg(feature = "tokenize")]
 mod conversion;
 
 use std::io::Write;
@@ -179,6 +179,19 @@ impl fmt::Display for Crate {
     }
 }
 
+impl From<Crate> for TokenStream {
+    fn from(value: Crate) -> Self {
+        let mut ts = TokenStream::new();
+        for attr in value.attrs {
+            ts.extend(TokenStream::from(attr));
+        }
+        for item in value.items {
+            ts.extend(TokenStream::from(item));
+        }
+        ts
+    }
+}
+
 impl Crate {
     pub fn new() -> Self {
         Self {
@@ -193,3 +206,6 @@ impl Crate {
         Ok(())
     }
 }
+
+#[cfg(feature = "tokenize")]
+impl_to_tokens!(Crate,);

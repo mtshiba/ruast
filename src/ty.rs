@@ -4,6 +4,9 @@ use crate::expr::{Path, Const, PathSegment};
 use crate::stmt::Param;
 use crate::token::{TokenStream, Token, Delimiter, KeywordToken, BinOpToken};
 
+#[cfg(feature = "tokenize")]
+crate::impl_to_tokens!(MutTy, Ref, BareFn, PolyTraitRef, GenericBound, TraitObject, ImplTrait, Type,);
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MutTy {
     pub mutable: bool,
@@ -27,6 +30,19 @@ impl From<MutTy> for TokenStream {
         }
         ts.extend(TokenStream::from(*value.ty));
         ts
+    }
+}
+
+impl MutTy {
+    pub fn new(mutable: bool, ty: impl Into<Type>) -> Self {
+        Self {
+            mutable,
+            ty: Box::new(ty.into()),
+        }
+    }
+
+    pub fn immut(ty: impl Into<Type>) -> Self {
+        Self::new(false, ty)
     }
 }
 
@@ -55,6 +71,15 @@ impl From<Ref> for TokenStream {
         }
         ts.extend(TokenStream::from(value.ty));
         ts
+    }
+}
+
+impl Ref {
+    pub fn new(lifetime: Option<impl Into<String>>, ty: MutTy) -> Self {
+        Self {
+            lifetime: lifetime.map(|l| l.into()),
+            ty
+        }
     }
 }
 
@@ -271,5 +296,15 @@ impl From<Type> for TokenStream {
             Type::ImplicitSelf => TokenStream::new(),
             Type::Err => TokenStream::from(vec![Token::ident("<Err>")]),
         }
+    }
+}
+
+impl Type {
+    pub fn ref_(ty: impl Into<Type>) -> Type {
+        Type::Ref(Ref::new(Option::<String>::None, MutTy::immut(ty)))
+    }
+
+    pub fn static_ref(ty: impl Into<Type>) -> Type {
+        Type::Ref(Ref::new(Some("static"), MutTy::immut(ty)))
     }
 }

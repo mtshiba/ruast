@@ -6,6 +6,40 @@ use crate::stmt::{Use, Pat, Block, FnDecl, EmptyItem};
 use crate::token::{Token, TokenStream, BinOpToken, KeywordToken, Delimiter};
 use crate::ty::Type;
 
+#[macro_export]
+#[cfg(feature = "tokenize")]
+macro_rules! impl_to_tokens {
+    ($($Ty: ty,)*) => {
+        $(
+            impl quote::ToTokens for $Ty {
+                fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+                    $crate::IntoTokens::into_tokens(self.clone()).to_tokens(tokens);
+                }
+            }
+            impl $Ty {
+                pub fn to_token_stream(&self) -> proc_macro2::TokenStream {
+                    quote::ToTokens::to_token_stream(&self)
+                }
+                pub fn into_token_stream(self) -> proc_macro2::TokenStream {
+                    quote::ToTokens::into_token_stream(&self)
+                }
+            }
+        )*
+    };
+}
+
+#[cfg(feature = "tokenize")]
+impl_to_tokens!(
+    Attribute, Expr, Const, Array, Tuple, Binary, Unary,
+    Let, If, While, ForLoop, Loop, Arm, Match,
+    Closure, Async, Await, TryBlock,
+    Field, Index, Range, Underscore,
+    Return, Assign, AssignOp, Cast, TypeAscription,
+    Call, MethodCall, Path, PathSegment,
+    AddrOf, Break, Continue, GenericArg, DelimArgs,
+    MacCall, ExprField, Struct, Repeat, Try,
+);
+
 pub trait Callable {
     fn call(self, args: Vec<Expr>) -> Call;
     fn call1(self, arg: impl Into<Expr>) -> Call
@@ -1129,7 +1163,11 @@ pub struct Lit {
 
 impl fmt::Display for Lit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.symbol.fmt(f)
+        if self.kind == LitKind::Str {
+            write!(f, "\"{}\"", self.symbol)
+        } else {
+            self.symbol.fmt(f)
+        }
     }
 }
 
@@ -1137,7 +1175,7 @@ impl<S: Into<String>> From<S> for Lit {
     fn from(symbol: S) -> Self {
         Self {
             kind: LitKind::Str,
-            symbol: format!("\"{}\"", symbol.into()),
+            symbol: symbol.into(),
         }
     }
 }
@@ -1154,6 +1192,10 @@ impl Lit {
             kind,
             symbol: symbol.into(),
         }
+    }
+
+    pub fn int(symbol: impl Into<String>) -> Self {
+        Self::new(LitKind::Integer, symbol)
     }
 }
 

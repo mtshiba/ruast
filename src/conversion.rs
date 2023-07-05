@@ -1,6 +1,4 @@
-//! WIP: implement conversions between `rast::*` and `proc_macro2::TokenStream`
-
-use proc_macro2::{TokenStream, TokenTree, Literal, Punct, Spacing, Ident, Span};
+use proc_macro2::{TokenStream, TokenTree, Literal, Punct, Spacing, Ident, Span, Group};
 use quote::ToTokens;
 
 use crate::{Lit, LitKind, Token, BinOpToken, Delimiter};
@@ -77,7 +75,9 @@ impl ToTokens for Token {
             },
             Self::Lit(lit) => lit.to_tokens(tokens),
             Self::Ident(ident) => tokens.extend([TokenTree::Ident(Ident::new(ident, Span::call_site()))]),
-            Self::Lifetime(lifetime) => tokens.extend([TokenTree::Ident(Ident::new(lifetime, Span::call_site()))]),
+            Self::Lifetime(lifetime) => {
+                tokens.extend([TokenTree::Punct(Punct::new('\'', Spacing::Joint)), TokenTree::Ident(Ident::new(lifetime, Span::call_site()))])
+            },
             Self::Keyword(keyword) => tokens.extend([TokenTree::Ident(Ident::new(&keyword.to_string(), Span::call_site()))]),
             Self::Eof => {},
         }
@@ -93,5 +93,43 @@ impl ToTokens for Lit {
             LitKind::Str => tokens.extend([TokenTree::Literal(Literal::string(&self.symbol))]),
             _ => todo!(),
         }
+    }
+}
+
+impl ToTokens for crate::TokenStream {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let mut iter = self.iter();
+        while let Some(token) = iter.next() {
+            match token {
+                Token::OpenDelim(open) => {
+                    let ts = crate::TokenStream::get_until_closed(&mut iter);
+                    let group = TokenTree::Group(Group::new((*open).into(), ts));
+                    group.to_tokens(tokens);
+                }
+                _ => {
+                    token.to_tokens(tokens);
+                }
+            }
+        }
+    }
+}
+
+impl crate::TokenStream {
+    fn get_until_closed<'a>(iter: &mut impl Iterator<Item = &'a Token>) -> TokenStream {
+        let mut tokens = TokenStream::new();
+        while let Some(token) = iter.next() {
+            match token {
+                Token::CloseDelim(_) => break,
+                Token::OpenDelim(open) => {
+                    let ts = Self::get_until_closed(iter);
+                    let group = TokenTree::Group(Group::new((*open).into(), ts));
+                    group.to_tokens(&mut tokens);
+                }
+                _ => {
+                    token.to_tokens(&mut tokens);
+                }
+            }
+        }
+        tokens
     }
 }

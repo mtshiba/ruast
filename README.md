@@ -74,13 +74,33 @@ krate.add_item(imp);
 println!("{krate}");
 ```
 
+### Convert to `proc_macro2::TokenStream`
+
+By enabling a feature `tokenize`, you can convert `rast` ASTs to `proc_macro2::TokenStream`.
+
+You can build ASTs systematically without using `syn` or `quote` black-boxed macros.
+
+```rust
+use rast::*;
+
+let mut krate = Crate::new();
+let def = Fn::main(
+    None,
+    Block::from(Path::single("println").mac_call(vec![Token::lit("Hello, world!")])),
+);
+krate.add_item(def);
+let tokens = krate.to_token_stream();
+println!("{krate}");
+println!("{tokens}");
+```
+
 ## Why this is needed?
 
 [The Rust project](https://github.com/rust-lang/rust) has a submodule called [`rustc_ast`](https://github.com/rust-lang/rust/tree/master/compiler/rustc_ast) that defines an AST, but it is not published on crates.io and requires a huge build of `rust` itself. Also, `rustc_ast` is not designed for third parties to build ASTs by hand.
 
 There is a [`codegen`](https://github.com/carllerche/codegen) crate for Rust code generation, but this crate has not been maintained for some time and only supports basic syntax elements.
 
-There is also a [`syn`](https://github.com/dtolnay/syn) crate that can parse `proc_macro::TokenStream` into an AST, but its AST elements don't implement `Display` trait and are not designed for direct manipulation.
+There is also a [`syn`](https://github.com/dtolnay/syn) crate that can parse `proc_macro::TokenStream` into an AST, but its AST elements don't implement `Display` trait and are not designed for direct construction & modification.
 
 ## Goals
 
