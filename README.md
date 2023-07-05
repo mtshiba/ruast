@@ -1,4 +1,4 @@
-# `rast`
+# `ruast`
 
 This crate provides a formattable & modifiable Rust AST.
 
@@ -7,7 +7,7 @@ This crate provides a formattable & modifiable Rust AST.
 ### Hello world
 
 ```rust
-use rast::*;
+use ruast::*;
 
 let mut krate = Crate::new();
 let def = Fn::main(
@@ -24,7 +24,7 @@ assert!(krate.is_empty());
 This is equivalent to:
 
 ```rust
-use rast::*;
+use ruast::*;
 
 let mut krate = Crate::new();
 krate.add_item(Fn {
@@ -47,7 +47,7 @@ assert!(krate.is_empty());
 ### Building struct, enum, and impl
 
 ```rust
-use rast::*;
+use ruast::*;
 
 let mut krate = Crate::new();
 let def = StructDef::empty("Foo")
@@ -61,7 +61,7 @@ println!("{krate}");
 ```
 
 ```rust
-use rast::*;
+use ruast::*;
 
 let mut krate = Crate::new();
 let def = EnumDef::empty("Foo")
@@ -76,12 +76,12 @@ println!("{krate}");
 
 ### Convert to `proc_macro2::TokenStream`
 
-By enabling a feature `tokenize`, you can convert `rast` ASTs to `proc_macro2::TokenStream`.
+By enabling a feature `tokenize`, you can convert `ruast` ASTs to `proc_macro2::TokenStream`.
 
 You can build ASTs systematically without using `syn` or `quote` black-boxed macros.
 
 ```rust
-use rast::*;
+use ruast::*;
 
 let mut krate = Crate::new();
 let def = Fn::main(

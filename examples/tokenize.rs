@@ -1,6 +1,6 @@
 #[cfg(feature = "tokenize")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    use rast::*;
+    use ruast::*;
 
     let mut krate = Crate::new();
     let def = Fn::main(

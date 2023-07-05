@@ -1,5 +1,5 @@
 [package]
-name = "rast"
+name = "ruast"
 version = "0.0.1"
 edition = "2021"
 description = "A formattable & modifiable Rust AST"

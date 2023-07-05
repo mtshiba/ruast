@@ -1,4 +1,4 @@
-use rast::*;
+use ruast::*;
 
 #[test]
 fn test() -> Result<(), ()> {
