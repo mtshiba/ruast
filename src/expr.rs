@@ -6,7 +6,6 @@ use crate::stmt::{Use, Pat, Block, FnDecl, EmptyItem};
 use crate::token::{Token, TokenStream, BinOpToken, KeywordToken, Delimiter};
 use crate::ty::Type;
 
-#[macro_export]
 #[cfg(feature = "tokenize")]
 macro_rules! impl_to_tokens {
     ($($Ty: ty,)*) => {
@@ -27,6 +26,7 @@ macro_rules! impl_to_tokens {
         )*
     };
 }
+pub(crate) use impl_to_tokens;
 
 #[cfg(feature = "tokenize")]
 impl_to_tokens!(

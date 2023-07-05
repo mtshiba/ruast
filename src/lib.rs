@@ -15,7 +15,6 @@ pub use stmt::*;
 pub use token::*;
 pub use ty::*;
 
-#[macro_export]
 macro_rules! impl_obvious_conversion {
     ($Enum: ident; $($Variant: ident $(,)?)*) => {
         $(
@@ -34,8 +33,8 @@ macro_rules! impl_obvious_conversion {
         }
     };
 }
+pub(crate) use impl_obvious_conversion;
 
-#[macro_export]
 macro_rules! impl_display_for_enum {
     ($Enum: ident; $($Variant: ident $(,)?)*) => {
         impl std::fmt::Display for $Enum {
@@ -49,8 +48,8 @@ macro_rules! impl_display_for_enum {
         }
     };
 }
+pub(crate) use impl_display_for_enum;
 
-#[macro_export]
 macro_rules! impl_hasitem_methods {
     ($Ty: ident) => {
         impl $Ty {
@@ -145,6 +144,7 @@ macro_rules! impl_hasitem_methods {
         }
     }
 }
+pub(crate) use impl_hasitem_methods;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Crate {
