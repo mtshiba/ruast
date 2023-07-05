@@ -2,7 +2,7 @@
 name = "ruast"
 version = "0.0.1"
 edition = "2021"
-description = "A formattable & modifiable Rust AST"
+description = "A printable & modifiable Rust AST"
 authors = ["Shunsuke Shibayama <sbym1346@gmail.com>"]
 license = "MIT OR Apache-2.0"
 

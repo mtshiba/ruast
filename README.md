@@ -1,6 +1,6 @@
 # `ruast`
 
-This crate provides a formattable & modifiable Rust AST.
+This crate provides a printable & modifiable Rust AST.
 
 ## Basic usage
 
