@@ -78,7 +78,7 @@ println!("{krate}");
 
 By enabling a feature `tokenize`, you can convert `ruast` ASTs to `proc_macro2::TokenStream`.
 
-You can build ASTs systematically without using `syn` or `quote` black-boxed macros.
+You can build ASTs systematically without using `syn` or `quote` macros.
 
 ```rust
 use ruast::*;
