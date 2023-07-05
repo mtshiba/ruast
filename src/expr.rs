@@ -26,6 +26,7 @@ macro_rules! impl_to_tokens {
         )*
     };
 }
+#[cfg(feature = "tokenize")]
 pub(crate) use impl_to_tokens;
 
 #[cfg(feature = "tokenize")]
