@@ -253,6 +253,14 @@ impl From<IdentPat> for TokenStream {
 }
 
 impl IdentPat {
+    pub fn new(is_mut: bool, ident: impl Into<String>, pat: Option<impl Into<Pat>>) -> Self {
+        Self {
+            is_mut,
+            ident: ident.into(),
+            pat: pat.map(|x| Box::new(x.into())),
+        }
+    }
+
     pub fn mut_(ident: impl Into<String>, pat: Option<Pat>) -> Self {
         Self {
             is_mut: true,

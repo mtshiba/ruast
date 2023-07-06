@@ -1148,6 +1148,7 @@ pub enum LitKind {
     Bool,
     Byte,
     Char,
+    UInteger,
     Integer,
     Float,
     Str,
@@ -1195,8 +1196,20 @@ impl Lit {
         }
     }
 
+    pub fn uint(symbol: impl Into<String>) -> Self {
+        Self::new(LitKind::UInteger, symbol)
+    }
+
     pub fn int(symbol: impl Into<String>) -> Self {
         Self::new(LitKind::Integer, symbol)
+    }
+
+    pub fn float(symbol: impl Into<String>) -> Self {
+        Self::new(LitKind::Float, symbol)
+    }
+
+    pub fn str(symbol: impl Into<String>) -> Self {
+        Self::new(LitKind::Str, symbol)
     }
 }
 
@@ -1398,6 +1411,10 @@ impl From<Path> for TokenStream {
 }
 
 impl Path {
+    pub fn new(segments: Vec<PathSegment>) -> Self {
+        Self { segments }
+    }
+
     pub fn single(ident: impl Into<PathSegment>) -> Self {
         Self {
             segments: vec![ident.into()],

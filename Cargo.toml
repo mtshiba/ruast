@@ -5,6 +5,9 @@ edition = "2021"
 description = "A printable & modifiable Rust AST"
 authors = ["Shunsuke Shibayama <sbym1346@gmail.com>"]
 license = "MIT OR Apache-2.0"
+categories = ["parsing", "ast"]
+repository = "https://github.com/mtshiba/ruast"
+homepage = "https://docs.rs/ruast"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
