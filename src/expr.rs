@@ -543,6 +543,16 @@ impl From<If> for TokenStream {
     }
 }
 
+impl If {
+    pub fn new(cond: Expr, then: Block, else_: Option<Expr>) -> Self {
+        Self {
+            cond: Box::new(cond),
+            then,
+            else_: else_.map(Box::new),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct While {
     pub cond: Box<Expr>,
@@ -1210,6 +1220,10 @@ impl Lit {
 
     pub fn str(symbol: impl Into<String>) -> Self {
         Self::new(LitKind::Str, symbol)
+    }
+
+    pub fn bool(symbol: impl Into<String>) -> Self {
+        Self::new(LitKind::Bool, symbol)
     }
 }
 

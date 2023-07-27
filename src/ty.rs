@@ -127,6 +127,42 @@ pub struct GenericParam {
     pub bounds: Vec<GenericBound>,
 }
 
+impl fmt::Display for GenericParam {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.ident)?;
+        if !self.bounds.is_empty() {
+            write!(f, ": {}", self.bounds.iter().map(|b| format!("{b}")).collect::<Vec<_>>().join(" + "))?;
+        }
+        Ok(())
+    }
+}
+
+impl From<GenericParam> for TokenStream {
+    fn from(value: GenericParam) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::ident(value.ident));
+        if !value.bounds.is_empty() {
+            ts.push(Token::Colon);
+            for (i, bound) in value.bounds.into_iter().enumerate() {
+                if i > 0 {
+                    ts.push(Token::BinOp(BinOpToken::Plus));
+                }
+                ts.extend(TokenStream::from(bound));
+            }
+        }
+        ts
+    }
+}
+
+impl GenericParam {
+    pub fn new(ident: impl Into<String>, bounds: Vec<GenericBound>) -> Self {
+        Self {
+            ident: ident.into(),
+            bounds,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PolyTraitRef {
     pub bound_generic_params: Vec<GenericParam>,
@@ -138,13 +174,29 @@ impl fmt::Display for PolyTraitRef {
         if !self.bound_generic_params.is_empty() {
             // TODO:
         }
-        write!(f, "{trait_ref}", trait_ref = self.trait_ref)
+        write!(f, "{}", self.trait_ref)
     }
 }
 
 impl From<PolyTraitRef> for TokenStream {
     fn from(value: PolyTraitRef) -> Self {
         TokenStream::from(value.trait_ref)
+    }
+}
+
+impl PolyTraitRef {
+    pub fn new(bound_generic_params: Vec<GenericParam>, trait_ref: impl Into<Path>) -> Self {
+        Self {
+            bound_generic_params,
+            trait_ref: trait_ref.into(),
+        }
+    }
+
+    pub fn simple(trait_ref: impl Into<Path>) -> Self {
+        Self {
+            bound_generic_params: vec![],
+            trait_ref: trait_ref.into(),
+        }
     }
 }
 
@@ -235,6 +287,7 @@ pub enum Type {
     Ref(Ref),
     BareFn(BareFn),
     Never,
+    Tuple(Vec<Type>),
     Path(Path),
     TraitObject(TraitObject),
     ImplTrait(ImplTrait),
@@ -251,6 +304,7 @@ impl fmt::Display for Type {
             Self::Ref(r) => write!(f, "{r}"),
             Self::BareFn(bare_fn) => write!(f, "{bare_fn}"),
             Self::Never => write!(f, "!"),
+            Self::Tuple(tys) => write!(f, "({})", tys.iter().map(|ty| format!("{ty}")).collect::<Vec<_>>().join(", ")),
             Self::Path(path) => write!(f, "{path}"),
             Self::TraitObject(trait_object) => write!(f, "{trait_object}"),
             Self::ImplTrait(impl_trait) => write!(f, "{impl_trait}"),
@@ -289,6 +343,18 @@ impl From<Type> for TokenStream {
             Type::Ref(ref_) => TokenStream::from(ref_),
             Type::BareFn(bare_fn) => TokenStream::from(bare_fn),
             Type::Never => TokenStream::from(vec![Token::Not]),
+            Type::Tuple(tys) => {
+                let mut ts = TokenStream::new();
+                ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+                for (i, ty) in tys.into_iter().enumerate() {
+                    if i > 0 {
+                        ts.push(Token::Comma);
+                    }
+                    ts.extend(TokenStream::from(ty));
+                }
+                ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+                ts
+            },
             Type::Path(path) => TokenStream::from(path),
             Type::TraitObject(trait_object) => TokenStream::from(trait_object),
             Type::ImplTrait(impl_trait) => TokenStream::from(impl_trait),

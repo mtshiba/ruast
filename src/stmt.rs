@@ -4,7 +4,7 @@ use std::hash::Hash;
 use crate::expr::{Attribute, DelimArgs, Expr, GenericArg, MacCall, Path, Async, TryBlock, Range, Call, MethodCall};
 use crate::ty::Type;
 use crate::token::{Token, TokenStream, KeywordToken, BinOpToken, Delimiter};
-use crate::{impl_obvious_conversion, impl_display_for_enum, impl_hasitem_methods};
+use crate::{impl_obvious_conversion, impl_display_for_enum, impl_hasitem_methods, GenericParam};
 
 #[cfg(feature = "tokenize")]
 crate::impl_to_tokens!(
@@ -666,7 +666,7 @@ impl FnDecl {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Fn {
     pub ident: String,
-    pub generics: Vec<GenericArg>,
+    pub generics: Vec<GenericParam>,
     pub fn_decl: FnDecl,
     pub body: Option<Block>,
 }
@@ -730,7 +730,7 @@ impl Ident for Fn {
 }
 
 impl Fn {
-    pub fn new(ident: impl Into<String>, generics: Vec<GenericArg>, fn_decl: FnDecl, body: Block) -> Self {
+    pub fn new(ident: impl Into<String>, generics: Vec<GenericParam>, fn_decl: FnDecl, body: Block) -> Self {
         Self {
             ident: ident.into(),
             generics,
