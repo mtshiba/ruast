@@ -575,6 +575,15 @@ impl From<While> for TokenStream {
     }
 }
 
+impl While {
+    pub fn new(cond: impl Into<Expr>, body: Block) -> Self {
+        Self {
+            cond: Box::new(cond.into()),
+            body,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ForLoop {
     pub pat: Box<Pat>,
@@ -597,6 +606,16 @@ impl From<ForLoop> for TokenStream {
         ts.extend(TokenStream::from(*value.expr));
         ts.extend(TokenStream::from(value.body));
         ts
+    }
+}
+
+impl ForLoop {
+    pub fn new(pat: impl Into<Pat>, expr: impl Into<Expr>, body: Block) -> Self {
+        Self {
+            pat: Box::new(pat.into()),
+            expr: Box::new(expr.into()),
+            body,
+        }
     }
 }
 
@@ -658,6 +677,17 @@ impl From<Arm> for TokenStream {
     }
 }
 
+impl Arm {
+    pub fn new(pat: impl Into<Pat>, guard: Option<Expr>, body: impl Into<Expr>) -> Self {
+        Self {
+            attrs: Vec::new(),
+            pat: Box::new(pat.into()),
+            guard: guard.map(Box::new),
+            body: Box::new(body.into()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Match {
     pub expr: Box<Expr>,
@@ -686,6 +716,15 @@ impl From<Match> for TokenStream {
         }
         ts.push(Token::CloseDelim(Delimiter::Brace));
         ts
+    }
+}
+
+impl Match {
+    pub fn new(expr: impl Into<Expr>, arms: Vec<Arm>) -> Self {
+        Self {
+            expr: Box::new(expr.into()),
+            arms,
+        }
     }
 }
 
@@ -734,6 +773,22 @@ impl From<Closure> for TokenStream {
         ts.extend(TokenStream::from(*value.body));
         ts.push(Token::CloseDelim(Delimiter::Brace));
         ts
+    }
+}
+
+impl Closure {
+    pub fn new(is_const: bool, is_async: bool, is_move: bool, fn_decl: FnDecl, body: impl Into<Expr>) -> Self {
+        Self {
+            is_const,
+            is_async,
+            is_move,
+            fn_decl,
+            body: Box::new(body.into()),
+        }
+    }
+
+    pub fn simple(fn_decl: FnDecl, body: impl Into<Expr>) -> Self {
+        Self::new(false, false, false, fn_decl, body)
     }
 }
 
@@ -905,12 +960,12 @@ pub enum RangeLimits {
 pub struct Range {
     pub start: Option<Box<Expr>>,
     pub end: Option<Box<Expr>>,
-    pub op: RangeLimits,
+    pub limits: RangeLimits,
 }
 
 impl fmt::Display for Range {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.op {
+        match self.limits {
             RangeLimits::HalfOpen => {
                 write!(f, "{start}..{end}", start = self.start.as_ref().map(|e| e.to_string()).unwrap_or_default(), end = self.end.as_ref().map(|e| e.to_string()).unwrap_or_default())
             },
@@ -927,7 +982,7 @@ impl From<Range> for TokenStream {
         if let Some(start) = value.start {
             ts.extend(TokenStream::from(*start));
         }
-        match value.op {
+        match value.limits {
             RangeLimits::HalfOpen => {
                 ts.push(Token::DotDot);
             },
@@ -939,6 +994,16 @@ impl From<Range> for TokenStream {
             ts.extend(TokenStream::from(*end));
         }
         ts
+    }
+}
+
+impl Range {
+    pub fn new(start: Option<Expr>, end: Option<Expr>, limits: RangeLimits) -> Self {
+        Self {
+            start: start.map(Box::new),
+            end: end.map(Box::new),
+            limits,
+        }
     }
 }
 
