@@ -8,7 +8,7 @@ fn test() -> Result<(), ()> {
         Block::from(MacCall::new(
             Path::single("println"),
             vec![Token::lit("Hello, world!")],
-        ))
+        )),
     );
     krate.add_item(def);
     println!("{krate}");
@@ -24,12 +24,10 @@ fn test_general() -> Result<(), ()> {
         ident: "main".to_string(),
         generics: vec![],
         fn_decl: FnDecl::new(vec![], None),
-        body: Some(Block::from(
-            Stmt::Expr(Expr::new(MacCall {
-                path: Path::single("println!"),
-                args: DelimArgs::from(vec![Token::lit("Hello, world!")]),
-            })),
-        )),
+        body: Some(Block::from(Stmt::Expr(Expr::new(MacCall {
+            path: Path::single("println!"),
+            args: DelimArgs::from(vec![Token::lit("Hello, world!")]),
+        })))),
     });
     println!("{krate}");
     println!("{}", krate[0]);

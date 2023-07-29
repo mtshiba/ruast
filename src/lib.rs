@@ -1,14 +1,14 @@
+#[cfg(feature = "tokenize")]
+mod conversion;
 mod expr;
 mod stmt;
 mod token;
 mod ty;
-#[cfg(feature = "tokenize")]
-mod conversion;
 
+use std::fmt;
+use std::fs::File;
 use std::io::Write;
 use std::path::Path as Pt;
-use std::fs::File;
-use std::fmt;
 
 pub use expr::*;
 pub use stmt::*;
@@ -142,7 +142,7 @@ macro_rules! impl_hasitem_methods {
                 self.items_mut()
             }
         }
-    }
+    };
 }
 pub(crate) use impl_hasitem_methods;
 

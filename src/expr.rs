@@ -1,10 +1,10 @@
 use std::fmt;
-use std::ops::{Add, Sub, Mul, Div, Neg};
+use std::ops::{Add, Div, Mul, Neg, Sub};
 
-use crate::{impl_display_for_enum, impl_obvious_conversion};
-use crate::stmt::{Use, Pat, Block, FnDecl, EmptyItem};
-use crate::token::{Token, TokenStream, BinOpToken, KeywordToken, Delimiter};
+use crate::stmt::{Block, EmptyItem, FnDecl, Pat, Use};
+use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 use crate::ty::Type;
+use crate::{impl_display_for_enum, impl_obvious_conversion};
 
 #[cfg(feature = "tokenize")]
 macro_rules! impl_to_tokens {
@@ -31,24 +31,61 @@ pub(crate) use impl_to_tokens;
 
 #[cfg(feature = "tokenize")]
 impl_to_tokens!(
-    Attribute, Expr, Const, Array, Tuple, Binary, Unary,
-    Let, If, While, ForLoop, Loop, Arm, Match,
-    Closure, Async, Await, TryBlock,
-    Field, Index, Range, Underscore,
-    Return, Assign, AssignOp, Cast, TypeAscription,
-    Call, MethodCall, Path, PathSegment,
-    AddrOf, Break, Continue, GenericArg, DelimArgs,
-    MacCall, ExprField, Struct, Repeat, Try,
+    Attribute,
+    Expr,
+    Const,
+    Array,
+    Tuple,
+    Binary,
+    Unary,
+    Let,
+    If,
+    While,
+    ForLoop,
+    Loop,
+    Arm,
+    Match,
+    Closure,
+    Async,
+    Await,
+    TryBlock,
+    Field,
+    Index,
+    Range,
+    Underscore,
+    Return,
+    Assign,
+    AssignOp,
+    Cast,
+    TypeAscription,
+    Call,
+    MethodCall,
+    Path,
+    PathSegment,
+    AddrOf,
+    Break,
+    Continue,
+    GenericArg,
+    DelimArgs,
+    MacCall,
+    ExprField,
+    Struct,
+    Repeat,
+    Try,
 );
 
 pub trait Callable {
     fn call(self, args: Vec<Expr>) -> Call;
     fn call1(self, arg: impl Into<Expr>) -> Call
-    where Self: Sized {
+    where
+        Self: Sized,
+    {
         self.call(vec![arg.into()])
     }
     fn call2(self, arg1: impl Into<Expr>, args2: impl Into<Expr>) -> Call
-    where Self: Sized {
+    where
+        Self: Sized,
+    {
         self.call(vec![arg1.into(), args2.into()])
     }
 }
@@ -62,11 +99,20 @@ impl<E: Into<Expr>> Callable for E {
 pub trait MethodCallable {
     fn method_call(self, seg: impl Into<PathSegment>, args: Vec<Expr>) -> MethodCall;
     fn method_call1(self, seg: impl Into<PathSegment>, arg: impl Into<Expr>) -> MethodCall
-    where Self: Sized {
+    where
+        Self: Sized,
+    {
         self.method_call(seg, vec![arg.into()])
     }
-    fn method_call2(self, seg: impl Into<PathSegment>, arg1: impl Into<Expr>, arg2: impl Into<Expr>) -> MethodCall
-    where Self: Sized {
+    fn method_call2(
+        self,
+        seg: impl Into<PathSegment>,
+        arg1: impl Into<Expr>,
+        arg2: impl Into<Expr>,
+    ) -> MethodCall
+    where
+        Self: Sized,
+    {
         self.method_call(seg, vec![arg1.into(), arg2.into()])
     }
 }
@@ -246,7 +292,10 @@ impl Expr {
     }
 
     pub fn is_compound(&self) -> bool {
-        matches!(&self.kind, ExprKind::Binary(_) | ExprKind::Unary(_) | ExprKind::Field(_)| ExprKind::Range(_))
+        matches!(
+            &self.kind,
+            ExprKind::Binary(_) | ExprKind::Unary(_) | ExprKind::Field(_) | ExprKind::Range(_)
+        )
     }
 }
 
@@ -360,7 +409,13 @@ pub struct Binary {
 
 impl fmt::Display for Binary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "({lhs} {op} {rhs})", lhs = self.lhs, op = self.op, rhs = self.rhs)
+        write!(
+            f,
+            "({lhs} {op} {rhs})",
+            lhs = self.lhs,
+            op = self.op,
+            rhs = self.rhs
+        )
     }
 }
 
@@ -593,7 +648,13 @@ pub struct ForLoop {
 
 impl fmt::Display for ForLoop {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "for {pat} in {expr} {body}", pat = self.pat, expr = self.expr, body = self.body)
+        write!(
+            f,
+            "for {pat} in {expr} {body}",
+            pat = self.pat,
+            expr = self.expr,
+            body = self.body
+        )
     }
 }
 
@@ -777,7 +838,13 @@ impl From<Closure> for TokenStream {
 }
 
 impl Closure {
-    pub fn new(is_const: bool, is_async: bool, is_move: bool, fn_decl: FnDecl, body: impl Into<Expr>) -> Self {
+    pub fn new(
+        is_const: bool,
+        is_async: bool,
+        is_move: bool,
+        fn_decl: FnDecl,
+        body: impl Into<Expr>,
+    ) -> Self {
         Self {
             is_const,
             is_async,
@@ -849,7 +916,9 @@ impl From<Await> for TokenStream {
 
 impl Await {
     pub fn new(expr: impl Into<Expr>) -> Self {
-        Self { expr: Box::new(expr.into()) }
+        Self {
+            expr: Box::new(expr.into()),
+        }
     }
 }
 
@@ -967,11 +1036,29 @@ impl fmt::Display for Range {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.limits {
             RangeLimits::HalfOpen => {
-                write!(f, "{start}..{end}", start = self.start.as_ref().map(|e| e.to_string()).unwrap_or_default(), end = self.end.as_ref().map(|e| e.to_string()).unwrap_or_default())
-            },
+                write!(
+                    f,
+                    "{start}..{end}",
+                    start = self
+                        .start
+                        .as_ref()
+                        .map(|e| e.to_string())
+                        .unwrap_or_default(),
+                    end = self.end.as_ref().map(|e| e.to_string()).unwrap_or_default()
+                )
+            }
             RangeLimits::Closed => {
-                write!(f, "{start}..={end}", start = self.start.as_ref().map(|e| e.to_string()).unwrap_or_default(), end = self.end.as_ref().map(|e| e.to_string()).unwrap_or_default())
-            },
+                write!(
+                    f,
+                    "{start}..={end}",
+                    start = self
+                        .start
+                        .as_ref()
+                        .map(|e| e.to_string())
+                        .unwrap_or_default(),
+                    end = self.end.as_ref().map(|e| e.to_string()).unwrap_or_default()
+                )
+            }
         }
     }
 }
@@ -985,10 +1072,10 @@ impl From<Range> for TokenStream {
         match value.limits {
             RangeLimits::HalfOpen => {
                 ts.push(Token::DotDot);
-            },
+            }
             RangeLimits::Closed => {
                 ts.push(Token::DotDotEq);
-            },
+            }
         }
         if let Some(end) = value.end {
             ts.extend(TokenStream::from(*end));
@@ -1194,7 +1281,13 @@ pub struct AssignOp {
 
 impl fmt::Display for AssignOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{lhs} {op} {rhs}", lhs = self.lhs, op = self.op.as_assign_op(), rhs = self.rhs)
+        write!(
+            f,
+            "{lhs} {op} {rhs}",
+            lhs = self.lhs,
+            op = self.op.as_assign_op(),
+            rhs = self.rhs
+        )
     }
 }
 
@@ -1600,16 +1693,16 @@ impl fmt::Display for AddrOf {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "&")?;
         match (self.kind, self.mutability) {
-            (BorrowKind::Ref, Mutability::Not) => {},
+            (BorrowKind::Ref, Mutability::Not) => {}
             (BorrowKind::Ref, Mutability::Mut) => {
                 write!(f, "mut ")?;
-            },
+            }
             (BorrowKind::Raw, Mutability::Not) => {
                 write!(f, "raw const ")?;
-            },
+            }
             (BorrowKind::Raw, Mutability::Mut) => {
                 write!(f, "raw mut ")?;
-            },
+            }
         }
         write!(f, "{expr}", expr = self.expr)
     }
@@ -1620,18 +1713,18 @@ impl From<AddrOf> for TokenStream {
         let mut ts = TokenStream::new();
         ts.push(Token::BinOp(BinOpToken::And));
         match (value.kind, value.mutability) {
-            (BorrowKind::Ref, Mutability::Not) => {},
+            (BorrowKind::Ref, Mutability::Not) => {}
             (BorrowKind::Ref, Mutability::Mut) => {
                 ts.push(Token::Keyword(KeywordToken::Mut));
-            },
+            }
             (BorrowKind::Raw, Mutability::Not) => {
                 ts.push(Token::ident("raw"));
                 ts.push(Token::Keyword(KeywordToken::Const));
-            },
+            }
             (BorrowKind::Raw, Mutability::Mut) => {
                 ts.push(Token::ident("raw"));
                 ts.push(Token::Keyword(KeywordToken::Mut));
-            },
+            }
         }
         ts.extend(TokenStream::from(*value.expr));
         ts
@@ -1742,25 +1835,25 @@ impl fmt::Display for DelimArgs {
         match self.delim {
             MacDelimiter::Parenthesis => {
                 write!(f, "(")?;
-            },
+            }
             MacDelimiter::Bracket => {
                 write!(f, "[")?;
-            },
+            }
             MacDelimiter::Brace => {
                 write!(f, "{{")?;
-            },
+            }
         }
         write!(f, "{}", self.tokens)?;
         match self.delim {
             MacDelimiter::Parenthesis => {
                 write!(f, ")")
-            },
+            }
             MacDelimiter::Bracket => {
                 write!(f, "]")
-            },
+            }
             MacDelimiter::Brace => {
                 write!(f, "}}")
-            },
+            }
         }
     }
 }
@@ -1789,25 +1882,25 @@ impl From<DelimArgs> for TokenStream {
         match value.delim {
             MacDelimiter::Parenthesis => {
                 ts.push(Token::OpenDelim(Delimiter::Parenthesis));
-            },
+            }
             MacDelimiter::Bracket => {
                 ts.push(Token::OpenDelim(Delimiter::Bracket));
-            },
+            }
             MacDelimiter::Brace => {
                 ts.push(Token::OpenDelim(Delimiter::Brace));
-            },
+            }
         }
         ts.extend(value.tokens);
         match value.delim {
             MacDelimiter::Parenthesis => {
                 ts.push(Token::CloseDelim(Delimiter::Parenthesis));
-            },
+            }
             MacDelimiter::Bracket => {
                 ts.push(Token::CloseDelim(Delimiter::Bracket));
-            },
+            }
             MacDelimiter::Brace => {
                 ts.push(Token::CloseDelim(Delimiter::Brace));
-            },
+            }
         }
         ts
     }
@@ -1815,10 +1908,7 @@ impl From<DelimArgs> for TokenStream {
 
 impl DelimArgs {
     pub fn new(delim: MacDelimiter, tokens: TokenStream) -> Self {
-        Self {
-            delim,
-            tokens,
-        }
+        Self { delim, tokens }
     }
 
     pub fn parenthesis(tokens: TokenStream) -> Self {
@@ -1881,13 +1971,11 @@ impl MacCall {
     pub fn bracket(path: Path, tokens: Vec<impl Into<TokenStream>>) -> Self {
         Self {
             path,
-            args: DelimArgs::bracket(
-                TokenStream::aggregate(tokens.into_iter().map(|t| {
-                    let mut ts = t.into();
-                    ts.push(Token::Comma);
-                    ts
-                })),
-            )
+            args: DelimArgs::bracket(TokenStream::aggregate(tokens.into_iter().map(|t| {
+                let mut ts = t.into();
+                ts.push(Token::Comma);
+                ts
+            }))),
         }
     }
 }

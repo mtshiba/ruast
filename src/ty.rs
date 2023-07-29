@@ -1,11 +1,20 @@
 use std::fmt;
 
-use crate::expr::{Path, Const, PathSegment};
+use crate::expr::{Const, Path, PathSegment};
 use crate::stmt::Param;
-use crate::token::{TokenStream, Token, Delimiter, KeywordToken, BinOpToken};
+use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 
 #[cfg(feature = "tokenize")]
-crate::impl_to_tokens!(MutTy, Ref, BareFn, PolyTraitRef, GenericBound, TraitObject, ImplTrait, Type,);
+crate::impl_to_tokens!(
+    MutTy,
+    Ref,
+    BareFn,
+    PolyTraitRef,
+    GenericBound,
+    TraitObject,
+    ImplTrait,
+    Type,
+);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MutTy {
@@ -78,7 +87,7 @@ impl Ref {
     pub fn new(lifetime: Option<impl Into<String>>, ty: MutTy) -> Self {
         Self {
             lifetime: lifetime.map(|l| l.into()),
-            ty
+            ty,
         }
     }
 }
@@ -131,7 +140,15 @@ impl fmt::Display for GenericParam {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.ident)?;
         if !self.bounds.is_empty() {
-            write!(f, ": {}", self.bounds.iter().map(|b| format!("{b}")).collect::<Vec<_>>().join(" + "))?;
+            write!(
+                f,
+                ": {}",
+                self.bounds
+                    .iter()
+                    .map(|b| format!("{b}"))
+                    .collect::<Vec<_>>()
+                    .join(" + ")
+            )?;
         }
         Ok(())
     }
@@ -235,7 +252,16 @@ impl fmt::Display for TraitObject {
         if self.is_dyn {
             write!(f, "dyn ")?;
         }
-        write!(f, "{bounds}", bounds = self.bounds.iter().map(|b| format!("{b}")).collect::<Vec<_>>().join(" + "))
+        write!(
+            f,
+            "{bounds}",
+            bounds = self
+                .bounds
+                .iter()
+                .map(|b| format!("{b}"))
+                .collect::<Vec<_>>()
+                .join(" + ")
+        )
     }
 }
 
@@ -262,7 +288,16 @@ pub struct ImplTrait {
 
 impl fmt::Display for ImplTrait {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "impl {bounds}", bounds = self.bounds.iter().map(|b| format!("{b}")).collect::<Vec<_>>().join(" + "))
+        write!(
+            f,
+            "impl {bounds}",
+            bounds = self
+                .bounds
+                .iter()
+                .map(|b| format!("{b}"))
+                .collect::<Vec<_>>()
+                .join(" + ")
+        )
     }
 }
 
@@ -304,7 +339,14 @@ impl fmt::Display for Type {
             Self::Ref(r) => write!(f, "{r}"),
             Self::BareFn(bare_fn) => write!(f, "{bare_fn}"),
             Self::Never => write!(f, "!"),
-            Self::Tuple(tys) => write!(f, "({})", tys.iter().map(|ty| format!("{ty}")).collect::<Vec<_>>().join(", ")),
+            Self::Tuple(tys) => write!(
+                f,
+                "({})",
+                tys.iter()
+                    .map(|ty| format!("{ty}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
             Self::Path(path) => write!(f, "{path}"),
             Self::TraitObject(trait_object) => write!(f, "{trait_object}"),
             Self::ImplTrait(impl_trait) => write!(f, "{impl_trait}"),
@@ -330,7 +372,7 @@ impl From<Type> for TokenStream {
                 ts.extend(TokenStream::from(*ty));
                 ts.push(Token::CloseDelim(Delimiter::Bracket));
                 ts
-            },
+            }
             Type::Array(ty, len) => {
                 let mut ts = TokenStream::new();
                 ts.push(Token::OpenDelim(Delimiter::Bracket));
@@ -339,7 +381,7 @@ impl From<Type> for TokenStream {
                 ts.extend(TokenStream::from(*len));
                 ts.push(Token::CloseDelim(Delimiter::Bracket));
                 ts
-            },
+            }
             Type::Ref(ref_) => TokenStream::from(ref_),
             Type::BareFn(bare_fn) => TokenStream::from(bare_fn),
             Type::Never => TokenStream::from(vec![Token::Not]),
@@ -354,7 +396,7 @@ impl From<Type> for TokenStream {
                 }
                 ts.push(Token::CloseDelim(Delimiter::Parenthesis));
                 ts
-            },
+            }
             Type::Path(path) => TokenStream::from(path),
             Type::TraitObject(trait_object) => TokenStream::from(trait_object),
             Type::ImplTrait(impl_trait) => TokenStream::from(impl_trait),

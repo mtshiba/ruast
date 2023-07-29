@@ -1,19 +1,49 @@
 use std::fmt;
 use std::hash::Hash;
 
-use crate::expr::{Attribute, DelimArgs, Expr, GenericArg, MacCall, Path, Async, TryBlock, Range, Call, MethodCall};
+use crate::expr::{
+    Async, Attribute, Call, DelimArgs, Expr, GenericArg, MacCall, MethodCall, Path, Range, TryBlock,
+};
+use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 use crate::ty::Type;
-use crate::token::{Token, TokenStream, KeywordToken, BinOpToken, Delimiter};
-use crate::{impl_obvious_conversion, impl_display_for_enum, impl_hasitem_methods, GenericParam};
+use crate::{impl_display_for_enum, impl_hasitem_methods, impl_obvious_conversion, GenericParam};
 
 #[cfg(feature = "tokenize")]
 crate::impl_to_tokens!(
-    Local, LocalKind,
-    PatField, IdentPat, StructPat, TupleStructPat, RefPat, Pat,
-    Param, FnDecl, Fn, LoadedMod, Mod, Block,
-    FieldDef, VariantData, Variant, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef,
-    Item, ItemKind, Use, StaticItem, ConstItem, TyAlias,
-    AssocItemKind, AssocItem, Empty, Semi, Stmt,
+    Local,
+    LocalKind,
+    PatField,
+    IdentPat,
+    StructPat,
+    TupleStructPat,
+    RefPat,
+    Pat,
+    Param,
+    FnDecl,
+    Fn,
+    LoadedMod,
+    Mod,
+    Block,
+    FieldDef,
+    VariantData,
+    Variant,
+    EnumDef,
+    StructDef,
+    UnionDef,
+    TraitDef,
+    Impl,
+    MacroDef,
+    Item,
+    ItemKind,
+    Use,
+    StaticItem,
+    ConstItem,
+    TyAlias,
+    AssocItemKind,
+    AssocItem,
+    Empty,
+    Semi,
+    Stmt,
 );
 
 pub trait Ident {
@@ -41,7 +71,9 @@ pub trait HasItem<Itm: MaybeIdent = Item> {
     fn items(&self) -> &[Itm];
     fn items_mut(&mut self) -> &mut Vec<Itm>;
     fn with_item(mut self, item: impl Into<Itm>) -> Self
-    where Self: Sized {
+    where
+        Self: Sized,
+    {
         self.add_item(item);
         self
     }
@@ -49,12 +81,17 @@ pub trait HasItem<Itm: MaybeIdent = Item> {
         self.items_mut().push(item.into());
     }
     fn add_pub_item<K>(&mut self, item: impl Into<K>)
-    where Itm: AddVisibility<K> {
+    where
+        Itm: AddVisibility<K>,
+    {
         let item = Itm::public(item);
         self.items_mut().push(item);
     }
     fn with_pub_item<K>(mut self, item: impl Into<K>) -> Self
-    where Self: Sized, Itm: AddVisibility<K> {
+    where
+        Self: Sized,
+        Itm: AddVisibility<K>,
+    {
         self.add_pub_item(item);
         self
     }
@@ -63,7 +100,10 @@ pub trait HasItem<Itm: MaybeIdent = Item> {
         Some(self.items_mut().remove(index))
     }
     fn remove_item_by_id(&mut self, ident: &str) -> Option<Itm> {
-        let index = self.items().iter().position(|item| item.ident() == Some(ident))?;
+        let index = self
+            .items()
+            .iter()
+            .position(|item| item.ident() == Some(ident))?;
         Some(self.remove_item(index).unwrap())
     }
     fn get_item(&self, index: usize) -> Option<&Itm> {
@@ -586,9 +626,7 @@ impl From<Param> for TokenStream {
 
 impl Param {
     pub fn new(pat: Pat, ty: Type) -> Self {
-        Self {
-            pat, ty
-        }
+        Self { pat, ty }
     }
 
     pub fn slf() -> Self {
@@ -652,10 +690,7 @@ impl From<FnDecl> for TokenStream {
 
 impl FnDecl {
     pub fn new(inputs: Vec<Param>, output: Option<Type>) -> Self {
-        Self {
-            inputs,
-            output,
-        }
+        Self { inputs, output }
     }
 
     pub fn empty() -> Self {
@@ -730,7 +765,12 @@ impl Ident for Fn {
 }
 
 impl Fn {
-    pub fn new(ident: impl Into<String>, generics: Vec<GenericParam>, fn_decl: FnDecl, body: Block) -> Self {
+    pub fn new(
+        ident: impl Into<String>,
+        generics: Vec<GenericParam>,
+        fn_decl: FnDecl,
+        body: Block,
+    ) -> Self {
         Self {
             ident: ident.into(),
             generics,
@@ -771,7 +811,9 @@ impl Fn {
     }
 
     pub fn add_semi_stmt(&mut self, expr: impl Into<Expr>) {
-        self.body.get_or_insert_with(Block::empty).add_stmt(Semi::new(expr));
+        self.body
+            .get_or_insert_with(Block::empty)
+            .add_stmt(Semi::new(expr));
     }
 
     pub fn with_stmt(mut self, stmt: impl Into<Stmt>) -> Self {
@@ -799,7 +841,7 @@ impl fmt::Display for LoadedMod {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "mod {} {{", self.ident)?;
         for item in self.items.iter() {
-            writeln!(f, "{item}")?;
+            writeln!(f, "{item};")?;
         }
         write!(f, "}}")
     }
@@ -951,10 +993,7 @@ impl<S: Into<Stmt>> From<S> for Block {
 
 impl From<Vec<Stmt>> for Block {
     fn from(stmts: Vec<Stmt>) -> Self {
-        Self {
-            label: None,
-            stmts,
-        }
+        Self { label: None, stmts }
     }
 }
 
@@ -996,7 +1035,10 @@ impl Block {
     }
 
     pub fn empty() -> Self {
-        Self { stmts: Vec::new(), label: None }
+        Self {
+            stmts: Vec::new(),
+            label: None,
+        }
     }
 
     pub fn async_(self) -> Async {
@@ -1022,7 +1064,10 @@ impl Block {
     }
 
     pub fn remove_item_by_id(&mut self, ident: &str) -> Option<Item> {
-        let index = self.stmts.iter().position(|stmt| stmt.ident() == Some(ident))?;
+        let index = self
+            .stmts
+            .iter()
+            .position(|stmt| stmt.ident() == Some(ident))?;
         let Some(Stmt::Item(item)) = self.remove_stmt(index) else { unreachable!() };
         Some(item)
     }
@@ -1217,7 +1262,7 @@ impl VariantData {
                     Self::Tuple(vec![field])
                 };
                 *self = new;
-            },
+            }
             Self::Tuple(fields) => fields.push(field),
             Self::Struct(fields) => fields.push(field),
         }
@@ -1240,8 +1285,12 @@ impl VariantData {
     pub fn remove_field_by_id(&mut self, ident: &str) -> Option<FieldDef> {
         let index = match self {
             Self::Unit => return None,
-            Self::Tuple(fields) => fields.iter().position(|field| field.ident.as_deref() == Some(ident))?,
-            Self::Struct(fields) => fields.iter().position(|field| field.ident.as_deref() == Some(ident))?,
+            Self::Tuple(fields) => fields
+                .iter()
+                .position(|field| field.ident.as_deref() == Some(ident))?,
+            Self::Struct(fields) => fields
+                .iter()
+                .position(|field| field.ident.as_deref() == Some(ident))?,
         };
         Some(self.remove_field(index).unwrap())
     }
@@ -1249,8 +1298,12 @@ impl VariantData {
     pub fn get_field_by_id(&self, ident: &str) -> Option<&FieldDef> {
         match self {
             Self::Unit => None,
-            Self::Tuple(fields) => fields.iter().find(|field| field.ident.as_deref() == Some(ident)),
-            Self::Struct(fields) => fields.iter().find(|field| field.ident.as_deref() == Some(ident)),
+            Self::Tuple(fields) => fields
+                .iter()
+                .find(|field| field.ident.as_deref() == Some(ident)),
+            Self::Struct(fields) => fields
+                .iter()
+                .find(|field| field.ident.as_deref() == Some(ident)),
         }
     }
 }
@@ -1302,7 +1355,12 @@ impl Ident for Variant {
 }
 
 impl Variant {
-    pub fn new(vis: Visibility, ident: impl Into<String>, data: VariantData, disr_expr: Option<Expr>) -> Self {
+    pub fn new(
+        vis: Visibility,
+        ident: impl Into<String>,
+        data: VariantData,
+        disr_expr: Option<Expr>,
+    ) -> Self {
         Self {
             vis,
             ident: ident.into(),
@@ -1320,11 +1378,21 @@ impl Variant {
     }
 
     pub fn struct_(ident: impl Into<String>, fields: Vec<FieldDef>) -> Self {
-        Self::new(Visibility::Inherited, ident, VariantData::Struct(fields), None)
+        Self::new(
+            Visibility::Inherited,
+            ident,
+            VariantData::Struct(fields),
+            None,
+        )
     }
 
     pub fn tuple(ident: impl Into<String>, fields: Vec<FieldDef>) -> Self {
-        Self::new(Visibility::Inherited, ident, VariantData::Tuple(fields), None)
+        Self::new(
+            Visibility::Inherited,
+            ident,
+            VariantData::Tuple(fields),
+            None,
+        )
     }
 }
 
@@ -1407,7 +1475,11 @@ impl HasItem<Variant> for EnumDef {
 impl_hasitem_methods!(EnumDef, Variant);
 
 impl EnumDef {
-    pub fn new(ident: impl Into<String>, generics: Vec<GenericArg>, variants: Vec<Variant>) -> Self {
+    pub fn new(
+        ident: impl Into<String>,
+        generics: Vec<GenericArg>,
+        variants: Vec<Variant>,
+    ) -> Self {
         Self {
             ident: ident.into(),
             generics,
@@ -1518,7 +1590,7 @@ impl StructDef {
         Self {
             ident: ident.into(),
             generics,
-            variant
+            variant,
         }
     }
 
@@ -1803,7 +1875,12 @@ impl Impl {
         }
     }
 
-    pub fn trait_impl(generics: Vec<GenericArg>, self_ty: Type, of_trait: Type, items: Vec<AssocItem>) -> Self {
+    pub fn trait_impl(
+        generics: Vec<GenericArg>,
+        self_ty: Type,
+        of_trait: Type,
+        items: Vec<AssocItem>,
+    ) -> Self {
         Self {
             generics,
             of_trait: Some(of_trait),
@@ -1883,9 +1960,7 @@ impl From<Visibility> for TokenStream {
     fn from(value: Visibility) -> Self {
         match value {
             Visibility::Inherited => TokenStream::new(),
-            Visibility::Public => {
-                TokenStream::from(vec![Token::Keyword(KeywordToken::Pub)])
-            }
+            Visibility::Public => TokenStream::from(vec![Token::Keyword(KeywordToken::Pub)]),
         }
     }
 }
