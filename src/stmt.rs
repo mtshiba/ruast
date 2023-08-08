@@ -2026,6 +2026,13 @@ impl<K> Item<K> {
             kind: item.into(),
         }
     }
+
+    pub fn new(vis: Visibility, item: impl Into<K>) -> Self {
+        Self {
+            vis,
+            kind: item.into(),
+        }
+    }
 }
 
 impl<K: MaybeIdent> Item<K> {
