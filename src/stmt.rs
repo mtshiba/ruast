@@ -1068,7 +1068,9 @@ impl Block {
             .stmts
             .iter()
             .position(|stmt| stmt.ident() == Some(ident))?;
-        let Some(Stmt::Item(item)) = self.remove_stmt(index) else { unreachable!() };
+        let Some(Stmt::Item(item)) = self.remove_stmt(index) else {
+            unreachable!()
+        };
         Some(item)
     }
 
@@ -1077,7 +1079,9 @@ impl Block {
     }
 
     pub fn get_item_by_id(&self, ident: &str) -> Option<&Item> {
-        let Stmt::Item(item) = self.stmts.iter().find(|stmt| stmt.ident() == Some(ident))? else { unreachable!() };
+        let Stmt::Item(item) = self.stmts.iter().find(|stmt| stmt.ident() == Some(ident))? else {
+            unreachable!()
+        };
         Some(item)
     }
 }
@@ -1967,6 +1971,7 @@ impl From<Visibility> for TokenStream {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Item<K = ItemKind> {
+    pub attrs: Vec<Attribute>,
     pub vis: Visibility,
     pub kind: K,
 }
@@ -2015,6 +2020,7 @@ impl<K: MaybeIdent> MaybeIdent for Item<K> {
 impl<K> Item<K> {
     pub fn inherited(item: impl Into<K>) -> Self {
         Self {
+            attrs: Vec::new(),
             vis: Visibility::Inherited,
             kind: item.into(),
         }
@@ -2022,6 +2028,7 @@ impl<K> Item<K> {
 
     pub fn public(item: impl Into<K>) -> Self {
         Self {
+            attrs: Vec::new(),
             vis: Visibility::Public,
             kind: item.into(),
         }
@@ -2029,9 +2036,23 @@ impl<K> Item<K> {
 
     pub fn new(vis: Visibility, item: impl Into<K>) -> Self {
         Self {
+            attrs: Vec::new(),
             vis,
             kind: item.into(),
         }
+    }
+
+    pub fn with_attr(mut self, attr: Attribute) -> Self {
+        self.add_attr(attr);
+        self
+    }
+
+    pub fn add_attr(&mut self, attr: Attribute) {
+        self.attrs.push(attr);
+    }
+
+    pub fn remove_attr(&mut self, index: usize) -> Attribute {
+        self.attrs.remove(index)
     }
 }
 

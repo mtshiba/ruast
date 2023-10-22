@@ -31,7 +31,7 @@ pub(crate) use impl_to_tokens;
 
 #[cfg(feature = "tokenize")]
 impl_to_tokens!(
-    Attribute,
+    AttributeItem,
     Expr,
     Const,
     Array,
@@ -223,18 +223,85 @@ impl From<AttrArgs> for TokenStream {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Attribute {
+    pub kind: AttrKind,
+}
+
+impl fmt::Display for Attribute {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.kind.fmt(f)
+    }
+}
+
+impl From<AttrKind> for Attribute {
+    fn from(kind: AttrKind) -> Self {
+        Self { kind }
+    }
+}
+
+impl From<AttributeItem> for Attribute {
+    fn from(item: AttributeItem) -> Self {
+        Self::new(item)
+    }
+}
+
+impl From<Attribute> for TokenStream {
+    fn from(value: Attribute) -> Self {
+        TokenStream::from(value.kind)
+    }
+}
+
+impl Attribute {
+    pub fn new(kind: impl Into<AttrKind>) -> Self {
+        Self { kind: kind.into() }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum AttrKind {
+    Normal(AttributeItem),
+    /// This will be displayed but erased when converted to tokens.
+    /// To preserve doc comments, use `#[doc = "..."]` instead.
+    DocComment(String),
+}
+
+impl fmt::Display for AttrKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self {
+            AttrKind::Normal(item) => item.fmt(f),
+            AttrKind::DocComment(comment) => comment.fmt(f),
+        }
+    }
+}
+
+impl From<AttributeItem> for AttrKind {
+    fn from(item: AttributeItem) -> Self {
+        Self::Normal(item)
+    }
+}
+
+impl From<AttrKind> for TokenStream {
+    fn from(value: AttrKind) -> Self {
+        match value {
+            AttrKind::Normal(item) => TokenStream::from(item),
+            AttrKind::DocComment(comment) => TokenStream::from(Token::DocComment(comment)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AttributeItem {
     path: Path,
     args: AttrArgs,
 }
 
-impl fmt::Display for Attribute {
+impl fmt::Display for AttributeItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "#[{}{}]", self.path, self.args)
     }
 }
 
-impl From<Attribute> for TokenStream {
-    fn from(attr: Attribute) -> Self {
+impl From<AttributeItem> for TokenStream {
+    fn from(attr: AttributeItem) -> Self {
         let mut ts = TokenStream::from(vec![Token::Pound, Token::OpenDelim(Delimiter::Bracket)]);
         ts.extend(TokenStream::from(attr.path));
         ts.extend(TokenStream::from(attr.args));
@@ -243,9 +310,18 @@ impl From<Attribute> for TokenStream {
     }
 }
 
+impl AttributeItem {
+    pub fn new(path: impl Into<Path>, args: impl Into<AttrArgs>) -> Self {
+        Self {
+            path: path.into(),
+            args: args.into(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Expr {
-    pub attrs: Vec<Attribute>,
+    pub attrs: Vec<AttributeItem>,
     pub kind: ExprKind,
 }
 
@@ -283,11 +359,11 @@ impl Expr {
         }
     }
 
-    pub fn add_attr(&mut self, attr: Attribute) {
+    pub fn add_attr(&mut self, attr: AttributeItem) {
         self.attrs.push(attr);
     }
 
-    pub fn remove_attr(&mut self, attr: &Attribute) {
+    pub fn remove_attr(&mut self, attr: &AttributeItem) {
         self.attrs.retain(|a| a != attr);
     }
 
@@ -702,7 +778,7 @@ impl From<Loop> for TokenStream {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Arm {
-    pub attrs: Vec<Attribute>,
+    pub attrs: Vec<AttributeItem>,
     pub pat: Box<Pat>,
     pub guard: Option<Box<Expr>>,
     pub body: Box<Expr>,

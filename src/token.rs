@@ -206,6 +206,7 @@ pub enum Token {
     Ident(String),
     Lifetime(String),
     Keyword(KeywordToken),
+    DocComment(String),
     Eof,
 }
 
@@ -247,6 +248,7 @@ impl fmt::Display for Token {
             Self::Ident(ident) => write!(f, "{ident}"),
             Self::Lifetime(lifetime) => write!(f, "'{lifetime}"),
             Self::Keyword(keyword) => write!(f, "{keyword}"),
+            Self::DocComment(comment) => write!(f, "{comment}"),
             Self::Eof => write!(f, ""),
         }
     }
@@ -287,6 +289,12 @@ impl fmt::Display for TokenStream {
 impl From<Vec<Token>> for TokenStream {
     fn from(tokens: Vec<Token>) -> Self {
         Self(tokens)
+    }
+}
+
+impl From<Token> for TokenStream {
+    fn from(token: Token) -> Self {
+        Self(vec![token])
     }
 }
 
