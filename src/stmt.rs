@@ -2113,7 +2113,7 @@ pub struct Use(Path);
 
 impl fmt::Display for Use {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "use {}", self.0)
+        write!(f, "use {};", self.0)
     }
 }
 

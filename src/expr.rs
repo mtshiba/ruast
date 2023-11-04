@@ -254,6 +254,10 @@ impl Attribute {
     pub fn new(kind: impl Into<AttrKind>) -> Self {
         Self { kind: kind.into() }
     }
+
+    pub fn doc_comment(comment: impl Into<String>) -> Self {
+        Self::new(AttrKind::DocComment(comment.into()))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -425,6 +429,16 @@ impl From<Array> for TokenStream {
         }
         ts.push(Token::CloseDelim(Delimiter::Bracket));
         ts
+    }
+}
+
+impl Array {
+    pub fn new(exprs: Vec<Expr>) -> Self {
+        Self(exprs)
+    }
+
+    pub fn unit() -> Self {
+        Self::new(vec![])
     }
 }
 
@@ -1569,6 +1583,17 @@ impl Call {
             args,
         }
     }
+
+    pub fn args_to_tokens(exprs: Vec<Expr>) -> TokenStream {
+        let mut ts = TokenStream::new();
+        for (i, expr) in exprs.into_iter().enumerate() {
+            if i > 0 {
+                ts.push(Token::Comma);
+            }
+            ts.extend(TokenStream::from(expr));
+        }
+        ts
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -1667,6 +1692,12 @@ impl Path {
         Self {
             segments: vec![ident.into()],
         }
+    }
+
+    pub fn chain(self, ident: impl Into<PathSegment>) -> Self {
+        let mut segments = self.segments;
+        segments.push(ident.into());
+        Self { segments }
     }
 
     pub fn mac_call(self, args: impl Into<DelimArgs>) -> MacCall {
