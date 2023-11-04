@@ -130,6 +130,20 @@ impl From<BareFn> for TokenStream {
     }
 }
 
+impl BareFn {
+    pub fn new(
+        generic_params: Vec<GenericParam>,
+        inputs: Vec<Param>,
+        output: impl Into<Type>,
+    ) -> Self {
+        Self {
+            generic_params,
+            inputs,
+            output: Box::new(output.into()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct GenericParam {
     pub ident: String,
@@ -312,6 +326,12 @@ impl From<ImplTrait> for TokenStream {
             ts.extend(TokenStream::from(bound));
         }
         ts
+    }
+}
+
+impl ImplTrait {
+    pub fn new(bounds: Vec<GenericBound>) -> Self {
+        Self { bounds }
     }
 }
 

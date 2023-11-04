@@ -629,6 +629,10 @@ impl Param {
         Self { pat, ty }
     }
 
+    pub fn ident(ident: impl Into<String>, ty: Type) -> Self {
+        Self::new(Pat::ident(ident), ty)
+    }
+
     pub fn slf() -> Self {
         Self::new(Pat::slf(), Type::ImplicitSelf)
     }
@@ -769,13 +773,13 @@ impl Fn {
         ident: impl Into<String>,
         generics: Vec<GenericParam>,
         fn_decl: FnDecl,
-        body: Block,
+        body: Option<Block>,
     ) -> Self {
         Self {
             ident: ident.into(),
             generics,
             fn_decl,
-            body: Some(body),
+            body,
         }
     }
 
@@ -1705,7 +1709,7 @@ pub struct TraitDef {
 
 impl fmt::Display for TraitDef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "trait {}", self.ident)?;
+        write!(f, "trait {}", self.ident)?;
         if !self.generics.is_empty() {
             write!(f, "<")?;
             for (i, generic) in self.generics.iter().enumerate() {
@@ -1854,7 +1858,7 @@ impl EmptyItem for Impl {
     type Input = Type;
 
     fn empty(self_ty: impl Into<Self::Input>) -> Self {
-        Self::new(vec![], self_ty.into(), vec![])
+        Self::new(vec![], None, self_ty.into(), vec![])
     }
 }
 
@@ -1870,10 +1874,10 @@ impl HasItem<AssocItem> for Impl {
 impl_hasitem_methods!(Impl, AssocItem);
 
 impl Impl {
-    pub fn new(generics: Vec<GenericArg>, self_ty: Type, items: Vec<AssocItem>) -> Self {
+    pub fn new(generics: Vec<GenericArg>, of_trait: Option<Type>, self_ty: Type, items: Vec<AssocItem>) -> Self {
         Self {
             generics,
-            of_trait: None,
+            of_trait,
             self_ty,
             items,
         }
