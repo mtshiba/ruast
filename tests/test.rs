@@ -57,4 +57,36 @@ fn test_blocks() {
     {
         17
     }");
+
+    assert_snapshot!(Block::empty(), @"{}");
+}
+
+#[test]
+fn test_if_else() {
+    let if_else = If::new(
+        Expr::new(Lit::bool("true")),
+        Block::from(Stmt::Expr(Expr::new(Lit::int("17")))),
+        Some(Expr::from(Block::from(Stmt::Expr(Expr::new(Lit::int(
+            "39",
+        )))))),
+    );
+    assert_snapshot!(if_else, @"
+    if true {
+        17
+    } else {
+        39
+    }");
+    let if_elseif_else = If::new(
+        Expr::new(Lit::bool("false")),
+        Block::from(Stmt::Expr(Expr::new(Lit::int("1")))),
+        Some(Expr::from(if_else)),
+    );
+    assert_snapshot!(if_elseif_else, @"
+    if false {
+        1
+    } else if true {
+        17
+    } else {
+        39
+    }");
 }
