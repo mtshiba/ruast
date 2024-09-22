@@ -1,11 +1,11 @@
 [package]
 name = "ruast"
-version = "0.0.5"
+version = "0.0.6"
 edition = "2021"
 description = "A printable & modifiable Rust AST"
 authors = ["Shunsuke Shibayama <sbym1346@gmail.com>"]
 license = "MIT OR Apache-2.0"
-categories = ["parsing", "ast"]
+categories = ["parsing"]
 repository = "https://github.com/mtshiba/ruast"
 homepage = "https://docs.rs/ruast"
 
