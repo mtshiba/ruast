@@ -834,7 +834,11 @@ impl Fn {
         }
     }
 
-    pub fn new_unsafe(ident: impl Into<String>, generics: Vec<GenericParam>, fn_decl: FnDecl) -> Self {
+    pub fn new_unsafe(
+        ident: impl Into<String>,
+        generics: Vec<GenericParam>,
+        fn_decl: FnDecl,
+    ) -> Self {
         Self {
             is_unsafe: true,
             is_const: false,
@@ -847,7 +851,11 @@ impl Fn {
         }
     }
 
-    pub fn new_const(ident: impl Into<String>, generics: Vec<GenericParam>, fn_decl: FnDecl) -> Self {
+    pub fn new_const(
+        ident: impl Into<String>,
+        generics: Vec<GenericParam>,
+        fn_decl: FnDecl,
+    ) -> Self {
         Self {
             is_unsafe: false,
             is_const: true,
@@ -860,7 +868,11 @@ impl Fn {
         }
     }
 
-    pub fn new_async(ident: impl Into<String>, generics: Vec<GenericParam>, fn_decl: FnDecl) -> Self {
+    pub fn new_async(
+        ident: impl Into<String>,
+        generics: Vec<GenericParam>,
+        fn_decl: FnDecl,
+    ) -> Self {
         Self {
             is_unsafe: false,
             is_const: false,
@@ -873,7 +885,11 @@ impl Fn {
         }
     }
 
-    pub fn extern_c(ident: impl Into<String>, generics: Vec<GenericParam>, fn_decl: FnDecl) -> Self {
+    pub fn extern_c(
+        ident: impl Into<String>,
+        generics: Vec<GenericParam>,
+        fn_decl: FnDecl,
+    ) -> Self {
         Self {
             is_unsafe: false,
             is_const: false,
@@ -1913,7 +1929,12 @@ impl HasItem<AssocItem> for TraitDef {
 impl_hasitem_methods!(TraitDef, AssocItem);
 
 impl TraitDef {
-    pub fn new(ident: impl Into<String>, generics: Vec<GenericArg>, supertraits: Vec<Type>, items: Vec<AssocItem>) -> Self {
+    pub fn new(
+        ident: impl Into<String>,
+        generics: Vec<GenericArg>,
+        supertraits: Vec<Type>,
+        items: Vec<AssocItem>,
+    ) -> Self {
         Self {
             ident: ident.into(),
             generics,
@@ -2148,7 +2169,7 @@ impl Impl {
         of_trait: Option<Type>,
         self_ty: Type,
         where_clauses: Option<Vec<WherePredicate>>,
-        items: Vec<AssocItem>
+        items: Vec<AssocItem>,
     ) -> Self {
         Self {
             generics,

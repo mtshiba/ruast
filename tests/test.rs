@@ -1,5 +1,5 @@
-use ruast::*;
 use insta::assert_snapshot;
+use ruast::*;
 
 #[test]
 fn test() -> Result<(), ()> {

@@ -236,7 +236,11 @@ impl Crate {
         Ok(())
     }
 
-    pub fn compile(self, rs_path: impl AsRef<Pt>, options: CompileOptions) -> Result<(), std::io::Error> {
+    pub fn compile(
+        self,
+        rs_path: impl AsRef<Pt>,
+        options: CompileOptions,
+    ) -> Result<(), std::io::Error> {
         let rs_path = rs_path.as_ref();
         let mut file = File::create(rs_path)?;
         write!(file, "{}", self)?;

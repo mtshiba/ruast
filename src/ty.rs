@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::expr::{Const, Path, PathSegment, GenericArg};
+use crate::expr::{Const, GenericArg, Path, PathSegment};
 use crate::stmt::Param;
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 
