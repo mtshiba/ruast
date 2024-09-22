@@ -1819,6 +1819,7 @@ impl UnionDef {
 pub struct TraitDef {
     pub ident: String,
     pub generics: Vec<GenericArg>,
+    pub supertraits: Vec<Type>,
     pub items: Vec<AssocItem>,
 }
 
@@ -1835,7 +1836,16 @@ impl fmt::Display for TraitDef {
             }
             write!(f, ">")?;
         }
-        write!(f, "{{")?;
+        if !self.supertraits.is_empty() {
+            write!(f, ": ")?;
+            for (i, sup) in self.supertraits.iter().enumerate() {
+                if i != 0 {
+                    write!(f, " + ")?;
+                }
+                write!(f, "{sup}")?;
+            }
+        }
+        write!(f, " {{")?;
         for item in self.items.iter() {
             writeln!(f, "{item};")?;
         }
@@ -1857,6 +1867,15 @@ impl From<TraitDef> for TokenStream {
                 ts.extend(TokenStream::from(generic.clone()));
             }
             ts.push(Token::Gt);
+        }
+        if !value.supertraits.is_empty() {
+            ts.push(Token::Colon);
+            for (i, sup) in value.supertraits.iter().enumerate() {
+                if i != 0 {
+                    ts.push(Token::BinOp(BinOpToken::Plus));
+                }
+                ts.extend(TokenStream::from(sup.clone()));
+            }
         }
         ts.push(Token::OpenDelim(Delimiter::Brace));
         for item in value.items.iter() {
@@ -1894,24 +1913,140 @@ impl HasItem<AssocItem> for TraitDef {
 impl_hasitem_methods!(TraitDef, AssocItem);
 
 impl TraitDef {
-    pub fn new(ident: impl Into<String>, generics: Vec<GenericArg>, items: Vec<AssocItem>) -> Self {
+    pub fn new(ident: impl Into<String>, generics: Vec<GenericArg>, supertraits: Vec<Type>, items: Vec<AssocItem>) -> Self {
         Self {
             ident: ident.into(),
             generics,
+            supertraits,
             items,
         }
     }
 
+    pub fn simple(ident: impl Into<String>, items: Vec<AssocItem>) -> Self {
+        Self::new(ident, Vec::new(), Vec::new(), items)
+    }
+
     pub fn empty(ident: impl Into<String>) -> Self {
-        Self::new(ident, Vec::new(), Vec::new())
+        Self::new(ident, Vec::new(), Vec::new(), Vec::new())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PredicateType {
+    pub bounded_ty: Type,
+    pub bounds: Vec<Type>,
+}
+
+impl fmt::Display for PredicateType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{bounded_ty}: ", bounded_ty = self.bounded_ty)?;
+        for (i, bound) in self.bounds.iter().enumerate() {
+            if i != 0 {
+                write!(f, " + ")?;
+            }
+            write!(f, "{bound}")?;
+        }
+        Ok(())
+    }
+}
+
+impl From<PredicateType> for TokenStream {
+    fn from(value: PredicateType) -> Self {
+        let mut ts = TokenStream::new();
+        ts.extend(TokenStream::from(value.bounded_ty));
+        ts.push(Token::Colon);
+        for (i, bound) in value.bounds.iter().enumerate() {
+            if i != 0 {
+                ts.push(Token::BinOp(BinOpToken::Plus));
+            }
+            ts.extend(TokenStream::from(bound.clone()));
+        }
+        ts
+    }
+}
+
+impl PredicateType {
+    pub fn new(bounded_ty: impl Into<Type>, bounds: Vec<Type>) -> Self {
+        Self {
+            bounded_ty: bounded_ty.into(),
+            bounds,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PredicateLifetime {
+    pub lifetime: String,
+    pub bounds: Vec<String>,
+}
+
+impl fmt::Display for PredicateLifetime {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "'{}: ", self.lifetime)?;
+        for (i, bound) in self.bounds.iter().enumerate() {
+            if i != 0 {
+                write!(f, " + ")?;
+            }
+            write!(f, "'{bound}")?;
+        }
+        Ok(())
+    }
+}
+
+impl From<PredicateLifetime> for TokenStream {
+    fn from(value: PredicateLifetime) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::lifetime(value.lifetime));
+        ts.push(Token::Colon);
+        for (i, bound) in value.bounds.iter().enumerate() {
+            if i != 0 {
+                ts.push(Token::BinOp(BinOpToken::Plus));
+            }
+            ts.push(Token::lifetime(bound));
+        }
+        ts
+    }
+}
+
+impl PredicateLifetime {
+    pub fn new(lifetime: impl Into<String>, bounds: Vec<String>) -> Self {
+        Self {
+            lifetime: lifetime.into(),
+            bounds: bounds.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum WherePredicate {
+    Type(PredicateType),
+    Lifetime(PredicateLifetime),
+}
+
+impl fmt::Display for WherePredicate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Type(pred) => write!(f, "{pred}"),
+            Self::Lifetime(pred) => write!(f, "{pred}"),
+        }
+    }
+}
+
+impl From<WherePredicate> for TokenStream {
+    fn from(value: WherePredicate) -> Self {
+        match value {
+            WherePredicate::Type(pred) => TokenStream::from(pred),
+            WherePredicate::Lifetime(pred) => TokenStream::from(pred),
+        }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Impl {
-    pub generics: Vec<GenericArg>,
+    pub generics: Vec<GenericParam>,
     pub of_trait: Option<Type>,
     pub self_ty: Type,
+    pub where_clauses: Option<Vec<WherePredicate>>,
     pub items: Vec<AssocItem>,
 }
 
@@ -1932,7 +2067,17 @@ impl fmt::Display for Impl {
         if let Some(of_trait) = &self.of_trait {
             write!(f, "{of_trait} for ")?;
         }
-        writeln!(f, "{self_ty} {{", self_ty = self.self_ty)?;
+        write!(f, "{self_ty} ", self_ty = self.self_ty)?;
+        if let Some(where_clauses) = &self.where_clauses {
+            write!(f, "where ")?;
+            for (i, clause) in where_clauses.iter().enumerate() {
+                if i != 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{clause}")?;
+            }
+        }
+        writeln!(f, "{{")?;
         for item in self.items.iter() {
             writeln!(f, "{item}")?;
         }
@@ -1959,6 +2104,15 @@ impl From<Impl> for TokenStream {
             ts.push(Token::Keyword(KeywordToken::For));
         }
         ts.extend(TokenStream::from(value.self_ty));
+        if let Some(where_clauses) = value.where_clauses {
+            ts.push(Token::Keyword(KeywordToken::Where));
+            for (i, clause) in where_clauses.iter().enumerate() {
+                if i != 0 {
+                    ts.push(Token::Comma);
+                }
+                ts.extend(TokenStream::from(clause.clone()));
+            }
+        }
         ts.push(Token::OpenDelim(Delimiter::Brace));
         for item in value.items.iter() {
             ts.extend(TokenStream::from(item.clone()));
@@ -1973,7 +2127,7 @@ impl EmptyItem for Impl {
     type Input = Type;
 
     fn empty(self_ty: impl Into<Self::Input>) -> Self {
-        Self::new(vec![], None, self_ty.into(), vec![])
+        Self::new(vec![], None, self_ty.into(), None, vec![])
     }
 }
 
@@ -1989,25 +2143,44 @@ impl HasItem<AssocItem> for Impl {
 impl_hasitem_methods!(Impl, AssocItem);
 
 impl Impl {
-    pub fn new(generics: Vec<GenericArg>, of_trait: Option<Type>, self_ty: Type, items: Vec<AssocItem>) -> Self {
+    pub fn new(
+        generics: Vec<GenericParam>,
+        of_trait: Option<Type>,
+        self_ty: Type,
+        where_clauses: Option<Vec<WherePredicate>>,
+        items: Vec<AssocItem>
+    ) -> Self {
         Self {
             generics,
             of_trait,
             self_ty,
+            where_clauses,
             items,
         }
     }
 
     pub fn trait_impl(
-        generics: Vec<GenericArg>,
+        generics: Vec<GenericParam>,
         self_ty: Type,
         of_trait: Type,
+        where_clauses: Option<Vec<WherePredicate>>,
         items: Vec<AssocItem>,
     ) -> Self {
         Self {
             generics,
             of_trait: Some(of_trait),
             self_ty,
+            where_clauses,
+            items,
+        }
+    }
+
+    pub fn simple(self_ty: Type, items: Vec<AssocItem>) -> Self {
+        Self {
+            generics: vec![],
+            of_trait: None,
+            self_ty,
+            where_clauses: None,
             items,
         }
     }

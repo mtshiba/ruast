@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::expr::{Const, Path, PathSegment};
+use crate::expr::{Const, Path, PathSegment, GenericArg};
 use crate::stmt::Param;
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 
@@ -434,5 +434,13 @@ impl Type {
 
     pub fn static_ref(ty: impl Into<Type>) -> Type {
         Type::Ref(Ref::new(Some("static"), MutTy::immut(ty)))
+    }
+
+    pub fn simple_path(ident: impl Into<String>) -> Type {
+        Type::Path(Path::single(PathSegment::simple(ident)))
+    }
+
+    pub fn poly_path(ident: impl Into<String>, args: Vec<GenericArg>) -> Type {
+        Type::Path(Path::single(PathSegment::new(ident, Some(args))))
     }
 }

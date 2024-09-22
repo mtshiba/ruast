@@ -922,6 +922,18 @@ impl fmt::Display for Closure {
 impl From<Closure> for TokenStream {
     fn from(value: Closure) -> Self {
         let mut ts = TokenStream::new();
+        if value.is_const {
+            ts.push(Token::Keyword(KeywordToken::Const));
+        }
+        if value.is_static {
+            ts.push(Token::Keyword(KeywordToken::Static));
+        }
+        if value.is_async {
+            ts.push(Token::Keyword(KeywordToken::Async));
+        }
+        if value.is_move {
+            ts.push(Token::Keyword(KeywordToken::Move));
+        }
         ts.push(Token::BinOp(BinOpToken::Or));
         let mut iter = value.fn_decl.inputs.iter();
         if let Some(input) = iter.next() {
@@ -1820,6 +1832,12 @@ pub enum Mutability {
     Mut,
 }
 
+impl Mutability {
+    pub const fn is_mut(&self) -> bool {
+        matches!(self, Self::Mut)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AddrOf {
     pub kind: BorrowKind,
@@ -2235,6 +2253,51 @@ impl Repeat {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Reference {
+    pub mutability: Mutability,
+    pub expr: Box<Expr>,
+}
+
+impl fmt::Display for Reference {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "&")?;
+        if self.mutability.is_mut() {
+            write!(f, "mut ")?;
+        }
+        write!(f, "{expr}", expr = self.expr)
+    }
+}
+
+impl From<Reference> for TokenStream {
+    fn from(value: Reference) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::BinOp(BinOpToken::And));
+        if value.mutability.is_mut() {
+            ts.push(Token::Keyword(KeywordToken::Mut));
+        }
+        ts.extend(TokenStream::from(*value.expr));
+        ts
+    }
+}
+
+impl Reference {
+    pub fn new(mutability: Mutability, expr: impl Into<Expr>) -> Self {
+        Self {
+            mutability,
+            expr: Box::new(expr.into()),
+        }
+    }
+
+    pub fn immutable(expr: impl Into<Expr>) -> Self {
+        Self::new(Mutability::Not, expr)
+    }
+
+    pub fn mutable(expr: impl Into<Expr>) -> Self {
+        Self::new(Mutability::Mut, expr)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Try {
     pub expr: Box<Expr>,
 }
@@ -2297,6 +2360,7 @@ pub enum ExprKind {
     Return(Return),
     MacCall(MacCall),
     Struct(Struct),
+    Reference(Reference),
     Repeat(Repeat),
     Try(Try),
 }
@@ -2336,6 +2400,7 @@ impl_display_for_enum!(ExprKind;
     MacCall,
     Struct,
     Repeat,
+    Reference,
     Try,
 );
 impl_obvious_conversion!(ExprKind;
@@ -2373,6 +2438,7 @@ impl_obvious_conversion!(ExprKind;
     MacCall,
     Struct,
     Repeat,
+    Reference,
     Try,
 );
 
