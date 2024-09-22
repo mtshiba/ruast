@@ -197,6 +197,30 @@ impl From<Crate> for TokenStream {
     }
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
+pub struct CompileOptions {
+    pub allow: Option<String>,
+    pub cap_lints: Option<String>,
+    pub cfg: Option<String>,
+    pub check_cfg: Option<String>,
+    pub crate_name: Option<String>,
+    pub crate_type: Option<String>,
+    pub deny: Option<String>,
+    pub edition: Option<String>,
+    pub emit: Option<String>,
+    pub explain: Option<String>,
+    pub forbid: Option<String>,
+    pub force_warn: Option<String>,
+    pub g: bool,
+    pub o: bool,
+    pub print: Option<String>,
+    pub target: Option<String>,
+    pub test: bool,
+    pub out_dir: Option<String>,
+    pub verbose: bool,
+    pub warn: Option<String>,
+}
+
 impl Crate {
     pub fn new() -> Self {
         Self {
@@ -209,6 +233,76 @@ impl Crate {
     pub fn dump(self, path: impl AsRef<Pt>) -> Result<(), std::io::Error> {
         let mut file = File::create(path)?;
         write!(file, "{}", self)?;
+        Ok(())
+    }
+
+    pub fn compile(self, rs_path: impl AsRef<Pt>, options: CompileOptions) -> Result<(), std::io::Error> {
+        let rs_path = rs_path.as_ref();
+        let mut file = File::create(rs_path)?;
+        write!(file, "{}", self)?;
+        drop(file);
+        let mut cmd = std::process::Command::new("rustc");
+        if let Some(allow) = options.allow {
+            cmd.arg("--allow").arg(allow);
+        }
+        if let Some(cap_lints) = options.cap_lints {
+            cmd.arg("--cap-lints").arg(cap_lints);
+        }
+        if let Some(cfg) = options.cfg {
+            cmd.arg("--cfg").arg(cfg);
+        }
+        if let Some(check_cfg) = options.check_cfg {
+            cmd.arg("--check-cfg").arg(check_cfg);
+        }
+        if let Some(crate_name) = options.crate_name {
+            cmd.arg("--crate-name").arg(crate_name);
+        }
+        if let Some(crate_type) = options.crate_type {
+            cmd.arg("--crate-type").arg(crate_type);
+        }
+        if let Some(deny) = options.deny {
+            cmd.arg("--deny").arg(deny);
+        }
+        if let Some(edition) = options.edition {
+            cmd.arg("--edition").arg(edition);
+        }
+        if let Some(emit) = options.emit {
+            cmd.arg("--emit").arg(emit);
+        }
+        if let Some(explain) = options.explain {
+            cmd.arg("--explain").arg(explain);
+        }
+        if let Some(forbid) = options.forbid {
+            cmd.arg("--forbid").arg(forbid);
+        }
+        if let Some(force_warn) = options.force_warn {
+            cmd.arg("--force-warn").arg(force_warn);
+        }
+        if options.g {
+            cmd.arg("-g");
+        }
+        if options.o {
+            cmd.arg("-O");
+        }
+        if let Some(print) = options.print {
+            cmd.arg("--print").arg(print);
+        }
+        if let Some(target) = options.target {
+            cmd.arg("--target").arg(target);
+        }
+        if options.test {
+            cmd.arg("--test");
+        }
+        if let Some(out_dir) = options.out_dir {
+            cmd.arg("--out-dir").arg(out_dir);
+        }
+        if options.verbose {
+            cmd.arg("--verbose");
+        }
+        if let Some(warn) = options.warn {
+            cmd.arg("--warn").arg(warn);
+        }
+        cmd.arg(rs_path).output()?;
         Ok(())
     }
 }

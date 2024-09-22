@@ -16,7 +16,8 @@ let def = Fn::main(
 );
 krate.add_item(def);
 println!("{krate}");
-krate.dump("test.rs")?;
+// krate.dump("test.rs")?;
+// krate.compile("test.rs", CompileOptions::default())?;
 krate.remove_item_by_id("main");
 assert!(krate.is_empty());
 ```
@@ -43,12 +44,15 @@ krate.add_item(Fn {
     )),
 });
 println!("{krate}");
-krate.dump("test.rs")?;
+// krate.dump("test.rs")?;
+// krate.compile("test.rs", CompileOptions::default())?;
 krate.remove_item_by_id("main");
 assert!(krate.is_empty());
 ```
 
-### Building struct, enum, and impl
+### Building struct, enum, trait and impl
+
+The source code is available in the [`examples`](https://github.com/mtshiba/ruast/tree/main/examples) directory.
 
 ```rust
 use ruast::*;
@@ -74,6 +78,24 @@ let def = EnumDef::empty("Foo")
 krate.add_item(def);
 let imp = Impl::empty("Foo")
     .with_item(Fn::empty_method("test", Pat::ref_self()));
+krate.add_item(imp);
+println!("{krate}");
+```
+
+```rust
+use ruast::*;
+
+let mut krate = Crate::new();
+
+let partial_eq = Type::simple_path("PartialEq");
+let trait_def = TraitDef::new("Eq", vec![], vec![partial_eq], vec![]);
+krate.add_item(trait_def);
+let arg_t = GenericArg::Type(Type::simple_path("T"));
+let eq_bound = GenericBound::Trait(PolyTraitRef::simple("Eq"));
+let eq = Type::simple_path("Eq");
+let param_t = GenericParam::new("T", vec![eq_bound]);
+let self_ty = Type::poly_path("Vec", vec![arg_t]);
+let imp = Impl::trait_impl(vec![param_t], self_ty, eq, None, vec![]);
 krate.add_item(imp);
 println!("{krate}");
 ```
