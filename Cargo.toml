@@ -15,6 +15,7 @@ homepage = "https://docs.rs/ruast"
 tokenize = ["dep:proc-macro2", "dep:quote"]
 
 [dependencies]
+indenter = { version = "0.3.3", features = ["std"] }
 proc-macro2 = { version = "1.0", optional = true }
 quote = { version = "1.0", optional = true }
 
@@ -23,4 +24,3 @@ insta = "1.40.0"
 
 [profile.dev.package]
 insta.opt-level = 3
-similar.opt-level = 3

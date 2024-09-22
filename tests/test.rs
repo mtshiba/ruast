@@ -2,7 +2,7 @@ use insta::assert_snapshot;
 use ruast::*;
 
 #[test]
-fn test() -> Result<(), ()> {
+fn test() {
     let mut krate = Crate::new();
     let def = Fn::main(
         None,
@@ -14,17 +14,16 @@ fn test() -> Result<(), ()> {
     krate.add_item(def);
     assert_snapshot!(krate, @r###"
     fn main() {
-    println!("Hello, world!")
+        println!("Hello, world!")
     }
     "###);
     krate.remove_item_by_id("main");
     assert!(krate.is_empty());
     assert_snapshot!(krate, @"");
-    Ok(())
 }
 
 #[test]
-fn test_general() -> Result<(), ()> {
+fn test_general() {
     let mut krate = Crate::new();
     krate.add_item(Fn {
         is_unsafe: false,
@@ -41,13 +40,21 @@ fn test_general() -> Result<(), ()> {
     });
     assert_snapshot!(krate, @r###"
     fn main() {
-    println!("Hello, world!")
+        println!("Hello, world!")
     }
     "###);
     assert_snapshot!(krate[0], @r###"
     fn main() {
-    println!("Hello, world!")
+        println!("Hello, world!")
     }
     "###);
-    Ok(())
+}
+
+#[test]
+fn test_blocks() {
+    let block = Block::from(Stmt::Expr(Expr::new(Lit::int("17"))));
+    assert_snapshot!(block, @"
+    {
+        17
+    }");
 }

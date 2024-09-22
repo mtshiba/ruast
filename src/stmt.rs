@@ -1,3 +1,4 @@
+use core::fmt::Write;
 use std::fmt;
 use std::hash::Hash;
 
@@ -1110,11 +1111,17 @@ impl fmt::Display for Block {
         if let Some(label) = &self.label {
             write!(f, "'{label}: ")?;
         }
-        writeln!(f, "{{")?;
-        for stmt in self.stmts.iter() {
-            writeln!(f, "{stmt}")?;
+        if self.stmts.is_empty() {
+            write!(f, "{{}}")?;
+        } else {
+            writeln!(f, "{{")?;
+            let mut indent = indenter::indented(f).with_str("    ");
+            for stmt in self.stmts.iter() {
+                writeln!(indent, "{stmt}")?;
+            }
+            write!(f, "}}")?;
         }
-        write!(f, "}}")
+        Ok(())
     }
 }
 
