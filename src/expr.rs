@@ -882,6 +882,7 @@ impl Match {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Closure {
     pub is_const: bool,
+    pub is_static: bool,
     pub is_async: bool,
     pub is_move: bool,
     pub fn_decl: FnDecl,
@@ -890,6 +891,18 @@ pub struct Closure {
 
 impl fmt::Display for Closure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_const {
+            write!(f, "const ")?;
+        }
+        if self.is_static {
+            write!(f, "static ")?;
+        }
+        if self.is_async {
+            write!(f, "async ")?;
+        }
+        if self.is_move {
+            write!(f, "move ")?;
+        }
         write!(f, "|")?;
         let mut iter = self.fn_decl.inputs.iter();
         if let Some(input) = iter.next() {
@@ -930,6 +943,7 @@ impl From<Closure> for TokenStream {
 impl Closure {
     pub fn new(
         is_const: bool,
+        is_static: bool,
         is_async: bool,
         is_move: bool,
         fn_decl: FnDecl,
@@ -937,6 +951,7 @@ impl Closure {
     ) -> Self {
         Self {
             is_const,
+            is_static,
             is_async,
             is_move,
             fn_decl,
@@ -945,7 +960,23 @@ impl Closure {
     }
 
     pub fn simple(fn_decl: FnDecl, body: impl Into<Expr>) -> Self {
-        Self::new(false, false, false, fn_decl, body)
+        Self::new(false, false, false, false, fn_decl, body)
+    }
+
+    pub fn new_const(fn_decl: FnDecl, body: impl Into<Expr>) -> Self {
+        Self::new(true, false, false, false, fn_decl, body)
+    }
+
+    pub fn new_static(fn_decl: FnDecl, body: impl Into<Expr>) -> Self {
+        Self::new(false, true, false, false, fn_decl, body)
+    }
+
+    pub fn new_async(fn_decl: FnDecl, body: impl Into<Expr>) -> Self {
+        Self::new(false, false, true, false, fn_decl, body)
+    }
+
+    pub fn new_move(fn_decl: FnDecl, body: impl Into<Expr>) -> Self {
+        Self::new(false, false, false, true, fn_decl, body)
     }
 }
 

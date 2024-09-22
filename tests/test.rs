@@ -21,11 +21,15 @@ fn test() -> Result<(), ()> {
 fn test_general() -> Result<(), ()> {
     let mut krate = Crate::new();
     krate.add_item(Fn {
+        is_unsafe: false,
+        is_const: false,
+        is_async: false,
+        abi: None,
         ident: "main".to_string(),
         generics: vec![],
         fn_decl: FnDecl::new(vec![], None),
         body: Some(Block::from(Stmt::Expr(Expr::new(MacCall {
-            path: Path::single("println!"),
+            path: Path::single("println"),
             args: DelimArgs::from(vec![Token::lit("Hello, world!")]),
         })))),
     });

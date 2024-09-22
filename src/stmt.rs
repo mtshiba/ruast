@@ -704,6 +704,10 @@ impl FnDecl {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Fn {
+    pub is_unsafe: bool,
+    pub is_const: bool,
+    pub is_async: bool,
+    pub abi: Option<String>,
     pub ident: String,
     pub generics: Vec<GenericParam>,
     pub fn_decl: FnDecl,
@@ -712,6 +716,18 @@ pub struct Fn {
 
 impl fmt::Display for Fn {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_unsafe {
+            write!(f, "unsafe ")?;
+        }
+        if self.is_const {
+            write!(f, "const ")?;
+        }
+        if self.is_async {
+            write!(f, "async ")?;
+        }
+        if let Some(abi) = &self.abi {
+            write!(f, "extern \"{abi}\" ")?;
+        }
         write!(f, "fn {}", self.ident)?;
         if !self.generics.is_empty() {
             write!(f, "<")?;
@@ -734,6 +750,19 @@ impl fmt::Display for Fn {
 impl From<Fn> for TokenStream {
     fn from(value: Fn) -> Self {
         let mut ts = TokenStream::new();
+        if value.is_unsafe {
+            ts.push(Token::Keyword(KeywordToken::Unsafe));
+        }
+        if value.is_const {
+            ts.push(Token::Keyword(KeywordToken::Const));
+        }
+        if value.is_async {
+            ts.push(Token::Keyword(KeywordToken::Async));
+        }
+        if let Some(abi) = value.abi {
+            ts.push(Token::Keyword(KeywordToken::Extern));
+            ts.push(Token::lit(format!("\"{abi}\"")));
+        }
         ts.push(Token::Keyword(KeywordToken::Fn));
         ts.push(Token::ident(value.ident));
         if !value.generics.is_empty() {
@@ -769,13 +798,22 @@ impl Ident for Fn {
 }
 
 impl Fn {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
+        is_unsafe: bool,
+        is_const: bool,
+        is_async: bool,
+        abi: Option<String>,
         ident: impl Into<String>,
         generics: Vec<GenericParam>,
         fn_decl: FnDecl,
         body: Option<Block>,
     ) -> Self {
         Self {
+            is_unsafe,
+            is_const,
+            is_async,
+            abi,
             ident: ident.into(),
             generics,
             fn_decl,
@@ -783,8 +821,77 @@ impl Fn {
         }
     }
 
+    pub fn simple(ident: impl Into<String>, fn_decl: FnDecl, body: Block) -> Self {
+        Self {
+            is_unsafe: false,
+            is_const: false,
+            is_async: false,
+            abi: None,
+            ident: ident.into(),
+            generics: Vec::new(),
+            fn_decl,
+            body: Some(body),
+        }
+    }
+
+    pub fn new_unsafe(ident: impl Into<String>, generics: Vec<GenericParam>, fn_decl: FnDecl) -> Self {
+        Self {
+            is_unsafe: true,
+            is_const: false,
+            is_async: false,
+            abi: None,
+            ident: ident.into(),
+            generics,
+            fn_decl,
+            body: None,
+        }
+    }
+
+    pub fn new_const(ident: impl Into<String>, generics: Vec<GenericParam>, fn_decl: FnDecl) -> Self {
+        Self {
+            is_unsafe: false,
+            is_const: true,
+            is_async: false,
+            abi: None,
+            ident: ident.into(),
+            generics,
+            fn_decl,
+            body: None,
+        }
+    }
+
+    pub fn new_async(ident: impl Into<String>, generics: Vec<GenericParam>, fn_decl: FnDecl) -> Self {
+        Self {
+            is_unsafe: false,
+            is_const: false,
+            is_async: true,
+            abi: None,
+            ident: ident.into(),
+            generics,
+            fn_decl,
+            body: None,
+        }
+    }
+
+    pub fn extern_c(ident: impl Into<String>, generics: Vec<GenericParam>, fn_decl: FnDecl) -> Self {
+        Self {
+            is_unsafe: false,
+            is_const: false,
+            is_async: false,
+            abi: Some("C".to_string()),
+            ident: ident.into(),
+            generics,
+            fn_decl,
+            body: None,
+        }
+    }
+
     pub fn main(output: Option<Type>, body: Block) -> Self {
         Self {
+            is_unsafe: false,
+            is_const: false,
+            is_async: false,
+            abi: None,
             ident: "main".to_string(),
             generics: Vec::new(),
             fn_decl: FnDecl::new(Vec::new(), output),
@@ -794,6 +901,10 @@ impl Fn {
 
     pub fn empty(ident: impl Into<String>) -> Self {
         Self {
+            is_unsafe: false,
+            is_const: false,
+            is_async: false,
+            abi: None,
             ident: ident.into(),
             generics: Vec::new(),
             fn_decl: FnDecl::empty(),
@@ -803,6 +914,10 @@ impl Fn {
 
     pub fn empty_method(ident: impl Into<String>, self_pat: Pat) -> Self {
         Self {
+            is_unsafe: false,
+            is_const: false,
+            is_async: false,
+            abi: None,
             ident: ident.into(),
             generics: Vec::new(),
             fn_decl: FnDecl::new(vec![Param::new(self_pat, Type::ImplicitSelf)], None),
