@@ -1,4 +1,5 @@
 use ruast::*;
+use insta::assert_snapshot;
 
 #[test]
 fn test() -> Result<(), ()> {
@@ -11,9 +12,14 @@ fn test() -> Result<(), ()> {
         )),
     );
     krate.add_item(def);
-    println!("{krate}");
+    assert_snapshot!(krate, @r###"
+    fn main() {
+    println!("Hello, world!")
+    }
+    "###);
     krate.remove_item_by_id("main");
     assert!(krate.is_empty());
+    assert_snapshot!(krate, @"");
     Ok(())
 }
 
@@ -33,7 +39,15 @@ fn test_general() -> Result<(), ()> {
             args: DelimArgs::from(vec![Token::lit("Hello, world!")]),
         })))),
     });
-    println!("{krate}");
-    println!("{}", krate[0]);
+    assert_snapshot!(krate, @r###"
+    fn main() {
+    println!("Hello, world!")
+    }
+    "###);
+    assert_snapshot!(krate[0], @r###"
+    fn main() {
+    println!("Hello, world!")
+    }
+    "###);
     Ok(())
 }
