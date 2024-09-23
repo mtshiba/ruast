@@ -1,3 +1,4 @@
+use core::fmt::Write;
 use std::fmt;
 use std::hash::Hash;
 
@@ -834,7 +835,11 @@ impl Fn {
         }
     }
 
-    pub fn new_unsafe(ident: impl Into<String>, generics: Vec<GenericParam>, fn_decl: FnDecl) -> Self {
+    pub fn new_unsafe(
+        ident: impl Into<String>,
+        generics: Vec<GenericParam>,
+        fn_decl: FnDecl,
+    ) -> Self {
         Self {
             is_unsafe: true,
             is_const: false,
@@ -847,7 +852,11 @@ impl Fn {
         }
     }
 
-    pub fn new_const(ident: impl Into<String>, generics: Vec<GenericParam>, fn_decl: FnDecl) -> Self {
+    pub fn new_const(
+        ident: impl Into<String>,
+        generics: Vec<GenericParam>,
+        fn_decl: FnDecl,
+    ) -> Self {
         Self {
             is_unsafe: false,
             is_const: true,
@@ -860,7 +869,11 @@ impl Fn {
         }
     }
 
-    pub fn new_async(ident: impl Into<String>, generics: Vec<GenericParam>, fn_decl: FnDecl) -> Self {
+    pub fn new_async(
+        ident: impl Into<String>,
+        generics: Vec<GenericParam>,
+        fn_decl: FnDecl,
+    ) -> Self {
         Self {
             is_unsafe: false,
             is_const: false,
@@ -873,7 +886,11 @@ impl Fn {
         }
     }
 
-    pub fn extern_c(ident: impl Into<String>, generics: Vec<GenericParam>, fn_decl: FnDecl) -> Self {
+    pub fn extern_c(
+        ident: impl Into<String>,
+        generics: Vec<GenericParam>,
+        fn_decl: FnDecl,
+    ) -> Self {
         Self {
             is_unsafe: false,
             is_const: false,
@@ -1094,11 +1111,17 @@ impl fmt::Display for Block {
         if let Some(label) = &self.label {
             write!(f, "'{label}: ")?;
         }
-        writeln!(f, "{{")?;
-        for stmt in self.stmts.iter() {
-            writeln!(f, "{stmt}")?;
+        if self.stmts.is_empty() {
+            write!(f, "{{}}")?;
+        } else {
+            writeln!(f, "{{")?;
+            let mut indent = indenter::indented(f).with_str("    ");
+            for stmt in self.stmts.iter() {
+                writeln!(indent, "{stmt}")?;
+            }
+            write!(f, "}}")?;
         }
-        write!(f, "}}")
+        Ok(())
     }
 }
 
@@ -1913,7 +1936,12 @@ impl HasItem<AssocItem> for TraitDef {
 impl_hasitem_methods!(TraitDef, AssocItem);
 
 impl TraitDef {
-    pub fn new(ident: impl Into<String>, generics: Vec<GenericArg>, supertraits: Vec<Type>, items: Vec<AssocItem>) -> Self {
+    pub fn new(
+        ident: impl Into<String>,
+        generics: Vec<GenericArg>,
+        supertraits: Vec<Type>,
+        items: Vec<AssocItem>,
+    ) -> Self {
         Self {
             ident: ident.into(),
             generics,
@@ -2148,7 +2176,7 @@ impl Impl {
         of_trait: Option<Type>,
         self_ty: Type,
         where_clauses: Option<Vec<WherePredicate>>,
-        items: Vec<AssocItem>
+        items: Vec<AssocItem>,
     ) -> Self {
         Self {
             generics,

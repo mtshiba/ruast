@@ -666,7 +666,7 @@ impl fmt::Display for If {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "if {cond} {then}", cond = self.cond, then = self.then)?;
         if let Some(else_) = &self.else_ {
-            write!(f, " else {{ {else_} }}", else_ = else_)?;
+            write!(f, " else {else_}")?;
         }
         Ok(())
     }

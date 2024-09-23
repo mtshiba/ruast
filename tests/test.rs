@@ -1,8 +1,8 @@
-use ruast::*;
 use insta::assert_snapshot;
+use ruast::*;
 
 #[test]
-fn test() -> Result<(), ()> {
+fn test() {
     let mut krate = Crate::new();
     let def = Fn::main(
         None,
@@ -14,17 +14,16 @@ fn test() -> Result<(), ()> {
     krate.add_item(def);
     assert_snapshot!(krate, @r###"
     fn main() {
-    println!("Hello, world!")
+        println!("Hello, world!")
     }
     "###);
     krate.remove_item_by_id("main");
     assert!(krate.is_empty());
     assert_snapshot!(krate, @"");
-    Ok(())
 }
 
 #[test]
-fn test_general() -> Result<(), ()> {
+fn test_general() {
     let mut krate = Crate::new();
     krate.add_item(Fn {
         is_unsafe: false,
@@ -41,13 +40,53 @@ fn test_general() -> Result<(), ()> {
     });
     assert_snapshot!(krate, @r###"
     fn main() {
-    println!("Hello, world!")
+        println!("Hello, world!")
     }
     "###);
     assert_snapshot!(krate[0], @r###"
     fn main() {
-    println!("Hello, world!")
+        println!("Hello, world!")
     }
     "###);
-    Ok(())
+}
+
+#[test]
+fn test_blocks() {
+    let block = Block::from(Stmt::Expr(Expr::new(Lit::int("17"))));
+    assert_snapshot!(block, @"
+    {
+        17
+    }");
+
+    assert_snapshot!(Block::empty(), @"{}");
+}
+
+#[test]
+fn test_if_else() {
+    let if_else = If::new(
+        Expr::new(Lit::bool("true")),
+        Block::from(Stmt::Expr(Expr::new(Lit::int("17")))),
+        Some(Expr::from(Block::from(Stmt::Expr(Expr::new(Lit::int(
+            "39",
+        )))))),
+    );
+    assert_snapshot!(if_else, @"
+    if true {
+        17
+    } else {
+        39
+    }");
+    let if_elseif_else = If::new(
+        Expr::new(Lit::bool("false")),
+        Block::from(Stmt::Expr(Expr::new(Lit::int("1")))),
+        Some(Expr::from(if_else)),
+    );
+    assert_snapshot!(if_elseif_else, @"
+    if false {
+        1
+    } else if true {
+        17
+    } else {
+        39
+    }");
 }
