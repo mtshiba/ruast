@@ -6,15 +6,16 @@ fn test() {
     let mut krate = Crate::new();
     let def = Fn::main(
         None,
-        Block::from(MacCall::new(
-            Path::single("println"),
-            vec![Token::lit("Hello, world!")],
-        )),
+        Block::from(
+            Path::single("println")
+                .mac_call(vec![Token::lit("Hello, world!")])
+                .semi(),
+        ),
     );
     krate.add_item(def);
     assert_snapshot!(krate, @r###"
     fn main() {
-        println!("Hello, world!")
+        println!("Hello, world!");
     }
     "###);
     krate.remove_item_by_id("main");
@@ -33,19 +34,19 @@ fn test_general() {
         ident: "main".to_string(),
         generics: vec![],
         fn_decl: FnDecl::new(vec![], None),
-        body: Some(Block::from(Stmt::Expr(Expr::new(MacCall {
+        body: Some(Block::from(Stmt::Semi(Semi::new(Expr::new(MacCall {
             path: Path::single("println"),
             args: DelimArgs::from(vec![Token::lit("Hello, world!")]),
-        })))),
+        }))))),
     });
     assert_snapshot!(krate, @r###"
     fn main() {
-        println!("Hello, world!")
+        println!("Hello, world!");
     }
     "###);
     assert_snapshot!(krate[0], @r###"
     fn main() {
-        println!("Hello, world!")
+        println!("Hello, world!");
     }
     "###);
 }

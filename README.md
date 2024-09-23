@@ -12,7 +12,11 @@ use ruast::*;
 let mut krate = Crate::new();
 let def = Fn::main(
     None,
-    Block::from(Path::single("println").mac_call(vec![Token::lit("Hello, world!")])),
+    Block::from(
+        Path::single("println")
+            .mac_call(vec![Token::lit("Hello, world!")])
+            .semi(),
+    ),
 );
 krate.add_item(def);
 println!("{krate}");
@@ -36,18 +40,24 @@ krate.add_item(Fn {
     ident: "main".to_string(),
     generics: vec![],
     fn_decl: FnDecl::new(vec![], None),
-    body: Some(Block::from(
-        Stmt::Expr(Expr::new(MacCall {
-            path: Path::single("println"),
-            args: DelimArgs::from(vec![Token::lit("Hello, world!")]),
-        })),
-    )),
+    body: Some(Block::from(Stmt::Semi(Semi::new(Expr::new(MacCall {
+        path: Path::single("println"),
+        args: DelimArgs::from(vec![Token::lit("Hello, world!")]),
+    }))))),
 });
 println!("{krate}");
 // krate.dump("test.rs")?;
 // krate.compile("test.rs", CompileOptions::default())?;
 krate.remove_item_by_id("main");
 assert!(krate.is_empty());
+```
+
+```rust
+> cargo run --example hello
+
+fn main() {
+    println!("Hello, world!");
+}
 ```
 
 ### Building struct, enum, trait and impl
