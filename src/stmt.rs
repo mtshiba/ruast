@@ -2619,7 +2619,7 @@ impl From<Empty> for TokenStream {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Semi(Expr);
+pub struct Semi(pub Expr);
 
 impl fmt::Display for Semi {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
