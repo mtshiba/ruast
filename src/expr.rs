@@ -294,8 +294,8 @@ impl From<AttrKind> for TokenStream {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AttributeItem {
-    path: Path,
-    args: AttrArgs,
+    pub path: Path,
+    pub args: AttrArgs,
 }
 
 impl fmt::Display for AttributeItem {
@@ -380,7 +380,7 @@ impl Expr {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Const(Expr);
+pub struct Const(pub Expr);
 
 impl fmt::Display for Const {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -395,7 +395,7 @@ impl From<Const> for TokenStream {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
-pub struct Array(Vec<Expr>);
+pub struct Array(pub Vec<Expr>);
 
 impl fmt::Display for Array {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -443,7 +443,7 @@ impl Array {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
-pub struct Tuple(Vec<Expr>);
+pub struct Tuple(pub Vec<Expr>);
 
 impl fmt::Display for Tuple {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -2138,8 +2138,8 @@ impl MacCall {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ExprField {
-    ident: String,
-    expr: Expr,
+    pub ident: String,
+    pub expr: Expr,
 }
 
 impl fmt::Display for ExprField {

@@ -2429,7 +2429,7 @@ impl ItemKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Use(Path);
+pub struct Use(pub Path);
 
 impl fmt::Display for Use {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
