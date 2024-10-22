@@ -183,6 +183,40 @@ impl<E: Into<Expr>> Assignable for E {
     }
 }
 
+pub trait Addressable {
+    fn addr_of(self, kind: BorrowKind, mutable: Mutability) -> AddrOf;
+    fn ref_immut(self) -> AddrOf
+    where
+        Self: Sized,
+    {
+        self.addr_of(BorrowKind::Ref, Mutability::Not)
+    }
+    fn ref_mut(self) -> AddrOf
+    where
+        Self: Sized,
+    {
+        self.addr_of(BorrowKind::Ref, Mutability::Mut)
+    }
+    fn ptr_immut(self) -> AddrOf
+    where
+        Self: Sized,
+    {
+        self.addr_of(BorrowKind::Raw, Mutability::Not)
+    }
+    fn ptr_mut(self) -> AddrOf
+    where
+        Self: Sized,
+    {
+        self.addr_of(BorrowKind::Raw, Mutability::Mut)
+    }
+}
+
+impl<E: Into<Expr>> Addressable for E {
+    fn addr_of(self, kind: BorrowKind, mutable: Mutability) -> AddrOf {
+        AddrOf::new(kind, mutable, self)
+    }
+}
+
 pub trait IntoTokens {
     fn into_tokens(self) -> TokenStream;
 }
@@ -1727,7 +1761,7 @@ impl From<Path> for TokenStream {
 }
 
 impl Path {
-    pub fn new(segments: Vec<PathSegment>) -> Self {
+    pub const fn new(segments: Vec<PathSegment>) -> Self {
         Self { segments }
     }
 
@@ -1884,6 +1918,24 @@ impl From<AddrOf> for TokenStream {
         }
         ts.extend(TokenStream::from(*value.expr));
         ts
+    }
+}
+
+impl AddrOf {
+    pub fn new(kind: BorrowKind, mutability: Mutability, expr: impl Into<Expr>) -> Self {
+        Self {
+            kind,
+            mutability,
+            expr: Box::new(expr.into()),
+        }
+    }
+
+    pub fn ref_immutable(expr: impl Into<Expr>) -> Self {
+        Self::new(BorrowKind::Ref, Mutability::Not, expr)
+    }
+
+    pub fn ref_mutable(expr: impl Into<Expr>) -> Self {
+        Self::new(BorrowKind::Ref, Mutability::Mut, expr)
     }
 }
 
@@ -2253,51 +2305,6 @@ impl Repeat {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Reference {
-    pub mutability: Mutability,
-    pub expr: Box<Expr>,
-}
-
-impl fmt::Display for Reference {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "&")?;
-        if self.mutability.is_mut() {
-            write!(f, "mut ")?;
-        }
-        write!(f, "{expr}", expr = self.expr)
-    }
-}
-
-impl From<Reference> for TokenStream {
-    fn from(value: Reference) -> Self {
-        let mut ts = TokenStream::new();
-        ts.push(Token::BinOp(BinOpToken::And));
-        if value.mutability.is_mut() {
-            ts.push(Token::Keyword(KeywordToken::Mut));
-        }
-        ts.extend(TokenStream::from(*value.expr));
-        ts
-    }
-}
-
-impl Reference {
-    pub fn new(mutability: Mutability, expr: impl Into<Expr>) -> Self {
-        Self {
-            mutability,
-            expr: Box::new(expr.into()),
-        }
-    }
-
-    pub fn immutable(expr: impl Into<Expr>) -> Self {
-        Self::new(Mutability::Not, expr)
-    }
-
-    pub fn mutable(expr: impl Into<Expr>) -> Self {
-        Self::new(Mutability::Mut, expr)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Try {
     pub expr: Box<Expr>,
 }
@@ -2360,7 +2367,6 @@ pub enum ExprKind {
     Return(Return),
     MacCall(MacCall),
     Struct(Struct),
-    Reference(Reference),
     Repeat(Repeat),
     Try(Try),
 }
@@ -2400,7 +2406,6 @@ impl_display_for_enum!(ExprKind;
     MacCall,
     Struct,
     Repeat,
-    Reference,
     Try,
 );
 impl_obvious_conversion!(ExprKind;
@@ -2438,7 +2443,6 @@ impl_obvious_conversion!(ExprKind;
     MacCall,
     Struct,
     Repeat,
-    Reference,
     Try,
 );
 
