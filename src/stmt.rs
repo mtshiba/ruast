@@ -2429,7 +2429,7 @@ impl ItemKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Use(Path);
+pub struct Use(pub Path);
 
 impl fmt::Display for Use {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -2619,7 +2619,7 @@ impl From<Empty> for TokenStream {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Semi(Expr);
+pub struct Semi(pub Expr);
 
 impl fmt::Display for Semi {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
