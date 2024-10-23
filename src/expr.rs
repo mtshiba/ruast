@@ -1872,6 +1872,15 @@ impl Mutability {
     }
 }
 
+impl fmt::Display for Mutability {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Mutability::Mut => write!(f, "mut"),
+            Mutability::Not => write!(f, ""),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AddrOf {
     pub kind: BorrowKind,
