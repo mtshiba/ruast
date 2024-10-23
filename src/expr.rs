@@ -183,6 +183,56 @@ impl<E: Into<Expr>> Assignable for E {
     }
 }
 
+pub trait BinaryOperable {
+    fn bin_op(self, op: BinOpKind, rhs: impl Into<Expr>) -> Binary;
+    fn add(self, rhs: impl Into<Expr>) -> Binary
+    where
+        Self: Sized,
+    {
+        self.bin_op(BinOpKind::Add, rhs)
+    }
+    fn sub(self, rhs: impl Into<Expr>) -> Binary
+    where
+        Self: Sized,
+    {
+        self.bin_op(BinOpKind::Sub, rhs)
+    }
+    fn mul(self, rhs: impl Into<Expr>) -> Binary
+    where
+        Self: Sized,
+    {
+        self.bin_op(BinOpKind::Mul, rhs)
+    }
+    fn div(self, rhs: impl Into<Expr>) -> Binary
+    where
+        Self: Sized,
+    {
+        self.bin_op(BinOpKind::Div, rhs)
+    }
+}
+
+impl<E: Into<Expr>> BinaryOperable for E {
+    fn bin_op(self, op: BinOpKind, rhs: impl Into<Expr>) -> Binary {
+        Binary::new(self, op, rhs)
+    }
+}
+
+pub trait UnaryOperable {
+    fn unary_op(self, op: UnaryOpKind) -> Unary;
+    fn neg(self) -> Unary
+    where
+        Self: Sized,
+    {
+        self.unary_op(UnaryOpKind::Neg)
+    }
+}
+
+impl<E: Into<Expr>> UnaryOperable for E {
+    fn unary_op(self, op: UnaryOpKind) -> Unary {
+        Unary::new(op, self)
+    }
+}
+
 pub trait Addressable {
     fn addr_of(self, kind: BorrowKind, mutable: Mutability) -> AddrOf;
     fn ref_immut(self) -> AddrOf

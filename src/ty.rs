@@ -54,6 +54,10 @@ impl MutTy {
     pub fn immut(ty: impl Into<Type>) -> Self {
         Self::new(false, ty)
     }
+
+    pub fn mut_(ty: impl Into<Type>) -> Self {
+        Self::new(true, ty)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -489,8 +493,67 @@ impl From<Type> for TokenStream {
 }
 
 impl Type {
+    pub fn unit() -> Type {
+        Self::Tuple(vec![])
+    }
+    pub fn usize() -> Type {
+        Self::Path(Path::single("usize"))
+    }
+    pub fn isize() -> Type {
+        Self::Path(Path::single("isize"))
+    }
+    pub fn bool() -> Type {
+        Self::Path(Path::single("bool"))
+    }
+    pub fn char() -> Type {
+        Self::Path(Path::single("char"))
+    }
+    pub fn str() -> Type {
+        Self::Path(Path::single("str"))
+    }
+    pub fn f32() -> Type {
+        Self::Path(Path::single("f32"))
+    }
+    pub fn f64() -> Type {
+        Self::Path(Path::single("f64"))
+    }
+    pub fn i8() -> Type {
+        Self::Path(Path::single("i8"))
+    }
+    pub fn i16() -> Type {
+        Self::Path(Path::single("i16"))
+    }
+    pub fn i32() -> Type {
+        Self::Path(Path::single("i32"))
+    }
+    pub fn i64() -> Type {
+        Self::Path(Path::single("i64"))
+    }
+    pub fn i128() -> Type {
+        Self::Path(Path::single("i128"))
+    }
+    pub fn u8() -> Type {
+        Self::Path(Path::single("u8"))
+    }
+    pub fn u16() -> Type {
+        Self::Path(Path::single("u16"))
+    }
+    pub fn u32() -> Type {
+        Self::Path(Path::single("u32"))
+    }
+    pub fn u64() -> Type {
+        Self::Path(Path::single("u64"))
+    }
+    pub fn u128() -> Type {
+        Self::Path(Path::single("u128"))
+    }
+
     pub fn ref_(ty: impl Into<Type>) -> Type {
         Type::Ref(Ref::new(Option::<String>::None, MutTy::immut(ty)))
+    }
+
+    pub fn ref_mut(ty: impl Into<Type>) -> Type {
+        Type::Ref(Ref::new(Option::<String>::None, MutTy::mut_(ty)))
     }
 
     pub fn static_ref(ty: impl Into<Type>) -> Type {
