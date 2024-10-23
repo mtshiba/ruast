@@ -1076,6 +1076,7 @@ impl Closure {
     }
 }
 
+/// `async { ... }`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Async {
     pub block: Block,
@@ -1110,6 +1111,7 @@ impl Async {
     }
 }
 
+/// `expr.await`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Await {
     pub expr: Box<Expr>,
@@ -1139,6 +1141,7 @@ impl Await {
     }
 }
 
+/// `try { ... }`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TryBlock {
     pub block: Block,
@@ -1173,6 +1176,7 @@ impl TryBlock {
     }
 }
 
+/// `expr.ident`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Field {
     pub expr: Box<Expr>,
@@ -1204,6 +1208,7 @@ impl Field {
     }
 }
 
+/// `expr[index]`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Index {
     pub expr: Box<Expr>,
@@ -1242,6 +1247,26 @@ pub enum RangeLimits {
     Closed,
 }
 
+impl fmt::Display for RangeLimits {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::HalfOpen => write!(f, ".."),
+            Self::Closed => write!(f, "..="),
+        }
+    }
+}
+
+impl RangeLimits {
+    pub fn is_half_open(&self) -> bool {
+        matches!(self, Self::HalfOpen)
+    }
+
+    pub fn is_closed(&self) -> bool {
+        matches!(self, Self::Closed)
+    }
+}
+
+/// `start..end` or `start..=end`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Range {
     pub start: Option<Box<Expr>>,
@@ -1251,32 +1276,17 @@ pub struct Range {
 
 impl fmt::Display for Range {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.limits {
-            RangeLimits::HalfOpen => {
-                write!(
-                    f,
-                    "{start}..{end}",
-                    start = self
-                        .start
-                        .as_ref()
-                        .map(|e| e.to_string())
-                        .unwrap_or_default(),
-                    end = self.end.as_ref().map(|e| e.to_string()).unwrap_or_default()
-                )
-            }
-            RangeLimits::Closed => {
-                write!(
-                    f,
-                    "{start}..={end}",
-                    start = self
-                        .start
-                        .as_ref()
-                        .map(|e| e.to_string())
-                        .unwrap_or_default(),
-                    end = self.end.as_ref().map(|e| e.to_string()).unwrap_or_default()
-                )
-            }
-        }
+        write!(
+            f,
+            "{start}{limits}{end}",
+            start = self
+                .start
+                .as_ref()
+                .map(|e| e.to_string())
+                .unwrap_or_default(),
+            limits = self.limits,
+            end = self.end.as_ref().map(|e| e.to_string()).unwrap_or_default()
+        )
     }
 }
 
@@ -1326,6 +1336,7 @@ impl From<Underscore> for TokenStream {
     }
 }
 
+/// `return expr`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Return {
     pub expr: Option<Box<Expr>>,
@@ -1360,6 +1371,7 @@ impl Return {
     }
 }
 
+/// `lhs = rhs`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Assign {
     pub lhs: Box<Expr>,
@@ -1489,6 +1501,7 @@ impl From<BinOpKind> for TokenStream {
     }
 }
 
+/// `lhs op= rhs`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AssignOp {
     pub lhs: Box<Expr>,
@@ -1500,9 +1513,9 @@ impl fmt::Display for AssignOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{lhs} {op} {rhs}",
+            "{lhs} {as_op} {rhs}",
             lhs = self.lhs,
-            op = self.op.as_assign_op(),
+            as_op = self.op.as_assign_op(),
             rhs = self.rhs
         )
     }
@@ -1602,6 +1615,7 @@ impl Lit {
     }
 }
 
+/// `expr as ty`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Cast {
     pub expr: Box<Expr>,
@@ -1635,6 +1649,7 @@ impl Cast {
     }
 }
 
+/// `expr: ty`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypeAscription {
     pub expr: Box<Expr>,
@@ -1931,6 +1946,7 @@ impl fmt::Display for Mutability {
     }
 }
 
+/// `&expr`, `&mut expr`, `&raw const expr`, `&raw mut expr`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AddrOf {
     pub kind: BorrowKind,
@@ -1998,6 +2014,7 @@ impl AddrOf {
     }
 }
 
+/// `break ('label)? expr`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Break {
     pub label: Option<String>,
@@ -2031,6 +2048,7 @@ impl From<Break> for TokenStream {
     }
 }
 
+/// `continue ('label)?`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Continue {
     pub label: Option<String>,
@@ -2247,6 +2265,7 @@ impl MacCall {
     }
 }
 
+/// `ident: expr`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ExprField {
     pub ident: String,
@@ -2330,6 +2349,7 @@ impl Struct {
     }
 }
 
+/// `[expr; len]`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Repeat {
     pub expr: Box<Expr>,
@@ -2363,6 +2383,7 @@ impl Repeat {
     }
 }
 
+/// `expr?`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Try {
     pub expr: Box<Expr>,

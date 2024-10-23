@@ -125,6 +125,7 @@ impl<E: Into<Expr>> Semicolon for E {
     }
 }
 
+/// `let pat (:ty)? (= expr)?;`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Local {
     pub pat: Pat,
@@ -703,6 +704,7 @@ impl FnDecl {
     }
 }
 
+/// `fn (unsafe)? (const)? (async)? (extern "abi")? ident (<...>)? decl { ... }`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Fn {
     pub is_unsafe: bool,
@@ -967,6 +969,7 @@ impl Fn {
     }
 }
 
+/// `mod ident { ... }`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LoadedMod {
     pub ident: String,
@@ -1039,6 +1042,7 @@ impl LoadedMod {
     }
 }
 
+/// `mod ident { ... }` or `mod ident;`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Mod {
     Loaded(LoadedMod),
@@ -1100,6 +1104,7 @@ impl Mod {
     }
 }
 
+/// `('label:)? { ... }`
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Block {
     pub label: Option<String>,
@@ -1228,6 +1233,7 @@ impl Block {
     }
 }
 
+/// `vis (ident:)? ty`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FieldDef {
     pub attrs: Vec<Attribute>,
@@ -2432,6 +2438,7 @@ impl ItemKind {
     }
 }
 
+/// `use path;`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Use(pub Path);
 
@@ -2456,6 +2463,7 @@ impl Use {
     }
 }
 
+/// `static ident: ty (= expr)?`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StaticItem {
     pub ident: String,
@@ -2494,6 +2502,7 @@ impl Ident for StaticItem {
     }
 }
 
+/// `const ident: ty (= expr)?`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ConstItem {
     pub ident: String,
@@ -2542,6 +2551,7 @@ impl ConstItem {
     }
 }
 
+/// `type ident = ty`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TyAlias {
     pub ident: String,
@@ -2622,6 +2632,7 @@ impl From<Empty> for TokenStream {
     }
 }
 
+/// `expr;`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Semi(pub Expr);
 
