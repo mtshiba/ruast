@@ -144,7 +144,7 @@ impl From<Ptr> for TokenStream {
 impl Ptr {
     pub fn new(kind: PtrKind, ty: impl Into<Type>) -> Self {
         Self {
-            kind: kind,
+            kind,
             ty: Box::new(ty.into()),
         }
     }

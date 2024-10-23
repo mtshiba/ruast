@@ -1842,7 +1842,7 @@ impl fmt::Display for Mutability {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Mutability::Mut => write!(f, "mut"),
-            Mutability::Not => write!(f, "const"),
+            Mutability::Not => write!(f, ""),
         }
     }
 }
