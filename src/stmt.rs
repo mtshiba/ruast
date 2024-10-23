@@ -7,7 +7,7 @@ use crate::expr::{
 };
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 use crate::ty::Type;
-use crate::{impl_display_for_enum, impl_hasitem_methods, impl_obvious_conversion, GenericParam};
+use crate::{impl_display_for_enum, impl_hasitem_methods, impl_obvious_conversion, ForLoop, GenericParam};
 
 #[cfg(feature = "tokenize")]
 crate::impl_to_tokens!(
@@ -1329,14 +1329,15 @@ impl fmt::Display for VariantData {
                 write!(f, ")")
             }
             Self::Struct(fields) => {
-                write!(f, "{{")?;
+                writeln!(f, " {{")?;
+                let mut indent = indenter::indented(f).with_str("    ");
                 for (i, field) in fields.iter().enumerate() {
                     if i != 0 {
-                        write!(f, ", ")?;
+                        writeln!(indent, ", ")?;
                     }
-                    write!(f, "{field}")?;
+                    write!(indent, "{field}")?;
                 }
-                write!(f, "}}")
+                write!(f, "\n}}")
             }
         }
     }
@@ -1551,7 +1552,7 @@ pub struct EnumDef {
 
 impl fmt::Display for EnumDef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "enum {}", self.ident)?;
+        write!(f, "enum {}", self.ident)?;
         if !self.generics.is_empty() {
             write!(f, "<")?;
             for (i, generic) in self.generics.iter().enumerate() {
@@ -1562,9 +1563,10 @@ impl fmt::Display for EnumDef {
             }
             write!(f, ">")?;
         }
-        writeln!(f, "{{")?;
+        writeln!(f, " {{")?;
+        let mut indent = indenter::indented(f).with_str("    ");
         for variant in self.variants.iter() {
-            writeln!(f, "{variant},")?;
+            writeln!(indent, "{variant},")?;
         }
         write!(f, "}}")
     }
@@ -1869,8 +1871,9 @@ impl fmt::Display for TraitDef {
             }
         }
         write!(f, " {{")?;
+        let mut indent = indenter::indented(f).with_str("    ");
         for item in self.items.iter() {
-            writeln!(f, "{item};")?;
+            writeln!(indent, "{item};")?;
         }
         write!(f, "}}")
     }
@@ -2106,8 +2109,9 @@ impl fmt::Display for Impl {
             }
         }
         writeln!(f, "{{")?;
+        let mut indent = indenter::indented(f).with_str("    ");
         for item in self.items.iter() {
-            writeln!(f, "{item}")?;
+            writeln!(indent, "{item}")?;
         }
         write!(f, "}}")
     }
@@ -2721,6 +2725,11 @@ impl From<Call> for Stmt {
 }
 impl From<MethodCall> for Stmt {
     fn from(item: MethodCall) -> Self {
+        Self::Expr(item.into())
+    }
+}
+impl From<ForLoop> for Stmt {
+    fn from(item: ForLoop) -> Self {
         Self::Expr(item.into())
     }
 }
