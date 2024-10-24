@@ -12,6 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     def.add_stmt(x.clone().index(y.clone()).semi());
     def.add_stmt(x.clone().ref_immut().semi());
     def.add_stmt(x.clone().cast("u32").semi());
+    def.add_stmt(x.clone().method_call0("as_ptr").into_unsafe());
     krate.add_item(def);
     println!("{krate}");
     Ok(())

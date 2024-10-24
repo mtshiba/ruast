@@ -98,6 +98,12 @@ impl<E: Into<Expr>> Callable for E {
 
 pub trait MethodCallable {
     fn method_call(self, seg: impl Into<PathSegment>, args: Vec<Expr>) -> MethodCall;
+    fn method_call0(self, seg: impl Into<PathSegment>) -> MethodCall
+    where
+        Self: Sized,
+    {
+        self.method_call(seg, vec![])
+    }
     fn method_call1(self, seg: impl Into<PathSegment>, arg: impl Into<Expr>) -> MethodCall
     where
         Self: Sized,
@@ -264,6 +270,56 @@ pub trait Addressable {
 impl<E: Into<Expr>> Addressable for E {
     fn addr_of(self, kind: BorrowKind, mutable: Mutability) -> AddrOf {
         AddrOf::new(kind, mutable, self)
+    }
+}
+
+pub trait IntoConst {
+    fn into_const(self) -> ConstBlock;
+}
+
+impl<E: Into<Expr>> IntoConst for E {
+    fn into_const(self) -> ConstBlock {
+        ConstBlock::new(Block::single(self))
+    }
+}
+
+pub trait IntoUnsafe {
+    fn into_unsafe(self) -> UnsafeBlock;
+}
+
+impl<E: Into<Expr>> IntoUnsafe for E {
+    fn into_unsafe(self) -> UnsafeBlock {
+        UnsafeBlock::new(Block::single(self))
+    }
+}
+
+pub trait Returnable {
+    fn return_(self) -> Return;
+}
+
+impl<E: Into<Expr>> Returnable for E {
+    fn return_(self) -> Return {
+        Return::new(Some(self))
+    }
+}
+
+pub trait Yieldable {
+    fn yield_(self) -> Yield;
+}
+
+impl<E: Into<Expr>> Yieldable for E {
+    fn yield_(self) -> Yield {
+        Yield::new(Some(self))
+    }
+}
+
+pub trait IntoTryBlock {
+    fn into_try_block(self) -> TryBlock;
+}
+
+impl<E: Into<Expr>> IntoTryBlock for E {
+    fn into_try_block(self) -> TryBlock {
+        TryBlock::new(Block::single(self))
     }
 }
 
@@ -874,6 +930,88 @@ impl From<Loop> for TokenStream {
     }
 }
 
+impl EmptyItem for Loop {
+    type Input = ();
+
+    fn empty(_ident: impl Into<()>) -> Self {
+        Self::new(Block::empty())
+    }
+}
+
+impl Loop {
+    pub fn new(body: Block) -> Self {
+        Self { body }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ConstBlock {
+    pub block: Block,
+}
+
+impl fmt::Display for ConstBlock {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "const {block}", block = self.block)
+    }
+}
+
+impl From<ConstBlock> for TokenStream {
+    fn from(value: ConstBlock) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::Const));
+        ts.extend(TokenStream::from(value.block));
+        ts
+    }
+}
+
+impl EmptyItem for ConstBlock {
+    type Input = ();
+
+    fn empty(_ident: impl Into<()>) -> Self {
+        Self::new(Block::empty())
+    }
+}
+
+impl ConstBlock {
+    pub fn new(block: Block) -> Self {
+        Self { block }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct UnsafeBlock {
+    pub block: Block,
+}
+
+impl fmt::Display for UnsafeBlock {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "unsafe {block}", block = self.block)
+    }
+}
+
+impl From<UnsafeBlock> for TokenStream {
+    fn from(value: UnsafeBlock) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::Unsafe));
+        ts.extend(TokenStream::from(value.block));
+        ts
+    }
+}
+
+impl EmptyItem for UnsafeBlock {
+    type Input = ();
+
+    fn empty(_ident: impl Into<()>) -> Self {
+        Self::new(Block::empty())
+    }
+}
+
+impl UnsafeBlock {
+    pub fn new(block: Block) -> Self {
+        Self { block }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Arm {
     pub attrs: Vec<AttributeItem>,
@@ -1100,7 +1238,7 @@ impl From<Async> for TokenStream {
 impl EmptyItem for Async {
     type Input = ();
 
-    fn empty(_block: impl Into<()>) -> Self {
+    fn empty(_ident: impl Into<()>) -> Self {
         Self::new(Block::empty())
     }
 }
@@ -1165,7 +1303,7 @@ impl From<TryBlock> for TokenStream {
 impl EmptyItem for TryBlock {
     type Input = ();
 
-    fn empty(_block: impl Into<()>) -> Self {
+    fn empty(_ident: impl Into<()>) -> Self {
         Self::new(Block::empty())
     }
 }
@@ -1336,7 +1474,7 @@ impl From<Underscore> for TokenStream {
     }
 }
 
-/// `return expr`
+/// `return expr?`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Return {
     pub expr: Option<Box<Expr>>,
@@ -1364,6 +1502,41 @@ impl From<Return> for TokenStream {
 }
 
 impl Return {
+    pub fn new(expr: Option<impl Into<Expr>>) -> Self {
+        Self {
+            expr: expr.map(|e| Box::new(e.into())),
+        }
+    }
+}
+
+/// `yield expr?`
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Yield {
+    pub expr: Option<Box<Expr>>,
+}
+
+impl fmt::Display for Yield {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(expr) = &self.expr {
+            write!(f, "yield {expr}")
+        } else {
+            write!(f, "yield")
+        }
+    }
+}
+
+impl From<Yield> for TokenStream {
+    fn from(value: Yield) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::Yield));
+        if let Some(expr) = value.expr {
+            ts.extend(TokenStream::from(*expr));
+        }
+        ts
+    }
+}
+
+impl Yield {
     pub fn new(expr: Option<impl Into<Expr>>) -> Self {
         Self {
             expr: expr.map(|e| Box::new(e.into())),
@@ -2048,6 +2221,15 @@ impl From<Break> for TokenStream {
     }
 }
 
+impl Break {
+    pub fn new(label: Option<String>, expr: Option<Expr>) -> Self {
+        Self {
+            label,
+            expr: expr.map(Box::new),
+        }
+    }
+}
+
 /// `continue ('label)?`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Continue {
@@ -2072,6 +2254,12 @@ impl From<Continue> for TokenStream {
             ts.push(Token::lifetime(label));
         }
         ts
+    }
+}
+
+impl Continue {
+    pub fn new(label: Option<String>) -> Self {
+        Self { label }
     }
 }
 
@@ -2428,6 +2616,8 @@ pub enum ExprKind {
     While(While),
     ForLoop(ForLoop),
     Loop(Loop),
+    ConstBlock(ConstBlock),
+    UnsafeBlock(UnsafeBlock),
     Match(Match),
     Closure(Closure),
     Block(Block),
@@ -2445,6 +2635,7 @@ pub enum ExprKind {
     Break(Break),
     Continue(Continue),
     Return(Return),
+    Yield(Yield),
     MacCall(MacCall),
     Struct(Struct),
     Repeat(Repeat),
@@ -2466,6 +2657,8 @@ impl_display_for_enum!(ExprKind;
     While,
     ForLoop,
     Loop,
+    ConstBlock,
+    UnsafeBlock,
     Match,
     Closure,
     Block,
@@ -2483,6 +2676,7 @@ impl_display_for_enum!(ExprKind;
     Break,
     Continue,
     Return,
+    Yield,
     MacCall,
     Struct,
     Repeat,
@@ -2503,6 +2697,8 @@ impl_obvious_conversion!(ExprKind;
     While,
     ForLoop,
     Loop,
+    ConstBlock,
+    UnsafeBlock,
     Match,
     Closure,
     Block,
@@ -2520,6 +2716,7 @@ impl_obvious_conversion!(ExprKind;
     Break,
     Continue,
     Return,
+    Yield,
     MacCall,
     Struct,
     Repeat,

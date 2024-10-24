@@ -3,7 +3,7 @@ use std::fmt;
 use std::hash::Hash;
 
 use crate::expr::{
-    Async, Attribute, Call, DelimArgs, Expr, GenericArg, MacCall, MethodCall, Path, Range, TryBlock,
+    Async, Attribute, Call, DelimArgs, Expr, GenericArg, MacCall, MethodCall, Path, Range, TryBlock, UnsafeBlock, ConstBlock,
 };
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 use crate::ty::Type;
@@ -1194,6 +1194,14 @@ impl Block {
 
     pub fn try_(self) -> TryBlock {
         TryBlock::new(self)
+    }
+
+    pub fn unsafe_(self) -> UnsafeBlock {
+        UnsafeBlock::new(self)
+    }
+
+    pub fn const_(self) -> ConstBlock {
+        ConstBlock::new(self)
     }
 
     pub fn with_stmt(mut self, stmt: impl Into<Stmt>) -> Self {
@@ -2741,6 +2749,11 @@ impl From<MethodCall> for Stmt {
 }
 impl From<ForLoop> for Stmt {
     fn from(item: ForLoop) -> Self {
+        Self::Expr(item.into())
+    }
+}
+impl From<UnsafeBlock> for Stmt {
+    fn from(item: UnsafeBlock) -> Self {
         Self::Expr(item.into())
     }
 }
