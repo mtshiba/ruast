@@ -2471,7 +2471,7 @@ impl Use {
     }
 }
 
-/// `static ident: ty (= expr)?`
+/// `static ident: ty (= expr)?;`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StaticItem {
     pub ident: String,
@@ -2485,6 +2485,7 @@ impl fmt::Display for StaticItem {
         if let Some(expr) = &self.expr {
             write!(f, " = {expr}", expr = expr)?;
         }
+        write!(f, ";")?;
         Ok(())
     }
 }
@@ -2510,7 +2511,7 @@ impl Ident for StaticItem {
     }
 }
 
-/// `const ident: ty (= expr)?`
+/// `const ident: ty (= expr)?;`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ConstItem {
     pub ident: String,
@@ -2524,6 +2525,7 @@ impl fmt::Display for ConstItem {
         if let Some(expr) = &self.expr {
             write!(f, " = {expr}", expr = expr)?;
         }
+        write!(f, ";")?;
         Ok(())
     }
 }
@@ -2559,7 +2561,7 @@ impl ConstItem {
     }
 }
 
-/// `type ident = ty`
+/// `type ident = ty;`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TyAlias {
     pub ident: String,
@@ -2572,6 +2574,7 @@ impl fmt::Display for TyAlias {
         if let Some(ty) = &self.ty {
             write!(f, " = {ty}", ty = ty)?;
         }
+        write!(f, ";")?;
         Ok(())
     }
 }
