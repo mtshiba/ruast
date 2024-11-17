@@ -745,7 +745,10 @@ impl fmt::Display for Fn {
         write!(f, "{}", self.fn_decl)?;
         if let Some(body) = &self.body {
             write!(f, " {body}")?;
+        } else {
+            write!(f, ";")?;
         }
+
         Ok(())
     }
 }
