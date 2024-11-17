@@ -1739,10 +1739,11 @@ pub struct Lit {
 
 impl fmt::Display for Lit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.kind == LitKind::Str {
-            write!(f, "\"{}\"", self.symbol)
-        } else {
-            self.symbol.fmt(f)
+        match self.kind {
+            LitKind::Str => write!(f, "\"{}\"", self.symbol),
+            LitKind::CStr => write!(f, "c\"{}\"", self.symbol),
+            LitKind::ByteStr => write!(f, "b\"{}\"", self.symbol),
+            _ => self.symbol.fmt(f)
         }
     }
 }
@@ -1784,6 +1785,10 @@ impl Lit {
 
     pub fn str(symbol: impl Into<String>) -> Self {
         Self::new(LitKind::Str, symbol)
+    }
+
+    pub fn cstr(symbol: impl Into<String>) -> Self {
+        Self::new(LitKind::CStr, symbol)
     }
 
     pub fn bool(symbol: impl Into<String>) -> Self {
