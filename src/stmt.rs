@@ -745,7 +745,10 @@ impl fmt::Display for Fn {
         write!(f, "{}", self.fn_decl)?;
         if let Some(body) = &self.body {
             write!(f, " {body}")?;
+        } else {
+            write!(f, ";")?;
         }
+
         Ok(())
     }
 }
@@ -979,8 +982,9 @@ pub struct LoadedMod {
 impl fmt::Display for LoadedMod {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "mod {} {{", self.ident)?;
+        let mut indent = indenter::indented(f).with_str("    ");
         for item in self.items.iter() {
-            writeln!(f, "{item};")?;
+            writeln!(indent, "{item}")?;
         }
         write!(f, "}}")
     }
@@ -1887,7 +1891,7 @@ impl fmt::Display for TraitDef {
         write!(f, " {{")?;
         let mut indent = indenter::indented(f).with_str("    ");
         for item in self.items.iter() {
-            writeln!(indent, "{item};")?;
+            writeln!(indent, "{item}")?;
         }
         write!(f, "}}")
     }
@@ -2471,7 +2475,7 @@ impl Use {
     }
 }
 
-/// `static ident: ty (= expr)?`
+/// `static ident: ty (= expr)?;`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StaticItem {
     pub ident: String,
@@ -2485,6 +2489,7 @@ impl fmt::Display for StaticItem {
         if let Some(expr) = &self.expr {
             write!(f, " = {expr}", expr = expr)?;
         }
+        write!(f, ";")?;
         Ok(())
     }
 }
@@ -2510,7 +2515,7 @@ impl Ident for StaticItem {
     }
 }
 
-/// `const ident: ty (= expr)?`
+/// `const ident: ty (= expr)?;`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ConstItem {
     pub ident: String,
@@ -2524,6 +2529,7 @@ impl fmt::Display for ConstItem {
         if let Some(expr) = &self.expr {
             write!(f, " = {expr}", expr = expr)?;
         }
+        write!(f, ";")?;
         Ok(())
     }
 }
@@ -2559,7 +2565,7 @@ impl ConstItem {
     }
 }
 
-/// `type ident = ty`
+/// `type ident = ty;`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TyAlias {
     pub ident: String,
@@ -2572,6 +2578,7 @@ impl fmt::Display for TyAlias {
         if let Some(ty) = &self.ty {
             write!(f, " = {ty}", ty = ty)?;
         }
+        write!(f, ";")?;
         Ok(())
     }
 }
