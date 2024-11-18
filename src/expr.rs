@@ -1791,6 +1791,10 @@ impl Lit {
         Self::new(LitKind::CStr, symbol)
     }
 
+    pub fn bstr(symbol: impl Into<String>) -> Self {
+        Self::new(LitKind::ByteStr, symbol)
+    }
+
     pub fn bool(symbol: impl Into<String>) -> Self {
         Self::new(LitKind::Bool, symbol)
     }
