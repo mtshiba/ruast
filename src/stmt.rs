@@ -982,8 +982,9 @@ pub struct LoadedMod {
 impl fmt::Display for LoadedMod {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "mod {} {{", self.ident)?;
+        let mut indent = indenter::indented(f).with_str("    ");
         for item in self.items.iter() {
-            writeln!(f, "{item};")?;
+            writeln!(indent, "{item}")?;
         }
         write!(f, "}}")
     }
@@ -1890,7 +1891,7 @@ impl fmt::Display for TraitDef {
         write!(f, " {{")?;
         let mut indent = indenter::indented(f).with_str("    ");
         for item in self.items.iter() {
-            writeln!(indent, "{item};")?;
+            writeln!(indent, "{item}")?;
         }
         write!(f, "}}")
     }
