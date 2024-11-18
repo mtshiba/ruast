@@ -3,11 +3,15 @@ use std::fmt;
 use std::hash::Hash;
 
 use crate::expr::{
-    Async, Attribute, Call, DelimArgs, Expr, GenericArg, MacCall, MethodCall, Path, Range, TryBlock, UnsafeBlock, ConstBlock,
+    Async, Attribute, Call, ConstBlock, DelimArgs, Expr, GenericArg, MacCall, MethodCall, Path,
+    Range, TryBlock, UnsafeBlock,
 };
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 use crate::ty::Type;
-use crate::{impl_display_for_enum, impl_hasitem_methods, impl_obvious_conversion, ForLoop, GenericParam};
+use crate::{
+    impl_display_for_enum, impl_hasitem_methods, impl_obvious_conversion, ForLoop, GenericParam,
+    Lit,
+};
 
 #[cfg(feature = "tokenize")]
 crate::impl_to_tokens!(
@@ -34,6 +38,8 @@ crate::impl_to_tokens!(
     TraitDef,
     Impl,
     MacroDef,
+    ExternBlock,
+    ExternCrate,
     Item,
     ItemKind,
     Use,
@@ -1208,6 +1214,10 @@ impl Block {
         ConstBlock::new(self)
     }
 
+    pub fn extern_(self, is_unsafe: bool, abi: Option<String>) -> ExternBlock {
+        ExternBlock::new(is_unsafe, abi, self)
+    }
+
     pub fn with_stmt(mut self, stmt: impl Into<Stmt>) -> Self {
         self.add_stmt(stmt);
         self
@@ -2286,6 +2296,158 @@ impl MacroDef {
     }
 }
 
+/// `extern unsafe? "abi"? { ... }`
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ExternBlock {
+    pub is_unsafe: bool,
+    pub abi: Option<String>,
+    pub block: Block,
+}
+
+impl fmt::Display for ExternBlock {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_unsafe {
+            write!(f, "unsafe ")?;
+        }
+        write!(f, "extern ")?;
+        if self.abi.is_some() {
+            write!(f, "\"{}\" ", self.abi.as_ref().unwrap())?;
+        }
+        write!(f, "{}", self.block)
+    }
+}
+
+impl From<ExternBlock> for TokenStream {
+    fn from(value: ExternBlock) -> Self {
+        let mut ts = TokenStream::new();
+        if value.is_unsafe {
+            ts.push(Token::Keyword(KeywordToken::Unsafe));
+        }
+        ts.push(Token::Keyword(KeywordToken::Extern));
+        if value.abi.is_some() {
+            ts.push(Token::Lit(Lit::str(value.abi.unwrap())));
+        }
+        ts.extend(TokenStream::from(value.block));
+        ts
+    }
+}
+
+impl EmptyItem for ExternBlock {
+    type Input = Option<String>;
+
+    fn empty(abi: impl Into<Self::Input>) -> Self {
+        Self::safe(abi.into(), Block::empty())
+    }
+}
+
+impl ExternBlock {
+    pub fn new(is_unsafe: bool, abi: Option<impl Into<String>>, block: Block) -> ExternBlock {
+        ExternBlock {
+            is_unsafe,
+            abi: abi.map(|a| a.into()),
+            block,
+        }
+    }
+
+    pub fn safe(abi: Option<impl Into<String>>, block: Block) -> ExternBlock {
+        ExternBlock::new(false, abi, block)
+    }
+
+    pub fn unsafe_(abi: Option<impl Into<String>>, block: Block) -> ExternBlock {
+        ExternBlock::new(true, abi, block)
+    }
+
+    pub fn unsafe_c(block: Block) -> ExternBlock {
+        ExternBlock::unsafe_(Some("C"), block)
+    }
+
+    pub fn unsafe_cdecl(block: Block) -> ExternBlock {
+        ExternBlock::unsafe_(Some("cdecl"), block)
+    }
+
+    pub fn unsafe_rust(block: Block) -> ExternBlock {
+        ExternBlock::unsafe_(Some("Rust"), block)
+    }
+
+    pub fn unsafe_stdcall(block: Block) -> ExternBlock {
+        ExternBlock::unsafe_(Some("stdcall"), block)
+    }
+
+    pub fn unsafe_system(block: Block) -> ExternBlock {
+        ExternBlock::unsafe_(Some("system"), block)
+    }
+
+    pub fn unsafe_win64(block: Block) -> ExternBlock {
+        ExternBlock::unsafe_(Some("win64"), block)
+    }
+
+    pub fn unsafe_sysv64(block: Block) -> ExternBlock {
+        ExternBlock::unsafe_(Some("sysv64"), block)
+    }
+
+    pub fn unsafe_aapcs(block: Block) -> ExternBlock {
+        ExternBlock::unsafe_(Some("aapcs"), block)
+    }
+
+    pub fn unsafe_thiscall(block: Block) -> ExternBlock {
+        ExternBlock::unsafe_(Some("thiscall"), block)
+    }
+
+    pub fn unsafe_fastcall(block: Block) -> ExternBlock {
+        ExternBlock::unsafe_(Some("fastcall"), block)
+    }
+
+    pub fn unsafe_vectorcall(block: Block) -> ExternBlock {
+        ExternBlock::unsafe_(Some("vectorcall"), block)
+    }
+}
+
+/// `extern crate ident (as alias)?;`
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ExternCrate {
+    pub ident: String,
+    pub alias: Option<String>,
+}
+
+impl fmt::Display for ExternCrate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "extern crate {}", self.ident)?;
+        if let Some(alias) = &self.alias {
+            write!(f, " as {}", alias)?;
+        }
+        write!(f, ";")?;
+        Ok(())
+    }
+}
+
+impl From<ExternCrate> for TokenStream {
+    fn from(value: ExternCrate) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::Extern));
+        ts.push(Token::Keyword(KeywordToken::Crate));
+        ts.push(Token::ident(value.ident));
+        if let Some(alias) = value.alias {
+            ts.push(Token::Keyword(KeywordToken::As));
+            ts.push(Token::ident(alias));
+        }
+        ts.push(Token::Semi);
+        ts
+    }
+}
+
+impl ExternCrate {
+    pub fn new(ident: impl Into<String>, alias: Option<impl Into<String>>) -> Self {
+        Self {
+            ident: ident.into(),
+            alias: alias.map(|a| a.into()),
+        }
+    }
+
+    pub fn simple(ident: impl Into<String>) -> Self {
+        Self::new(ident, Option::<String>::None)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum Visibility {
     #[default]
@@ -2419,10 +2581,12 @@ pub enum ItemKind {
     Impl(Impl),
     MacCall(MacCall),
     MacroDef(MacroDef),
+    ExternBlock(ExternBlock),
+    ExternCrate(ExternCrate),
 }
 
-impl_obvious_conversion!(ItemKind; Use, StaticItem, ConstItem, Fn, Mod, TyAlias, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCall);
-impl_display_for_enum!(ItemKind; Use, StaticItem, ConstItem, Fn, Mod, TyAlias, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCall);
+impl_obvious_conversion!(ItemKind; Use, StaticItem, ConstItem, Fn, Mod, TyAlias, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCall, ExternBlock, ExternCrate);
+impl_display_for_enum!(ItemKind; Use, StaticItem, ConstItem, Fn, Mod, TyAlias, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCall, ExternBlock, ExternCrate);
 
 impl MaybeIdent for ItemKind {
     fn ident(&self) -> Option<&str> {
@@ -2440,6 +2604,8 @@ impl MaybeIdent for ItemKind {
             Self::Impl(_) => None,
             Self::MacCall(_) => None,
             Self::MacroDef(item) => Some(&item.ident),
+            Self::ExternBlock(_) => None,
+            Self::ExternCrate(item) => Some(&item.ident),
         }
     }
 }
@@ -2762,6 +2928,16 @@ impl From<ForLoop> for Stmt {
 impl From<UnsafeBlock> for Stmt {
     fn from(item: UnsafeBlock) -> Self {
         Self::Expr(item.into())
+    }
+}
+impl From<ExternBlock> for Stmt {
+    fn from(item: ExternBlock) -> Self {
+        Self::Item(Item::inherited(item))
+    }
+}
+impl From<ExternCrate> for Stmt {
+    fn from(item: ExternCrate) -> Self {
+        Self::Item(Item::inherited(item))
     }
 }
 
