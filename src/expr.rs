@@ -655,9 +655,11 @@ impl fmt::Display for Binary {
 impl From<Binary> for TokenStream {
     fn from(value: Binary) -> Self {
         let mut ts = TokenStream::new();
+        ts.push(Token::OpenDelim(Delimiter::Parenthesis));
         ts.extend(TokenStream::from(*value.lhs));
         ts.push(Token::from(value.op));
         ts.extend(TokenStream::from(*value.rhs));
+        ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         ts
     }
 }
