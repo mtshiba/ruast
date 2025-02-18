@@ -745,8 +745,10 @@ impl fmt::Display for Unary {
 impl From<Unary> for TokenStream {
     fn from(value: Unary) -> Self {
         let mut ts = TokenStream::new();
+        ts.push(Token::OpenDelim(Delimiter::Parenthesis));
         ts.push(Token::from(value.op));
         ts.extend(TokenStream::from(*value.expr));
+        ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         ts
     }
 }
