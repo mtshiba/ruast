@@ -15,6 +15,16 @@ pub use stmt::*;
 pub use token::*;
 pub use ty::*;
 
+pub mod traits {
+    pub use crate::{
+        Accessible, AddVisibility, Assignable, Awaitable,
+        BinaryOperable, Callable, Castable, EmptyItem, HasItem,
+        Ident, Indexable, IntoConst, IntoTokens, IntoTryBlock, IntoUnsafe,
+        MaybeIdent, MethodCallable, Returnable, Semicolon, Tryable,
+        UnaryOperable, Yieldable,
+    };
+}
+
 macro_rules! impl_obvious_conversion {
     ($Enum: ident; $($Variant: ident $(,)?)*) => {
         $(

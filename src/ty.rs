@@ -548,6 +548,22 @@ impl Type {
         Self::Path(Path::single("u128"))
     }
 
+    pub fn into_ref(self) -> Type {
+        Type::ref_(self)
+    }
+    pub fn into_ref_mut(self) -> Type {
+        Type::ref_mut(self)
+    }
+    pub fn into_static_ref(self) -> Type {
+        Type::static_ref(self)
+    }
+    pub fn into_mut_ptr(self) -> Type {
+        Type::mut_ptr(self)
+    }
+    pub fn into_const_ptr(self) -> Type {
+        Type::const_ptr(self)
+    }
+
     pub fn ref_(ty: impl Into<Type>) -> Type {
         Type::Ref(Ref::new(Option::<String>::None, MutTy::immut(ty)))
     }
