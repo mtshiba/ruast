@@ -11,6 +11,9 @@ homepage = "https://docs.rs/ruast"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[workspace]
+members = ["examples/proc_macro_example"]
+
 [features]
 tokenize = ["dep:proc-macro2", "dep:quote"]
 

@@ -1,0 +1,12 @@
+[package]
+name = "ruast_proc_macro_example"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+ruast = { version = "0.0.9", features = ["tokenize"] }
+syn = "1.0.109"
+
+[lib]
+proc-macro = true
