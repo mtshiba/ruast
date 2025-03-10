@@ -2071,7 +2071,7 @@ impl PredicateLifetime {
     pub fn new(lifetime: impl Into<String>, bounds: Vec<String>) -> Self {
         Self {
             lifetime: lifetime.into(),
-            bounds: bounds.into_iter().map(Into::into).collect(),
+            bounds: bounds.into_iter().collect(),
         }
     }
 }
