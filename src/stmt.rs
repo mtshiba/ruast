@@ -10,7 +10,7 @@ use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 use crate::ty::Type;
 use crate::{
     impl_display_for_enum, impl_hasitem_methods, impl_obvious_conversion, ForLoop, GenericParam,
-    Lit,
+    Lit, Mutability,
 };
 
 #[cfg(feature = "tokenize")]
@@ -2644,6 +2644,7 @@ impl Use {
 /// `static ident: ty (= expr)?;`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StaticItem {
+    pub mutability: Mutability,
     pub ident: String,
     pub ty: Type,
     pub expr: Option<Expr>,
@@ -2651,7 +2652,7 @@ pub struct StaticItem {
 
 impl fmt::Display for StaticItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "static {ident}: {ty}", ident = self.ident, ty = self.ty)?;
+        write!(f, "static {mutability} {ident}: {ty}", ident = self.ident, mutability = self.mutability, ty = self.ty)?;
         if let Some(expr) = &self.expr {
             write!(f, " = {expr}", expr = expr)?;
         }
@@ -2664,6 +2665,9 @@ impl From<StaticItem> for TokenStream {
     fn from(value: StaticItem) -> Self {
         let mut ts = TokenStream::new();
         ts.push(Token::Keyword(KeywordToken::Static));
+        if value.mutability.is_mut() {
+            ts.push(Token::Keyword(KeywordToken::Mut));
+        }
         ts.push(Token::ident(value.ident));
         ts.push(Token::Colon);
         ts.extend(TokenStream::from(value.ty));
