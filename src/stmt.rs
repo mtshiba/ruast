@@ -662,6 +662,7 @@ impl Param {
 pub struct FnDecl {
     pub inputs: Vec<Param>,
     pub output: Option<Type>,
+    pub is_variadic: bool,
 }
 
 impl fmt::Display for FnDecl {
@@ -672,6 +673,9 @@ impl fmt::Display for FnDecl {
                 write!(f, ", ")?;
             }
             write!(f, "{param}")?;
+        }
+        if self.is_variadic {
+            write!(f, ", ...")?;
         }
         write!(f, ")")?;
         if let Some(output) = &self.output {
@@ -691,6 +695,10 @@ impl From<FnDecl> for TokenStream {
             }
             ts.extend(TokenStream::from(param.clone()));
         }
+        if value.is_variadic {
+            ts.push(Token::Comma);
+            ts.push(Token::DotDotDot);
+        }
         ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         if let Some(output) = value.output {
             ts.push(Token::RArrow);
@@ -701,12 +709,24 @@ impl From<FnDecl> for TokenStream {
 }
 
 impl FnDecl {
-    pub fn new(inputs: Vec<Param>, output: Option<Type>) -> Self {
-        Self { inputs, output }
+    pub fn new(inputs: Vec<Param>, output: Option<Type>, is_variadic: bool) -> Self {
+        Self {
+            inputs,
+            output,
+            is_variadic,
+        }
+    }
+
+    pub fn regular(inputs: Vec<Param>, output: Option<Type>,) -> Self {
+        Self::new(inputs, output, false)
+    }
+
+    pub fn variadic(inputs: Vec<Param>, output: Option<Type>) -> Self {
+        Self::new(inputs, output, true)
     }
 
     pub fn empty() -> Self {
-        Self::new(Vec::new(), None)
+        Self::regular(Vec::new(), None)
     }
 }
 
@@ -922,7 +942,7 @@ impl Fn {
             abi: None,
             ident: "main".to_string(),
             generics: Vec::new(),
-            fn_decl: FnDecl::new(Vec::new(), output),
+            fn_decl: FnDecl::regular(Vec::new(), output),
             body: Some(body),
         }
     }
@@ -948,7 +968,7 @@ impl Fn {
             abi: None,
             ident: ident.into(),
             generics: Vec::new(),
-            fn_decl: FnDecl::new(vec![Param::new(self_pat, Type::ImplicitSelf)], None),
+            fn_decl: FnDecl::regular(vec![Param::new(self_pat, Type::ImplicitSelf)], None),
             body: Some(Block::empty()),
         }
     }
