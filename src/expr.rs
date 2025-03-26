@@ -2081,14 +2081,15 @@ impl From<PathSegment> for TokenStream {
         let mut ts = TokenStream::new();
         ts.push(Token::ident(value.ident));
         if let Some(args) = value.args {
-            ts.push(Token::OpenDelim(Delimiter::Bracket));
+            ts.push(Token::ModSep);
+            ts.push(Token::Lt);
             for (i, arg) in args.iter().enumerate() {
                 if i > 0 {
                     ts.push(Token::Comma);
                 }
                 ts.extend(TokenStream::from(arg.clone()));
             }
-            ts.push(Token::CloseDelim(Delimiter::Bracket));
+            ts.push(Token::Gt);
         }
         ts
     }
