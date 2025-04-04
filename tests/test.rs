@@ -33,7 +33,7 @@ fn test_general() {
         abi: None,
         ident: "main".to_string(),
         generics: vec![],
-        fn_decl: FnDecl::new(vec![], None),
+        fn_decl: FnDecl::regular(vec![], None),
         body: Some(Block::from(Stmt::Semi(Semi::new(Expr::new(MacCall {
             path: Path::single("println"),
             args: DelimArgs::from(vec![Token::lit("Hello, world!")]),
