@@ -392,6 +392,7 @@ impl From<TupleStructPat> for TokenStream {
     }
 }
 
+/// `('&mut' | '&') pat`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RefPat {
     pub is_mut: bool,
@@ -604,6 +605,7 @@ impl Pat {
     }
 }
 
+/// `pat ':' ty`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Param {
     pub pat: Pat,
@@ -658,6 +660,7 @@ impl Param {
     }
 }
 
+/// `'(' params (, ...)? ')' ('->' output)?`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FnDecl {
     pub inputs: Vec<Param>,
@@ -717,6 +720,7 @@ impl FnDecl {
         }
     }
 
+    /// non-variadic function declaration
     pub fn regular(inputs: Vec<Param>, output: Option<Type>,) -> Self {
         Self::new(inputs, output, false)
     }
@@ -730,7 +734,7 @@ impl FnDecl {
     }
 }
 
-/// `fn (unsafe)? (const)? (async)? (extern "abi")? ident (<...>)? decl { ... }`
+/// `'fn' 'unsafe'? 'const'? 'async'? ('extern' "abi")? ident (<...>)? decl { ... }`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Fn {
     pub is_unsafe: bool,
@@ -1275,7 +1279,7 @@ impl Block {
     }
 }
 
-/// `vis (ident:)? ty`
+/// `vis (ident ':')? ty`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FieldDef {
     pub attrs: Vec<Attribute>,
