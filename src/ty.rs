@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::expr::{Const, GenericArg, Path, PathSegment};
+use crate::expr::{Const, GenericArg, MacCall, Path, PathSegment};
 use crate::stmt::Param;
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 
@@ -404,6 +404,7 @@ pub enum Type {
     Ptr(Ptr),
     Ref(Ref),
     BareFn(BareFn),
+    Macro(MacCall),
     Never,
     Tuple(Vec<Type>),
     Path(Path),
@@ -419,9 +420,10 @@ impl fmt::Display for Type {
         match self {
             Self::Slice(ty) => write!(f, "[{ty}]"),
             Self::Array(ty, len) => write!(f, "[{ty}; {len}]"),
-            Self::Ref(r) => write!(f, "{r}"),
-            Self::Ptr(p) => write!(f, "{p}"),
-            Self::BareFn(bare_fn) => write!(f, "{bare_fn}"),
+            Self::Ref(r) => r.fmt(f),
+            Self::Ptr(p) => p.fmt(f),
+            Self::BareFn(bare_fn) => bare_fn.fmt(f),
+            Self::Macro(mac) => mac.fmt(f),
             Self::Never => write!(f, "!"),
             Self::Tuple(tys) => write!(
                 f,
@@ -431,9 +433,9 @@ impl fmt::Display for Type {
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
-            Self::Path(path) => write!(f, "{path}"),
-            Self::TraitObject(trait_object) => write!(f, "{trait_object}"),
-            Self::ImplTrait(impl_trait) => write!(f, "{impl_trait}"),
+            Self::Path(path) => path.fmt(f),
+            Self::TraitObject(trait_object) => trait_object.fmt(f),
+            Self::ImplTrait(impl_trait) => impl_trait.fmt(f),
             Self::Infer => write!(f, "_"),
             Self::ImplicitSelf => write!(f, ""),
             Self::Err => write!(f, "<Err>"),
@@ -444,6 +446,37 @@ impl fmt::Display for Type {
 impl<P: Into<PathSegment>> From<P> for Type {
     fn from(p: P) -> Self {
         Self::Path(Path::single(p))
+    }
+}
+
+impl From<Ptr> for Type {
+    fn from(ptr: Ptr) -> Self {
+        Self::Ptr(ptr)
+    }
+}
+impl From<Ref> for Type {
+    fn from(ref_: Ref) -> Self {
+        Self::Ref(ref_)
+    }
+}
+impl From<BareFn> for Type {
+    fn from(bare_fn: BareFn) -> Self {
+        Self::BareFn(bare_fn)
+    }
+}
+impl From<MacCall> for Type {
+    fn from(mac: MacCall) -> Self {
+        Self::Macro(mac)
+    }
+}
+impl From<TraitObject> for Type {
+    fn from(trait_object: TraitObject) -> Self {
+        Self::TraitObject(trait_object)
+    }
+}
+impl From<ImplTrait> for Type {
+    fn from(impl_trait: ImplTrait) -> Self {
+        Self::ImplTrait(impl_trait)
     }
 }
 
@@ -469,6 +502,7 @@ impl From<Type> for TokenStream {
             Type::Ptr(ptr) => TokenStream::from(ptr),
             Type::Ref(ref_) => TokenStream::from(ref_),
             Type::BareFn(bare_fn) => TokenStream::from(bare_fn),
+            Type::Macro(mac) => TokenStream::from(mac),
             Type::Never => TokenStream::from(vec![Token::Not]),
             Type::Tuple(tys) => {
                 let mut ts = TokenStream::new();
