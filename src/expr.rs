@@ -1747,7 +1747,7 @@ impl fmt::Display for Lit {
             LitKind::Str => write!(f, "\"{}\"", self.symbol),
             LitKind::CStr => write!(f, "c\"{}\"", self.symbol),
             LitKind::ByteStr => write!(f, "b\"{}\"", self.symbol),
-            _ => self.symbol.fmt(f)
+            _ => self.symbol.fmt(f),
         }
     }
 }

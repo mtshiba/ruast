@@ -721,7 +721,7 @@ impl FnDecl {
     }
 
     /// non-variadic function declaration
-    pub fn regular(inputs: Vec<Param>, output: Option<Type>,) -> Self {
+    pub fn regular(inputs: Vec<Param>, output: Option<Type>) -> Self {
         Self::new(inputs, output, false)
     }
 
@@ -2676,7 +2676,13 @@ pub struct StaticItem {
 
 impl fmt::Display for StaticItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "static {mutability} {ident}: {ty}", ident = self.ident, mutability = self.mutability, ty = self.ty)?;
+        write!(
+            f,
+            "static {mutability} {ident}: {ty}",
+            ident = self.ident,
+            mutability = self.mutability,
+            ty = self.ty
+        )?;
         if let Some(expr) = &self.expr {
             write!(f, " = {expr}", expr = expr)?;
         }
