@@ -11,7 +11,7 @@ pub fn gen_foo(_input: TokenStream) -> TokenStream {
     let bin = Binary::new(bin, BinOpKind::Mul, Lit::int("3"));
     let f = Fn::simple(
         "foo",
-        FnDecl::new(vec![], Some(Type::usize())),
+        FnDecl::regular(vec![], Some(Type::usize())),
         Block::single(bin),
     );
     f.to_token_stream().into()
@@ -35,7 +35,7 @@ pub fn derive_getter(input: TokenStream) -> TokenStream {
         };
         let fn_name = format!("get_{name}");
         let ret = ruast::Type::ref_(ruast::Type::from(ty.path.get_ident().unwrap().to_string()));
-        let fn_decl = ruast::FnDecl::new(vec![ruast::Param::ref_self()], Some(ret));
+        let fn_decl = ruast::FnDecl::regular(vec![ruast::Param::ref_self()], Some(ret));
         let block = ruast::Block::single(ruast::Field::new(slf, name).ref_immut());
         let fn_ = ruast::Fn::simple(fn_name, fn_decl, block);
         impls.add_item(fn_);
