@@ -2040,7 +2040,7 @@ impl Path {
     }
 
     pub fn use_(self) -> Use {
-        Use::new(self)
+        Use::path(self)
     }
 }
 

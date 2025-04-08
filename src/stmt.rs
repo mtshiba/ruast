@@ -2640,9 +2640,97 @@ impl ItemKind {
     }
 }
 
-/// `use path;`
+/// `path 'as' alias`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Use(pub Path);
+pub struct UseRename {
+    pub path: Path,
+    pub alias: String,
+}
+
+impl fmt::Display for UseRename {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} as {}", self.path, self.alias)
+    }
+}
+
+impl From<UseRename> for TokenStream {
+    fn from(value: UseRename) -> Self {
+        let mut ts = TokenStream::new();
+        ts.extend(TokenStream::from(value.path));
+        ts.push(Token::Keyword(KeywordToken::As));
+        ts.push(Token::ident(value.alias));
+        ts
+    }
+}
+
+/// `path | use_rename | '*' | '{' (use_tree ',')+ '}'`
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum UseTree {
+    Path(Path),
+    Rename(UseRename),
+    Glob,
+    Group(Vec<UseTree>),
+}
+
+impl fmt::Display for UseTree {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Path(path) => write!(f, "{}", path),
+            Self::Rename(rename) => write!(f, "{}", rename),
+            Self::Glob => write!(f, "*"),
+            Self::Group(trees) => {
+                write!(f, "{{")?;
+                for (i, tree) in trees.iter().enumerate() {
+                    if i != 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", tree)?;
+                }
+                write!(f, "}}")
+            }
+        }
+    }
+}
+
+impl From<UseTree> for TokenStream {
+    fn from(value: UseTree) -> Self {
+        match value {
+            UseTree::Path(path) => TokenStream::from(path),
+            UseTree::Rename(rename) => TokenStream::from(rename),
+            UseTree::Glob => TokenStream::from(vec![Token::BinOp(BinOpToken::Star)]),
+            UseTree::Group(trees) => {
+                let mut ts = TokenStream::new();
+                ts.push(Token::OpenDelim(Delimiter::Brace));
+                for (i, tree) in trees.iter().enumerate() {
+                    if i != 0 {
+                        ts.push(Token::Comma);
+                    }
+                    ts.extend(TokenStream::from(tree.clone()));
+                }
+                ts.push(Token::CloseDelim(Delimiter::Brace));
+                ts
+            }
+        }
+    }
+}
+
+impl UseTree {
+    pub fn path(path: impl Into<Path>) -> Self {
+        Self::Path(path.into())
+    }
+
+    pub fn rename(rename: UseRename) -> Self {
+        Self::Rename(rename)
+    }
+
+    pub fn group(trees: Vec<UseTree>) -> Self {
+        Self::Group(trees)
+    }
+}
+
+/// `use use_tree;`
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Use(pub UseTree);
 
 impl fmt::Display for Use {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -2659,9 +2747,23 @@ impl From<Use> for TokenStream {
     }
 }
 
+impl From<Path> for Use {
+    fn from(value: Path) -> Self {
+        Self(UseTree::Path(value))
+    }
+}
+
 impl Use {
-    pub fn new(path: impl Into<Path>) -> Self {
-        Self(path.into())
+    pub fn path(path: impl Into<Path>) -> Self {
+        Self(UseTree::Path(path.into()))
+    }
+
+    pub fn rename(rename: UseRename) -> Self {
+        Self(UseTree::Rename(rename))
+    }
+
+    pub fn group(trees: Vec<UseTree>) -> Self {
+        Self(UseTree::Group(trees))
     }
 }
 
