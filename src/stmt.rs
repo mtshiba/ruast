@@ -413,7 +413,7 @@ impl fmt::Display for RefPat {
 impl From<RefPat> for TokenStream {
     fn from(value: RefPat) -> Self {
         let mut ts = TokenStream::new();
-        ts.push(Token::BinOp(BinOpToken::And));
+        ts.push(Token::And);
         if value.is_mut {
             ts.push(Token::Keyword(KeywordToken::Mut));
         }
@@ -522,7 +522,7 @@ impl From<Pat> for TokenStream {
                 ts.push(Token::OpenDelim(Delimiter::Parenthesis));
                 for (i, pat) in pats.iter().enumerate() {
                     if i != 0 {
-                        ts.push(Token::BinOp(BinOpToken::Or));
+                        ts.push(Token::Or);
                     }
                     ts.extend(TokenStream::from(pat.clone()));
                 }

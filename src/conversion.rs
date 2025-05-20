@@ -12,8 +12,17 @@ impl BinOpToken {
             Self::Slash => tokens.extend([TokenTree::Punct(Punct::new('/', spacing))]),
             Self::Percent => tokens.extend([TokenTree::Punct(Punct::new('%', spacing))]),
             Self::Caret => tokens.extend([TokenTree::Punct(Punct::new('^', spacing))]),
-            Self::And => tokens.extend([TokenTree::Punct(Punct::new('&', spacing))]),
-            Self::Or => tokens.extend([TokenTree::Punct(Punct::new('|', spacing))]),
+            Self::LazyAnd => tokens.extend([
+                TokenTree::Punct(Punct::new('&', Spacing::Joint)),
+                TokenTree::Punct(Punct::new('&', spacing)),
+            ]),
+            Self::LazyOr => tokens.extend([
+                TokenTree::Punct(Punct::new('|', Spacing::Joint)),
+                TokenTree::Punct(Punct::new('|', spacing)),
+            ]),
+            Self::BitAnd => tokens.extend([TokenTree::Punct(Punct::new('&', spacing))]),
+            Self::BitOr => tokens.extend([TokenTree::Punct(Punct::new('|', spacing))]),
+            Self::BitXor => tokens.extend([TokenTree::Punct(Punct::new('^', spacing))]),
             Self::Shl => tokens.extend([
                 TokenTree::Punct(Punct::new('<', Spacing::Joint)),
                 TokenTree::Punct(Punct::new('<', spacing)),
@@ -54,14 +63,8 @@ impl ToTokens for Token {
                 TokenTree::Punct(Punct::new('>', Spacing::Joint)),
                 TokenTree::Punct(Punct::new('=', Spacing::Alone)),
             ]),
-            Self::AndAnd => tokens.extend([
-                TokenTree::Punct(Punct::new('&', Spacing::Joint)),
-                TokenTree::Punct(Punct::new('&', Spacing::Alone)),
-            ]),
-            Self::OrOr => tokens.extend([
-                TokenTree::Punct(Punct::new('|', Spacing::Joint)),
-                TokenTree::Punct(Punct::new('|', Spacing::Alone)),
-            ]),
+            Self::And => tokens.extend([TokenTree::Punct(Punct::new('&', Spacing::Alone))]),
+            Self::Or => tokens.extend([TokenTree::Punct(Punct::new('|', Spacing::Alone))]),
             Self::Not => tokens.extend([TokenTree::Punct(Punct::new('!', Spacing::Alone))]),
             Self::Tilde => tokens.extend([TokenTree::Punct(Punct::new('~', Spacing::Alone))]),
             Self::BinOp(bin) => bin.to_tokens(tokens),

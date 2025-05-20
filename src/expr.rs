@@ -1163,7 +1163,7 @@ impl From<Closure> for TokenStream {
         if value.is_move {
             ts.push(Token::Keyword(KeywordToken::Move));
         }
-        ts.push(Token::BinOp(BinOpToken::Or));
+        ts.push(Token::Or);
         let mut iter = value.fn_decl.inputs.iter();
         if let Some(input) = iter.next() {
             ts.extend(TokenStream::from(input.clone()));
@@ -1172,8 +1172,8 @@ impl From<Closure> for TokenStream {
                 ts.extend(TokenStream::from(input.clone()));
             }
         }
-        ts.push(Token::BinOp(BinOpToken::Or));
-        ts.push(Token::FatArrow);
+        ts.push(Token::Or);
+        ts.push(Token::RArrow);
         ts.push(Token::OpenDelim(Delimiter::Brace));
         ts.extend(TokenStream::from(*value.body));
         ts.push(Token::CloseDelim(Delimiter::Brace));
@@ -1585,23 +1585,41 @@ impl Assign {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum BinOpKind {
+    /// `+`
     Add,
+    /// `-`
     Sub,
+    /// `*`
     Mul,
+    /// `/`
     Div,
+    /// `%`
     Rem,
-    And,
-    Or,
+    /// `&&`
+    LazyAnd,
+    /// `||`
+    LazyOr,
+    /// `&`
     BitAnd,
+    /// `|`
     BitOr,
+    /// `^`
     BitXor,
+    /// `<<`
     Shl,
+    /// `>>`
     Shr,
+    /// `==`
     Eq,
+    /// `<`
     Lt,
+    /// `<=`
     Le,
+    /// `!=`
     Ne,
+    /// `>=`
     Ge,
+    /// `>`
     Gt,
 }
 
@@ -1613,8 +1631,8 @@ impl fmt::Display for BinOpKind {
             Self::Mul => write!(f, "*"),
             Self::Div => write!(f, "/"),
             Self::Rem => write!(f, "%"),
-            Self::And => write!(f, "&&"),
-            Self::Or => write!(f, "||"),
+            Self::LazyAnd => write!(f, "&&"),
+            Self::LazyOr => write!(f, "||"),
             Self::BitAnd => write!(f, "&"),
             Self::BitOr => write!(f, "|"),
             Self::BitXor => write!(f, "^"),
@@ -1638,8 +1656,8 @@ impl BinOpKind {
             Self::Mul => "*=",
             Self::Div => "/=",
             Self::Rem => "%=",
-            Self::And => "&=",
-            Self::Or => "|=",
+            Self::LazyAnd => "&&=",
+            Self::LazyOr => "||=",
             Self::BitAnd => "&=",
             Self::BitOr => "|=",
             Self::BitXor => "^=",
@@ -1658,11 +1676,11 @@ impl From<BinOpKind> for Token {
             BinOpKind::Mul => Token::BinOp(BinOpToken::Star),
             BinOpKind::Div => Token::BinOp(BinOpToken::Slash),
             BinOpKind::Rem => Token::BinOp(BinOpToken::Percent),
-            BinOpKind::And => Token::AndAnd,
-            BinOpKind::Or => Token::OrOr,
-            BinOpKind::BitAnd => Token::BinOp(BinOpToken::And),
-            BinOpKind::BitOr => Token::BinOp(BinOpToken::Or),
-            BinOpKind::BitXor => Token::BinOp(BinOpToken::Caret),
+            BinOpKind::LazyAnd => Token::BinOp(BinOpToken::LazyAnd),
+            BinOpKind::LazyOr => Token::BinOp(BinOpToken::LazyOr),
+            BinOpKind::BitAnd => Token::BinOp(BinOpToken::BitAnd),
+            BinOpKind::BitOr => Token::BinOp(BinOpToken::BitOr),
+            BinOpKind::BitXor => Token::BinOp(BinOpToken::BitXor),
             BinOpKind::Shl => Token::BinOp(BinOpToken::Shl),
             BinOpKind::Shr => Token::BinOp(BinOpToken::Shr),
             BinOpKind::Eq => Token::EqEq,
@@ -2166,7 +2184,7 @@ impl fmt::Display for AddrOf {
 impl From<AddrOf> for TokenStream {
     fn from(value: AddrOf) -> Self {
         let mut ts = TokenStream::new();
-        ts.push(Token::BinOp(BinOpToken::And));
+        ts.push(Token::And);
         match (value.kind, value.mutability) {
             (BorrowKind::Ref, Mutability::Not) => {}
             (BorrowKind::Ref, Mutability::Mut) => {

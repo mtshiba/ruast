@@ -79,7 +79,7 @@ impl fmt::Display for Ref {
 impl From<Ref> for TokenStream {
     fn from(value: Ref) -> Self {
         let mut ts = TokenStream::new();
-        ts.push(Token::BinOp(BinOpToken::And));
+        ts.push(Token::And);
         if let Some(lifetime) = value.lifetime {
             ts.push(Token::Lifetime(lifetime));
         }

@@ -96,15 +96,31 @@ impl fmt::Display for KeywordToken {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum BinOpToken {
+    /// `+`
     Plus,
+    /// `-`
     Minus,
+    /// `*`
     Star,
+    /// `/`
     Slash,
+    /// `%`
     Percent,
+    /// `^`
     Caret,
-    And,
-    Or,
+    /// `&&`
+    LazyAnd,
+    /// `||`
+    LazyOr,
+    /// `&`
+    BitAnd,
+    /// `|`
+    BitOr,
+    /// `^`
+    BitXor,
+    /// `<<`
     Shl,
+    /// `>>`
     Shr,
 }
 
@@ -117,8 +133,11 @@ impl fmt::Display for BinOpToken {
             Self::Slash => write!(f, "/"),
             Self::Percent => write!(f, "%"),
             Self::Caret => write!(f, "^"),
-            Self::And => write!(f, "&"),
-            Self::Or => write!(f, "|"),
+            Self::LazyAnd => write!(f, "&&"),
+            Self::LazyOr => write!(f, "||"),
+            Self::BitAnd => write!(f, "&"),
+            Self::BitOr => write!(f, "|"),
+            Self::BitXor => write!(f, "^"),
             Self::Shl => write!(f, "<<"),
             Self::Shr => write!(f, ">>"),
         }
@@ -170,35 +189,62 @@ impl From<Delimiter> for proc_macro2::Delimiter {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Token {
+    /// `=`
     Eq,
+    /// `<`
     Lt,
+    /// `<=`
     Le,
+    /// `==`
     EqEq,
+    /// `!=`
     Ne,
+    /// `>=`
     Ge,
+    /// `>`
     Gt,
-    AndAnd,
-    OrOr,
+    /// `&`
+    And,
+    /// `|`
+    Or,
+    /// `!`
     Not,
+    /// `~`
     Tilde,
     BinOp(BinOpToken),
     BinOpEq(BinOpToken),
     /* Structural symbols */
+    /// `@`
     At,
+    /// `.`
     Dot,
+    /// `..`
     DotDot,
+    /// `...`
     DotDotDot,
+    /// `..=`
     DotDotEq,
+    /// `,`
     Comma,
+    /// `;`
     Semi,
+    /// `:`
     Colon,
+    /// `::`
     ModSep,
+    /// `<-`
     LArrow,
+    /// `->`
     RArrow,
+    /// `=>`
     FatArrow,
+    /// `#`
     Pound,
+    /// `$`
     Dollar,
+    /// `?`
     Question,
+    /// `'`
     SingleQuote,
     OpenDelim(Delimiter),
     CloseDelim(Delimiter),
@@ -220,8 +266,8 @@ impl fmt::Display for Token {
             Self::Ne => write!(f, "!="),
             Self::Ge => write!(f, ">="),
             Self::Gt => write!(f, ">"),
-            Self::AndAnd => write!(f, "&&"),
-            Self::OrOr => write!(f, "||"),
+            Self::And => write!(f, "&"),
+            Self::Or => write!(f, "|"),
             Self::Not => write!(f, "!"),
             Self::Tilde => write!(f, "~"),
             Self::BinOp(op) => write!(f, "{op}"),
