@@ -1,6 +1,7 @@
 use std::fmt;
 
 use crate::expr::{Const, GenericArg, MacCall, Path, PathSegment};
+use crate::{impl_display_for_enum, impl_obvious_conversion};
 use crate::stmt::Param;
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 
@@ -207,12 +208,12 @@ impl BareFn {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct GenericParam {
+pub struct TypeParam {
     pub ident: String,
     pub bounds: Vec<GenericBound>,
 }
 
-impl fmt::Display for GenericParam {
+impl fmt::Display for TypeParam {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.ident)?;
         if !self.bounds.is_empty() {
@@ -230,8 +231,8 @@ impl fmt::Display for GenericParam {
     }
 }
 
-impl From<GenericParam> for TokenStream {
-    fn from(value: GenericParam) -> Self {
+impl From<TypeParam> for TokenStream {
+    fn from(value: TypeParam) -> Self {
         let mut ts = TokenStream::new();
         ts.push(Token::ident(value.ident));
         if !value.bounds.is_empty() {
@@ -247,7 +248,7 @@ impl From<GenericParam> for TokenStream {
     }
 }
 
-impl GenericParam {
+impl TypeParam {
     pub fn new(ident: impl Into<String>, bounds: Vec<GenericBound>) -> Self {
         Self {
             ident: ident.into(),
@@ -255,6 +256,46 @@ impl GenericParam {
         }
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ConstParam {
+    pub ident: String,
+    pub ty: Type,
+}
+
+impl fmt::Display for ConstParam {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "const {}: {}", self.ident, self.ty)
+    }
+}
+
+impl From<ConstParam> for TokenStream {
+    fn from(value: ConstParam) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Keyword(KeywordToken::Const));
+        ts.push(Token::ident(value.ident));
+        ts.push(Token::Colon);
+        ts.extend(TokenStream::from(value.ty));
+        ts
+    }
+}
+
+impl ConstParam {
+    pub fn new(ident: impl Into<String>, ty: Type) -> Self {
+        Self {
+            ident: ident.into(),
+            ty,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum GenericParam {
+    TypeParam(TypeParam),
+    ConstParam(ConstParam),
+}
+impl_display_for_enum!(GenericParam; TypeParam, ConstParam);
+impl_obvious_conversion!(GenericParam; TypeParam, ConstParam);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PolyTraitRef {
