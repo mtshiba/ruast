@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::expr::{Const, GenericArg, MacCall, Path, PathSegment};
+use crate::expr::{Const, GenericArg, MacCall, Path, PathSegment, Lit};
 use crate::stmt::Param;
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 
@@ -159,10 +159,20 @@ pub struct BareFn {
     pub generic_params: Vec<GenericParam>,
     pub inputs: Vec<Param>,
     pub output: Box<Type>,
+    pub is_unsafe: bool,
+    pub abi: Option<String>,
 }
 
 impl fmt::Display for BareFn {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_unsafe {
+            write!(f, "unsafe ")?;
+        }
+
+        if let Some(abi) = &self.abi {
+            write!(f, "extern \"{}\" ", abi)?;
+        }
+
         write!(f, "fn(")?;
         for (i, param) in self.inputs.iter().enumerate() {
             if i > 0 {
@@ -177,6 +187,16 @@ impl fmt::Display for BareFn {
 impl From<BareFn> for TokenStream {
     fn from(value: BareFn) -> Self {
         let mut ts = TokenStream::new();
+        
+        if value.is_unsafe {
+            ts.push(Token::Keyword(KeywordToken::Unsafe));
+        }
+
+        if let Some(abi) = value.abi {
+            ts.push(Token::Keyword(KeywordToken::Extern));
+            ts.push(Token::Lit(Lit::str(abi)));
+        }
+
         ts.push(Token::Keyword(KeywordToken::Fn));
         ts.push(Token::OpenDelim(Delimiter::Parenthesis));
         for (i, param) in value.inputs.iter().enumerate() {
@@ -197,12 +217,24 @@ impl BareFn {
         generic_params: Vec<GenericParam>,
         inputs: Vec<Param>,
         output: impl Into<Type>,
+        abi: Option<String>,
+        is_unsafe: bool,
     ) -> Self {
         Self {
             generic_params,
             inputs,
             output: Box::new(output.into()),
+            abi,
+            is_unsafe,
         }
+    }
+
+    pub fn safe(
+        generic_params: Vec<GenericParam>,
+        inputs: Vec<Param>,
+        output: impl Into<Type>,
+    ) -> Self {
+        BareFn::new(generic_params, inputs, output, None, false)
     }
 }
 
