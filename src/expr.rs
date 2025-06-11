@@ -2164,7 +2164,7 @@ pub struct AddrOf {
 
 impl fmt::Display for AddrOf {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "&")?;
+        write!(f, "(&")?;
         match (self.kind, self.mutability) {
             (BorrowKind::Ref, Mutability::Not) => {}
             (BorrowKind::Ref, Mutability::Mut) => {
@@ -2177,13 +2177,14 @@ impl fmt::Display for AddrOf {
                 write!(f, "raw mut ")?;
             }
         }
-        write!(f, "{expr}", expr = self.expr)
+        write!(f, "{expr})", expr = self.expr)
     }
 }
 
 impl From<AddrOf> for TokenStream {
     fn from(value: AddrOf) -> Self {
         let mut ts = TokenStream::new();
+        ts.push(Token::OpenDelim(Delimiter::Parenthesis));
         ts.push(Token::And);
         match (value.kind, value.mutability) {
             (BorrowKind::Ref, Mutability::Not) => {}
@@ -2200,6 +2201,7 @@ impl From<AddrOf> for TokenStream {
             }
         }
         ts.extend(TokenStream::from(*value.expr));
+        ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         ts
     }
 }
