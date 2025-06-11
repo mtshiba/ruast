@@ -3,8 +3,8 @@ use std::fmt;
 use std::hash::Hash;
 
 use crate::expr::{
-    Async, Attribute, Call, ConstBlock, DelimArgs, Expr, GenericArg, MacCall, MethodCall, Path,
-    Range, TryBlock, UnsafeBlock,
+    Async, Attribute, Call, ConstBlock, DelimArgs, Expr, MacCall, MethodCall, Path, Range,
+    TryBlock, UnsafeBlock,
 };
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 use crate::ty::Type;
@@ -1598,7 +1598,7 @@ impl Variant {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EnumDef {
     pub ident: String,
-    pub generics: Vec<GenericArg>,
+    pub generics: Vec<GenericParam>,
     pub variants: Vec<Variant>,
 }
 
@@ -1677,7 +1677,7 @@ impl_hasitem_methods!(EnumDef, Variant);
 impl EnumDef {
     pub fn new(
         ident: impl Into<String>,
-        generics: Vec<GenericArg>,
+        generics: Vec<GenericParam>,
         variants: Vec<Variant>,
     ) -> Self {
         Self {
@@ -1721,7 +1721,7 @@ impl EnumDef {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StructDef {
     pub ident: String,
-    pub generics: Vec<GenericArg>,
+    pub generics: Vec<GenericParam>,
     pub variant: VariantData,
 }
 
@@ -1786,7 +1786,11 @@ impl HasItem<FieldDef> for StructDef {
 }
 
 impl StructDef {
-    pub fn new(ident: impl Into<String>, generics: Vec<GenericArg>, variant: VariantData) -> Self {
+    pub fn new(
+        ident: impl Into<String>,
+        generics: Vec<GenericParam>,
+        variant: VariantData,
+    ) -> Self {
         Self {
             ident: ident.into(),
             generics,
@@ -1823,7 +1827,7 @@ impl StructDef {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UnionDef {
     pub ident: String,
-    pub generics: Vec<GenericArg>,
+    pub generics: Vec<GenericParam>,
     pub variants: VariantData,
 }
 
@@ -1879,7 +1883,11 @@ impl Ident for UnionDef {
 }
 
 impl UnionDef {
-    pub fn new(ident: impl Into<String>, generics: Vec<GenericArg>, variants: VariantData) -> Self {
+    pub fn new(
+        ident: impl Into<String>,
+        generics: Vec<GenericParam>,
+        variants: VariantData,
+    ) -> Self {
         Self {
             ident: ident.into(),
             generics,
@@ -1895,7 +1903,7 @@ impl UnionDef {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TraitDef {
     pub ident: String,
-    pub generics: Vec<GenericArg>,
+    pub generics: Vec<GenericParam>,
     pub supertraits: Vec<Type>,
     pub items: Vec<AssocItem>,
 }
@@ -1993,7 +2001,7 @@ impl_hasitem_methods!(TraitDef, AssocItem);
 impl TraitDef {
     pub fn new(
         ident: impl Into<String>,
-        generics: Vec<GenericArg>,
+        generics: Vec<GenericParam>,
         supertraits: Vec<Type>,
         items: Vec<AssocItem>,
     ) -> Self {
