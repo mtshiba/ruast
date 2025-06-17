@@ -9,7 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let arg_t = GenericArg::Type(Type::simple_path("T"));
     let eq_bound = GenericBound::Trait(PolyTraitRef::simple("Eq"));
     let eq = Type::simple_path("Eq");
-    let param_t = GenericParam::new("T", vec![eq_bound]);
+    let param_t = GenericParam::TypeParam(TypeParam::new("T", vec![eq_bound]));
     let self_ty = Type::poly_path("Vec", vec![arg_t]);
     let imp = Impl::trait_impl(vec![param_t], self_ty, eq, None, vec![]);
     krate.add_item(imp);
