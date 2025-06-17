@@ -91,3 +91,24 @@ fn test_if_else() {
         39
     }");
 }
+
+#[test]
+fn test_binop() {
+    let lhs = Lit::int("1");
+    let rhs = Lit::int("2");
+    let bin = Binary::new(lhs, BinOpKind::Add, rhs);
+    assert_snapshot!(bin, @"(1 + 2)");
+
+    let bin = Binary::new(bin, BinOpKind::Mul, Lit::int("3"));
+    assert_snapshot!(bin, @"((1 + 2) * 3)");
+}
+
+#[test]
+fn test_addrof() {
+    let x = Path::single("x");
+    let add = x.add(Path::single("y"));
+    let ref_ = add.clone().ref_immut();
+    assert_snapshot!(ref_, @"&(x + y)");
+    let ref_mut = add.ref_mut();
+    assert_snapshot!(ref_mut, @"&mut (x + y)");
+}

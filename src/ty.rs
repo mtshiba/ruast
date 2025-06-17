@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::expr::{Const, GenericArg, MacCall, Path, PathSegment, Lit};
+use crate::expr::{Const, GenericArg, Lit, MacCall, Path, PathSegment};
 use crate::stmt::Param;
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 
@@ -187,7 +187,7 @@ impl fmt::Display for BareFn {
 impl From<BareFn> for TokenStream {
     fn from(value: BareFn) -> Self {
         let mut ts = TokenStream::new();
-        
+
         if value.is_unsafe {
             ts.push(Token::Keyword(KeywordToken::Unsafe));
         }
