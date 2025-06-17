@@ -749,14 +749,14 @@ pub struct Fn {
 
 impl fmt::Display for Fn {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.is_unsafe {
-            write!(f, "unsafe ")?;
-        }
         if self.is_const {
             write!(f, "const ")?;
         }
         if self.is_async {
             write!(f, "async ")?;
+        }
+        if self.is_unsafe {
+            write!(f, "unsafe ")?;
         }
         if let Some(abi) = &self.abi {
             write!(f, "extern \"{abi}\" ")?;
@@ -786,14 +786,14 @@ impl fmt::Display for Fn {
 impl From<Fn> for TokenStream {
     fn from(value: Fn) -> Self {
         let mut ts = TokenStream::new();
-        if value.is_unsafe {
-            ts.push(Token::Keyword(KeywordToken::Unsafe));
-        }
         if value.is_const {
             ts.push(Token::Keyword(KeywordToken::Const));
         }
         if value.is_async {
             ts.push(Token::Keyword(KeywordToken::Async));
+        }
+        if value.is_unsafe {
+            ts.push(Token::Keyword(KeywordToken::Unsafe));
         }
         if let Some(abi) = value.abi {
             ts.push(Token::Keyword(KeywordToken::Extern));
@@ -2526,6 +2526,9 @@ impl<K> AddVisibility<K> for Item<K> {
 
 impl<K: fmt::Display> fmt::Display for Item<K> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for attr in &self.attrs {
+            writeln!(f, "{attr}")?;
+        }
         write!(f, "{}{}", self.vis, self.kind)
     }
 }
@@ -2533,6 +2536,9 @@ impl<K: fmt::Display> fmt::Display for Item<K> {
 impl<K: Into<TokenStream>> From<Item<K>> for TokenStream {
     fn from(value: Item<K>) -> Self {
         let mut ts = TokenStream::new();
+        for attr in value.attrs {
+            ts.extend(TokenStream::from(attr))
+        }
         ts.extend(TokenStream::from(value.vis));
         ts.extend(value.kind.into());
         ts
