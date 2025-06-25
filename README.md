@@ -2,6 +2,11 @@
 
 This crate provides a printable & modifiable Rust AST.
 
+## Features
+
+* [x] Indentation-aware pretty-printing
+* [x] Operator precedence-aware pretty-printing
+
 ## Basic usage
 
 ### Hello world
@@ -58,6 +63,30 @@ assert!(krate.is_empty());
 fn main() {
     println!("Hello, world!");
 }
+```
+
+### Operations
+
+```rust
+use ruast::*;
+
+let lhs = Lit::int("1");
+let rhs = Lit::int("2");
+let add = lhs.clone().add(rhs.clone());
+assert_snapshot!(add, @"1 + 2");
+
+let add_add = add.clone().add(Lit::int("3"));
+assert_snapshot!(add_add, @"1 + 2 + 3");
+
+let mul_add = add.mul(Lit::int("3"));
+assert_snapshot!(mul_add, @"(1 + 2) * 3");
+
+let mul = lhs.clone().mul(rhs.clone());
+let add_mul = mul.add(Lit::int("3"));
+assert_snapshot!(add_mul, @"1 * 2 + 3");
+
+let add = lhs.neg().add(rhs.neg());
+assert_snapshot!(add, @"-1 + -2");
 ```
 
 ### Building struct, enum, trait and impl
