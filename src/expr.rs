@@ -1,3 +1,4 @@
+use core::fmt::Write;
 use std::fmt;
 use std::ops::{Add, Div, Mul, Neg, Sub};
 
@@ -5,6 +6,61 @@ use crate::stmt::{Block, EmptyItem, FnDecl, Pat, Use};
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 use crate::ty::Type;
 use crate::{impl_display_for_enum, impl_obvious_conversion};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(u8)]
+pub enum OperatorPrecedence {
+    // Path, literal, if expression, etc.
+    Elemental = 0,
+    MethodCall = 1,
+    Field = 2,
+    Call = 3,
+    Index = 4,
+    /// `?`
+    Try = 5,
+    Unary = 6,
+    /// `as`
+    Cast = 7,
+    /// `*`, `/`, `%`
+    MulDivRem = 8,
+    /// `+`, `-`
+    AddSub = 9,
+    /// `<<`, `>>`
+    Shift = 10,
+    /// `&`
+    BitAnd = 11,
+    /// `^`
+    BitXor = 12,
+    /// `|`
+    BitOr = 13,
+    /// `==`, `!=`, `<`, `>`, `<=`, `>=`
+    Compare = 14,
+    /// `&&`
+    LazyAnd = 15,
+    /// `||`
+    LazyOr = 16,
+    /// `..`, `..=`
+    Range = 17,
+    /// `=`, `+=`, `-=`, `*=`, `/=`, `%=` etc.
+    Assign = 18,
+    ReturnBreakClosure = 19,
+}
+
+pub trait HasPrecedence {
+    fn precedence(&self) -> OperatorPrecedence;
+}
+
+macro_rules! impl_has_precedence_for_enum {
+    ($Enum: ident; $($Variant: ident $(,)?)*) => {
+        impl HasPrecedence for $Enum {
+            fn precedence(&self) -> OperatorPrecedence {
+                match self {
+                    $($Enum::$Variant(v) => v.precedence(),)*
+                }
+            }
+        }
+    };
+}
 
 #[cfg(feature = "tokenize")]
 macro_rules! impl_to_tokens {
@@ -233,6 +289,18 @@ pub trait UnaryOperable {
         Self: Sized,
     {
         self.unary_op(UnaryOpKind::Neg)
+    }
+    fn deref(self) -> Unary
+    where
+        Self: Sized,
+    {
+        self.unary_op(UnaryOpKind::Deref)
+    }
+    fn not(self) -> Unary
+    where
+        Self: Sized,
+    {
+        self.unary_op(UnaryOpKind::Not)
     }
 }
 
@@ -472,6 +540,12 @@ pub struct Expr {
     pub kind: ExprKind,
 }
 
+impl HasPrecedence for Expr {
+    fn precedence(&self) -> OperatorPrecedence {
+        self.kind.precedence()
+    }
+}
+
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for attr in self.attrs.iter() {
@@ -540,6 +614,12 @@ impl From<Const> for TokenStream {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Array(pub Vec<Expr>);
 
+impl HasPrecedence for Array {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Elemental
+    }
+}
+
 impl fmt::Display for Array {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[")?;
@@ -587,6 +667,12 @@ impl Array {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Tuple(pub Vec<Expr>);
+
+impl HasPrecedence for Tuple {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Elemental
+    }
+}
 
 impl fmt::Display for Tuple {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -642,24 +728,40 @@ pub struct Binary {
 
 impl fmt::Display for Binary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "({lhs} {op} {rhs})",
-            lhs = self.lhs,
-            op = self.op,
-            rhs = self.rhs
-        )
+        if self.precedence() < self.lhs.precedence() {
+            write!(f, "({})", self.lhs)?;
+        } else {
+            write!(f, "{}", self.lhs)?;
+        }
+        write!(f, " {} ", self.op)?;
+        if self.precedence() < self.rhs.precedence() {
+            write!(f, "({})", self.rhs)?;
+        } else {
+            write!(f, "{}", self.rhs)?;
+        }
+        Ok(())
     }
 }
 
 impl From<Binary> for TokenStream {
     fn from(value: Binary) -> Self {
         let mut ts = TokenStream::new();
-        ts.push(Token::OpenDelim(Delimiter::Parenthesis));
-        ts.extend(TokenStream::from(*value.lhs));
+        let precedence = value.precedence();
+        if precedence < value.lhs.precedence() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+            ts.extend(TokenStream::from(*value.lhs));
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.lhs));
+        }
         ts.push(Token::from(value.op));
-        ts.extend(TokenStream::from(*value.rhs));
-        ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        if precedence < value.rhs.precedence() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+            ts.extend(TokenStream::from(*value.rhs));
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.rhs));
+        }
         ts
     }
 }
@@ -693,6 +795,12 @@ impl<E: Into<Expr>> Div<E> for Expr {
     }
 }
 
+impl HasPrecedence for Binary {
+    fn precedence(&self) -> OperatorPrecedence {
+        self.op.precedence()
+    }
+}
+
 impl Binary {
     pub fn new(lhs: impl Into<Expr>, op: BinOpKind, rhs: impl Into<Expr>) -> Self {
         Self {
@@ -708,6 +816,12 @@ pub enum UnaryOpKind {
     Deref,
     Not,
     Neg,
+}
+
+impl HasPrecedence for UnaryOpKind {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Unary
+    }
 }
 
 impl fmt::Display for UnaryOpKind {
@@ -736,19 +850,35 @@ pub struct Unary {
     pub expr: Box<Expr>,
 }
 
+impl HasPrecedence for Unary {
+    fn precedence(&self) -> OperatorPrecedence {
+        self.op.precedence()
+    }
+}
+
 impl fmt::Display for Unary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "({op} {expr})", op = self.op, expr = self.expr)
+        write!(f, "{}", self.op)?;
+        if self.precedence() < self.expr.precedence() {
+            write!(f, "({})", self.expr)
+        } else {
+            write!(f, "{}", self.expr)
+        }
     }
 }
 
 impl From<Unary> for TokenStream {
     fn from(value: Unary) -> Self {
         let mut ts = TokenStream::new();
-        ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+        let precedence = value.precedence();
         ts.push(Token::from(value.op));
-        ts.extend(TokenStream::from(*value.expr));
-        ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        if precedence < value.expr.precedence() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+            ts.extend(TokenStream::from(*value.expr));
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.expr));
+        }
         ts
     }
 }
@@ -774,6 +904,12 @@ impl Unary {
 pub struct Let {
     pub pat: Box<Pat>,
     pub expr: Box<Expr>,
+}
+
+impl HasPrecedence for Let {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Elemental
+    }
 }
 
 impl fmt::Display for Let {
@@ -807,6 +943,12 @@ pub struct If {
     pub cond: Box<Expr>,
     pub then: Block,
     pub else_: Option<Box<Expr>>,
+}
+
+impl HasPrecedence for If {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Elemental
+    }
 }
 
 impl fmt::Display for If {
@@ -851,6 +993,12 @@ pub struct While {
     pub body: Block,
 }
 
+impl HasPrecedence for While {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Elemental
+    }
+}
+
 impl fmt::Display for While {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "while {cond} {body}", cond = self.cond, body = self.body)
@@ -881,6 +1029,12 @@ pub struct ForLoop {
     pub pat: Box<Pat>,
     pub expr: Box<Expr>,
     pub body: Block,
+}
+
+impl HasPrecedence for ForLoop {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Elemental
+    }
 }
 
 impl fmt::Display for ForLoop {
@@ -922,6 +1076,12 @@ pub struct Loop {
     pub body: Block,
 }
 
+impl HasPrecedence for Loop {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Elemental
+    }
+}
+
 impl fmt::Display for Loop {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "loop {body}", body = self.body)
@@ -956,6 +1116,12 @@ pub struct ConstBlock {
     pub block: Block,
 }
 
+impl HasPrecedence for ConstBlock {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Elemental
+    }
+}
+
 impl fmt::Display for ConstBlock {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "const {block}", block = self.block)
@@ -988,6 +1154,12 @@ impl ConstBlock {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UnsafeBlock {
     pub block: Block,
+}
+
+impl HasPrecedence for UnsafeBlock {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Elemental
+    }
 }
 
 impl fmt::Display for UnsafeBlock {
@@ -1074,11 +1246,18 @@ pub struct Match {
     pub arms: Vec<Arm>,
 }
 
+impl HasPrecedence for Match {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Elemental
+    }
+}
+
 impl fmt::Display for Match {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "match {expr} {{", expr = self.expr)?;
+        writeln!(f, "match {expr} {{", expr = self.expr)?;
         for arm in self.arms.iter() {
-            writeln!(f, "{arm},")?;
+            let mut indent = indenter::indented(f).with_str("    ");
+            writeln!(indent, "{arm},")?;
         }
         write!(f, "}}")
     }
@@ -1116,6 +1295,12 @@ pub struct Closure {
     pub is_move: bool,
     pub fn_decl: FnDecl,
     pub body: Box<Expr>,
+}
+
+impl HasPrecedence for Closure {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::ReturnBreakClosure
+    }
 }
 
 impl fmt::Display for Closure {
@@ -1227,6 +1412,12 @@ pub struct Async {
     pub block: Block,
 }
 
+impl HasPrecedence for Async {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Elemental
+    }
+}
+
 impl fmt::Display for Async {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "async {block}", block = self.block)
@@ -1262,16 +1453,34 @@ pub struct Await {
     pub expr: Box<Expr>,
 }
 
+impl HasPrecedence for Await {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Field
+    }
+}
+
 impl fmt::Display for Await {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{expr}.await", expr = self.expr)
+        if self.precedence() < self.expr.precedence() {
+            write!(f, "({})", self.expr)?;
+        } else {
+            write!(f, "{}", self.expr)?;
+        }
+        write!(f, ".await")
     }
 }
 
 impl From<Await> for TokenStream {
     fn from(value: Await) -> Self {
         let mut ts = TokenStream::new();
-        ts.extend(TokenStream::from(*value.expr));
+        let precedence = value.precedence();
+        if precedence < value.expr.precedence() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+            ts.extend(TokenStream::from(*value.expr));
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.expr));
+        }
         ts.push(Token::Dot);
         ts.push(Token::Keyword(KeywordToken::Await));
         ts
@@ -1290,6 +1499,12 @@ impl Await {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TryBlock {
     pub block: Block,
+}
+
+impl HasPrecedence for TryBlock {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Elemental
+    }
 }
 
 impl fmt::Display for TryBlock {
@@ -1328,16 +1543,34 @@ pub struct Field {
     pub ident: String,
 }
 
+impl HasPrecedence for Field {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Field
+    }
+}
+
 impl fmt::Display for Field {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{expr}.{ident}", expr = self.expr, ident = self.ident)
+        if self.precedence() < self.expr.precedence() {
+            write!(f, "({})", self.expr)?;
+        } else {
+            write!(f, "{}", self.expr)?;
+        }
+        write!(f, ".{}", self.ident)
     }
 }
 
 impl From<Field> for TokenStream {
     fn from(value: Field) -> Self {
         let mut ts = TokenStream::new();
-        ts.extend(TokenStream::from(*value.expr));
+        let precedence = value.precedence();
+        if precedence < value.expr.precedence() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+            ts.extend(TokenStream::from(*value.expr));
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.expr));
+        }
         ts.push(Token::Dot);
         ts.push(Token::ident(value.ident));
         ts
@@ -1360,16 +1593,34 @@ pub struct Index {
     pub index: Box<Expr>,
 }
 
+impl HasPrecedence for Index {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Index
+    }
+}
+
 impl fmt::Display for Index {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{expr}[{index}]", expr = self.expr, index = self.index)
+        if self.precedence() < self.expr.precedence() {
+            write!(f, "({})", self.expr)?;
+        } else {
+            write!(f, "{}", self.expr)?;
+        }
+        write!(f, "[{}]", self.index)
     }
 }
 
 impl From<Index> for TokenStream {
     fn from(value: Index) -> Self {
         let mut ts = TokenStream::new();
-        ts.extend(TokenStream::from(*value.expr));
+        let precedence = value.precedence();
+        if precedence < value.expr.precedence() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+            ts.extend(TokenStream::from(*value.expr));
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.expr));
+        }
         ts.push(Token::OpenDelim(Delimiter::Bracket));
         ts.extend(TokenStream::from(*value.index));
         ts.push(Token::CloseDelim(Delimiter::Bracket));
@@ -1419,27 +1670,45 @@ pub struct Range {
     pub limits: RangeLimits,
 }
 
+impl HasPrecedence for Range {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Range
+    }
+}
+
 impl fmt::Display for Range {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{start}{limits}{end}",
-            start = self
-                .start
-                .as_ref()
-                .map(|e| e.to_string())
-                .unwrap_or_default(),
-            limits = self.limits,
-            end = self.end.as_ref().map(|e| e.to_string()).unwrap_or_default()
-        )
+        if let Some(start) = &self.start {
+            if self.precedence() < start.precedence() {
+                write!(f, "({start})")?;
+            } else {
+                write!(f, "{start}")?;
+            }
+        }
+        write!(f, " {} ", self.limits)?;
+        if let Some(end) = &self.end {
+            if self.precedence() < end.precedence() {
+                write!(f, "({end})")?;
+            } else {
+                write!(f, "{end}")?;
+            }
+        }
+        Ok(())
     }
 }
 
 impl From<Range> for TokenStream {
     fn from(value: Range) -> Self {
         let mut ts = TokenStream::new();
+        let precedence = value.precedence();
         if let Some(start) = value.start {
-            ts.extend(TokenStream::from(*start));
+            if precedence < start.precedence() {
+                ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+                ts.extend(TokenStream::from(*start));
+                ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+            } else {
+                ts.extend(TokenStream::from(*start));
+            }
         }
         match value.limits {
             RangeLimits::HalfOpen => {
@@ -1450,7 +1719,13 @@ impl From<Range> for TokenStream {
             }
         }
         if let Some(end) = value.end {
-            ts.extend(TokenStream::from(*end));
+            if precedence < end.precedence() {
+                ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+                ts.extend(TokenStream::from(*end));
+                ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+            } else {
+                ts.extend(TokenStream::from(*end));
+            }
         }
         ts
     }
@@ -1469,6 +1744,12 @@ impl Range {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Underscore {}
 
+impl HasPrecedence for Underscore {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Elemental
+    }
+}
+
 impl fmt::Display for Underscore {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "_")
@@ -1485,6 +1766,12 @@ impl From<Underscore> for TokenStream {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Return {
     pub expr: Option<Box<Expr>>,
+}
+
+impl HasPrecedence for Return {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::ReturnBreakClosure
+    }
 }
 
 impl fmt::Display for Return {
@@ -1520,6 +1807,12 @@ impl Return {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Yield {
     pub expr: Option<Box<Expr>>,
+}
+
+impl HasPrecedence for Yield {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::ReturnBreakClosure
+    }
 }
 
 impl fmt::Display for Yield {
@@ -1558,18 +1851,47 @@ pub struct Assign {
     pub rhs: Box<Expr>,
 }
 
+impl HasPrecedence for Assign {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Assign
+    }
+}
+
 impl fmt::Display for Assign {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{lhs} = {rhs}", lhs = self.lhs, rhs = self.rhs)
+        if self.precedence() < self.lhs.precedence() {
+            write!(f, "({})", self.lhs)?;
+        } else {
+            write!(f, "{}", self.lhs)?;
+        }
+        write!(f, " = ")?;
+        if self.precedence() < self.rhs.precedence() {
+            write!(f, "({})", self.rhs)
+        } else {
+            write!(f, "{}", self.rhs)
+        }
     }
 }
 
 impl From<Assign> for TokenStream {
     fn from(value: Assign) -> Self {
         let mut ts = TokenStream::new();
-        ts.extend(TokenStream::from(*value.lhs));
+        let precedence = value.precedence();
+        if precedence < value.lhs.precedence() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+            ts.extend(TokenStream::from(*value.lhs));
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.lhs));
+        }
         ts.push(Token::Eq);
-        ts.extend(TokenStream::from(*value.rhs));
+        if precedence < value.rhs.precedence() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+            ts.extend(TokenStream::from(*value.rhs));
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.rhs));
+        }
         ts
     }
 }
@@ -1648,6 +1970,24 @@ impl fmt::Display for BinOpKind {
     }
 }
 
+impl HasPrecedence for BinOpKind {
+    fn precedence(&self) -> OperatorPrecedence {
+        match self {
+            Self::LazyAnd => OperatorPrecedence::LazyAnd,
+            Self::LazyOr => OperatorPrecedence::LazyOr,
+            Self::Eq | Self::Ne | Self::Lt | Self::Le | Self::Gt | Self::Ge => {
+                OperatorPrecedence::Compare
+            }
+            Self::Add | Self::Sub => OperatorPrecedence::AddSub,
+            Self::Mul | Self::Div | Self::Rem => OperatorPrecedence::MulDivRem,
+            Self::BitAnd => OperatorPrecedence::BitAnd,
+            Self::BitOr => OperatorPrecedence::BitOr,
+            Self::BitXor => OperatorPrecedence::BitXor,
+            Self::Shl | Self::Shr => OperatorPrecedence::Shift,
+        }
+    }
+}
+
 impl BinOpKind {
     pub fn as_assign_op(&self) -> &str {
         match self {
@@ -1707,24 +2047,47 @@ pub struct AssignOp {
     pub rhs: Box<Expr>,
 }
 
+impl HasPrecedence for AssignOp {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Assign
+    }
+}
+
 impl fmt::Display for AssignOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{lhs} {as_op} {rhs}",
-            lhs = self.lhs,
-            as_op = self.op.as_assign_op(),
-            rhs = self.rhs
-        )
+        if self.precedence() < self.lhs.precedence() {
+            write!(f, "({})", self.lhs)?;
+        } else {
+            write!(f, "{}", self.lhs)?;
+        }
+        write!(f, " {} ", self.op.as_assign_op())?;
+        if self.precedence() < self.rhs.precedence() {
+            write!(f, "({})", self.rhs)
+        } else {
+            write!(f, "{}", self.rhs)
+        }
     }
 }
 
 impl From<AssignOp> for TokenStream {
     fn from(value: AssignOp) -> Self {
         let mut ts = TokenStream::new();
-        ts.extend(TokenStream::from(*value.lhs));
+        let precedence = value.precedence();
+        if precedence < value.lhs.precedence() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+            ts.extend(TokenStream::from(*value.lhs));
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.lhs));
+        }
         ts.push(Token::from(value.op));
-        ts.extend(TokenStream::from(*value.rhs));
+        if precedence < value.rhs.precedence() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+            ts.extend(TokenStream::from(*value.rhs));
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.rhs));
+        }
         ts
     }
 }
@@ -1757,6 +2120,12 @@ pub enum LitKind {
 pub struct Lit {
     pub kind: LitKind,
     pub symbol: String,
+}
+
+impl HasPrecedence for Lit {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Elemental
+    }
 }
 
 impl fmt::Display for Lit {
@@ -1829,20 +2198,36 @@ pub struct Cast {
     pub ty: Type,
 }
 
+impl HasPrecedence for Cast {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Cast
+    }
+}
+
 impl fmt::Display for Cast {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "({expr} as {ty})", expr = self.expr, ty = self.ty)
+        if self.precedence() < self.expr.precedence() {
+            write!(f, "({})", self.expr)?;
+        } else {
+            write!(f, "{}", self.expr)?;
+        }
+        write!(f, "as {}", self.ty)
     }
 }
 
 impl From<Cast> for TokenStream {
     fn from(value: Cast) -> Self {
         let mut ts = TokenStream::new();
-        ts.push(Token::OpenDelim(Delimiter::Parenthesis));
-        ts.extend(TokenStream::from(*value.expr));
+        let precedence = value.precedence();
+        if precedence < value.expr.precedence() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+            ts.extend(TokenStream::from(*value.expr));
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.expr));
+        }
         ts.push(Token::Keyword(KeywordToken::As));
         ts.extend(TokenStream::from(value.ty));
-        ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         ts
     }
 }
@@ -1863,20 +2248,36 @@ pub struct TypeAscription {
     pub ty: Type,
 }
 
+impl HasPrecedence for TypeAscription {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Cast
+    }
+}
+
 impl fmt::Display for TypeAscription {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "({expr}: {ty})", expr = self.expr, ty = self.ty)
+        if self.precedence() < self.expr.precedence() {
+            write!(f, "({})", self.expr)?;
+        } else {
+            write!(f, "{}", self.expr)?;
+        }
+        write!(f, ": {}", self.ty)
     }
 }
 
 impl From<TypeAscription> for TokenStream {
     fn from(value: TypeAscription) -> Self {
         let mut ts = TokenStream::new();
-        ts.push(Token::OpenDelim(Delimiter::Parenthesis));
-        ts.extend(TokenStream::from(*value.expr));
+        let precedence = value.precedence();
+        if precedence < value.expr.precedence() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+            ts.extend(TokenStream::from(*value.expr));
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.expr));
+        }
         ts.push(Token::Colon);
         ts.extend(TokenStream::from(value.ty));
-        ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         ts
     }
 }
@@ -1896,9 +2297,20 @@ pub struct Call {
     pub args: Vec<Expr>,
 }
 
+impl HasPrecedence for Call {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Call
+    }
+}
+
 impl fmt::Display for Call {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}(", self.func)?;
+        if self.precedence() < self.func.precedence() {
+            write!(f, "({})", self.func)?;
+        } else {
+            write!(f, "{}", self.func)?;
+        }
+        write!(f, "(")?;
         for (i, arg) in self.args.iter().enumerate() {
             if i > 0 {
                 write!(f, ", ")?;
@@ -1912,7 +2324,14 @@ impl fmt::Display for Call {
 impl From<Call> for TokenStream {
     fn from(value: Call) -> Self {
         let mut ts = TokenStream::new();
-        ts.extend(TokenStream::from(*value.func));
+        let precedence = value.precedence();
+        if precedence < value.func.precedence() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+            ts.extend(TokenStream::from(*value.func));
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.func));
+        }
         ts.push(Token::OpenDelim(Delimiter::Parenthesis));
         for (i, arg) in value.args.iter().enumerate() {
             if i > 0 {
@@ -1952,9 +2371,20 @@ pub struct MethodCall {
     pub args: Vec<Expr>,
 }
 
+impl HasPrecedence for MethodCall {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::MethodCall
+    }
+}
+
 impl fmt::Display for MethodCall {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}.{}(", self.receiver, self.seg)?;
+        if self.precedence() < self.receiver.precedence() {
+            write!(f, "({})", self.receiver)?;
+        } else {
+            write!(f, "{}", self.receiver)?;
+        }
+        write!(f, ".{}(", self.seg)?;
         for (i, arg) in self.args.iter().enumerate() {
             if i > 0 {
                 write!(f, ", ")?;
@@ -1968,7 +2398,14 @@ impl fmt::Display for MethodCall {
 impl From<MethodCall> for TokenStream {
     fn from(value: MethodCall) -> Self {
         let mut ts = TokenStream::new();
-        ts.extend(TokenStream::from(*value.receiver));
+        let precedence = value.precedence();
+        if precedence < value.receiver.precedence() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+            ts.extend(TokenStream::from(*value.receiver));
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.receiver));
+        }
         ts.push(Token::Dot);
         ts.extend(TokenStream::from(value.seg));
         ts.push(Token::OpenDelim(Delimiter::Parenthesis));
@@ -1996,6 +2433,12 @@ impl MethodCall {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Path {
     pub segments: Vec<PathSegment>,
+}
+
+impl HasPrecedence for Path {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Elemental
+    }
 }
 
 impl fmt::Display for Path {
@@ -2162,6 +2605,12 @@ pub struct AddrOf {
     pub expr: Box<Expr>,
 }
 
+impl HasPrecedence for AddrOf {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Unary
+    }
+}
+
 impl fmt::Display for AddrOf {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "&")?;
@@ -2177,13 +2626,18 @@ impl fmt::Display for AddrOf {
                 write!(f, "raw mut ")?;
             }
         }
-        write!(f, "{expr}", expr = self.expr)
+        if self.precedence() < self.expr.precedence() {
+            write!(f, "({})", self.expr)
+        } else {
+            write!(f, "{}", self.expr)
+        }
     }
 }
 
 impl From<AddrOf> for TokenStream {
     fn from(value: AddrOf) -> Self {
         let mut ts = TokenStream::new();
+        let precedence = value.precedence();
         ts.push(Token::And);
         match (value.kind, value.mutability) {
             (BorrowKind::Ref, Mutability::Not) => {}
@@ -2199,7 +2653,13 @@ impl From<AddrOf> for TokenStream {
                 ts.push(Token::Keyword(KeywordToken::Mut));
             }
         }
-        ts.extend(TokenStream::from(*value.expr));
+        if precedence < value.expr.precedence() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+            ts.extend(TokenStream::from(*value.expr));
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.expr));
+        }
         ts
     }
 }
@@ -2227,6 +2687,12 @@ impl AddrOf {
 pub struct Break {
     pub label: Option<String>,
     pub expr: Option<Box<Expr>>,
+}
+
+impl HasPrecedence for Break {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::ReturnBreakClosure
+    }
 }
 
 impl fmt::Display for Break {
@@ -2269,6 +2735,12 @@ impl Break {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Continue {
     pub label: Option<String>,
+}
+
+impl HasPrecedence for Continue {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Elemental
+    }
 }
 
 impl fmt::Display for Continue {
@@ -2451,6 +2923,12 @@ pub struct MacCall {
     pub args: DelimArgs,
 }
 
+impl HasPrecedence for MacCall {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Call
+    }
+}
+
 impl fmt::Display for MacCall {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}!{}", self.path, self.args)?;
@@ -2534,6 +3012,12 @@ pub struct Struct {
     pub fields: Vec<ExprField>,
 }
 
+impl HasPrecedence for Struct {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Elemental
+    }
+}
+
 impl fmt::Display for Struct {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} {{", self.path)?;
@@ -2579,6 +3063,12 @@ pub struct Repeat {
     pub len: Box<Const>,
 }
 
+impl HasPrecedence for Repeat {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Elemental
+    }
+}
+
 impl fmt::Display for Repeat {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[{expr}; {len}]", expr = self.expr, len = self.len)
@@ -2612,16 +3102,33 @@ pub struct Try {
     pub expr: Box<Expr>,
 }
 
+impl HasPrecedence for Try {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Try
+    }
+}
+
 impl fmt::Display for Try {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{expr}?", expr = self.expr)
+        if self.precedence() < self.expr.precedence() {
+            write!(f, "({})?", self.expr)
+        } else {
+            write!(f, "{}?", self.expr)
+        }
     }
 }
 
 impl From<Try> for TokenStream {
     fn from(value: Try) -> Self {
         let mut ts = TokenStream::new();
-        ts.extend(TokenStream::from(*value.expr));
+        let precedence = value.precedence();
+        if precedence < value.expr.precedence() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+            ts.extend(TokenStream::from(*value.expr));
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.expr));
+        }
         ts.push(Token::Question);
         ts
     }
@@ -2718,6 +3225,46 @@ impl_display_for_enum!(ExprKind;
     Try,
 );
 impl_obvious_conversion!(ExprKind;
+    Array,
+    Call,
+    MethodCall,
+    Tuple,
+    Binary,
+    Unary,
+    Lit,
+    Cast,
+    TypeAscription,
+    Let,
+    If,
+    While,
+    ForLoop,
+    Loop,
+    ConstBlock,
+    UnsafeBlock,
+    Match,
+    Closure,
+    Block,
+    Async,
+    Await,
+    TryBlock,
+    Assign,
+    AssignOp,
+    Field,
+    Index,
+    Range,
+    Underscore,
+    Path,
+    AddrOf,
+    Break,
+    Continue,
+    Return,
+    Yield,
+    MacCall,
+    Struct,
+    Repeat,
+    Try,
+);
+impl_has_precedence_for_enum!(ExprKind;
     Array,
     Call,
     MethodCall,

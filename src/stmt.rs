@@ -10,7 +10,7 @@ use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 use crate::ty::Type;
 use crate::{
     impl_display_for_enum, impl_hasitem_methods, impl_obvious_conversion, ForLoop, GenericParam,
-    Lit, Mutability,
+    HasPrecedence, Lit, Mutability, OperatorPrecedence,
 };
 
 #[cfg(feature = "tokenize")]
@@ -1143,6 +1143,12 @@ impl Mod {
 pub struct Block {
     pub label: Option<String>,
     pub stmts: Vec<Stmt>,
+}
+
+impl HasPrecedence for Block {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Elemental
+    }
 }
 
 impl fmt::Display for Block {

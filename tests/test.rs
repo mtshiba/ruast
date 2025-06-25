@@ -96,19 +96,80 @@ fn test_if_else() {
 fn test_binop() {
     let lhs = Lit::int("1");
     let rhs = Lit::int("2");
-    let bin = Binary::new(lhs, BinOpKind::Add, rhs);
-    assert_snapshot!(bin, @"(1 + 2)");
+    let add = lhs.clone().add(rhs.clone());
+    assert_snapshot!(add, @"1 + 2");
 
-    let bin = Binary::new(bin, BinOpKind::Mul, Lit::int("3"));
-    assert_snapshot!(bin, @"((1 + 2) * 3)");
+    let add_add = add.clone().add(Lit::int("3"));
+    assert_snapshot!(add_add, @"1 + 2 + 3");
+
+    let mul_add = add.mul(Lit::int("3"));
+    assert_snapshot!(mul_add, @"(1 + 2) * 3");
+
+    let mul = lhs.clone().mul(rhs.clone());
+    let add_mul = mul.add(Lit::int("3"));
+    assert_snapshot!(add_mul, @"1 * 2 + 3");
+
+    let add = lhs.neg().add(rhs.neg());
+    assert_snapshot!(add, @"-1 + -2");
 }
 
 #[test]
 fn test_addrof() {
     let x = Path::single("x");
-    let add = x.add(Path::single("y"));
+    let add = x.clone().add(Path::single("y"));
     let ref_ = add.clone().ref_immut();
     assert_snapshot!(ref_, @"&(x + y)");
     let ref_mut = add.ref_mut();
     assert_snapshot!(ref_mut, @"&mut (x + y)");
+
+    let addr_deref = x.ref_immut().deref();
+    assert_snapshot!(addr_deref, @"*&x");
+}
+
+#[test]
+fn test_field() {
+    let x = Path::single("x");
+    let add = x.clone().add(Path::single("y"));
+    let field = add.field("z");
+    assert_snapshot!(field, @"(x + y).z");
+    let ref_ = x.clone().ref_immut();
+    let ref_field = ref_.field("z");
+    assert_snapshot!(ref_field, @"(&x).z");
+    let field_ref = x.field("z").ref_immut();
+    assert_snapshot!(field_ref, @"&x.z");
+}
+
+#[test]
+fn test_closure() {
+    let x = Path::single("x");
+    let decl = FnDecl::regular(vec![Param::ident("a", Type::Infer)], None);
+    let closure = Closure::simple(decl, x);
+    assert_snapshot!(closure, @"|a: _| { x }");
+
+    let call = closure.call(vec![Lit::int("42").into()]);
+    assert_snapshot!(call, @"(|a: _| { x })(42)");
+}
+
+#[test]
+fn test_return() {
+    let x = Path::single("x");
+    let return_ = Return::new(Some(x));
+    assert_snapshot!(return_, @"return x");
+
+    let call_return = return_.call(vec![]);
+    assert_snapshot!(call_return, @"(return x)()");
+}
+
+#[test]
+fn test_match() {
+    let x = Path::single("x");
+    let arm1 = Arm::new(Pat::Lit(Lit::int("1").into()), None, Lit::int("1"));
+    let arm2 = Arm::new(Pat::Lit(Lit::int("2").into()), None, Lit::int("2"));
+    let default_arm = Arm::new(Pat::Wild, None, Lit::int("0"));
+    let match_ = Match::new(x, vec![arm1, arm2, default_arm]);
+    assert_snapshot!(match_, @"match x {
+    1 => 1,
+    2 => 2,
+    _ => 0,
+}");
 }
