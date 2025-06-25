@@ -114,6 +114,25 @@ fn test_binop() {
 }
 
 #[test]
+fn test_try() {
+    let x = Path::single("x");
+    let try_ = x.clone().try_();
+    assert_snapshot!(try_, @"x?");
+
+    let try_add = try_.clone().add(Lit::int("42"));
+    assert_snapshot!(try_add, @"x? + 42");
+
+    let neg_try = x.neg().try_();
+    assert_snapshot!(neg_try, @"(-x)?");
+
+    let try_neg = try_.clone().neg();
+    assert_snapshot!(try_neg, @"-x?");
+
+    let try_call = try_.call(vec![Lit::int("42").into()]);
+    assert_snapshot!(try_call, @"(x?)(42)");
+}
+
+#[test]
 fn test_addrof() {
     let x = Path::single("x");
     let add = x.clone().add(Path::single("y"));
@@ -135,8 +154,16 @@ fn test_field() {
     let ref_ = x.clone().ref_immut();
     let ref_field = ref_.field("z");
     assert_snapshot!(ref_field, @"(&x).z");
-    let field_ref = x.field("z").ref_immut();
+    let field_ref = x.clone().field("z").ref_immut();
     assert_snapshot!(field_ref, @"&x.z");
+
+    let field_raw_ref = x
+        .clone()
+        .field("z")
+        .addr_of(BorrowKind::Raw, Mutability::Mut);
+    assert_snapshot!(field_raw_ref, @"&raw mut x.z");
+    let raw_ref_field = x.addr_of(BorrowKind::Raw, Mutability::Mut).field("z");
+    assert_snapshot!(raw_ref_field, @"(&raw mut x).z");
 }
 
 #[test]
@@ -153,7 +180,7 @@ fn test_closure() {
 #[test]
 fn test_return() {
     let x = Path::single("x");
-    let return_ = Return::new(Some(x));
+    let return_ = x.return_();
     assert_snapshot!(return_, @"return x");
 
     let call_return = return_.call(vec![]);
