@@ -561,6 +561,28 @@ impl<E: Into<ExprKind>> From<E> for Expr {
     }
 }
 
+#[cfg(feature = "syn")]
+impl From<syn::Expr> for Expr {
+    fn from(value: syn::Expr) -> Self {
+        match value {
+            syn::Expr::Array(arr) => Expr::from(Array::from(arr)),
+            syn::Expr::Assign(assign) => Expr::from(Assign::from(assign)),
+            syn::Expr::Await(awt) => Expr::from(Await::from(awt)),
+            syn::Expr::Binary(bin) => Expr::from(Binary::from(bin)),
+            syn::Expr::Block(block) => Expr::from(Block::from(block)),
+            syn::Expr::Break(brk) => Expr::from(Break::from(brk)),
+            syn::Expr::Call(call) => Expr::from(Call::from(call)),
+            _ => unimplemented!(),
+        }
+    }
+}
+#[cfg(feature = "syn")]
+impl From<syn::ExprLit> for Expr {
+    fn from(value: syn::ExprLit) -> Self {
+        Expr::new(Lit::from(value))
+    }
+}
+
 impl From<Expr> for TokenStream {
     fn from(value: Expr) -> Self {
         let mut ts = TokenStream::new();
@@ -605,6 +627,13 @@ impl fmt::Display for Const {
     }
 }
 
+#[cfg(feature = "syn")]
+impl From<syn::Expr> for Const {
+    fn from(value: syn::Expr) -> Self {
+        Self(Expr::from(value))
+    }
+}
+
 impl From<Const> for TokenStream {
     fn from(value: Const) -> Self {
         TokenStream::from(value.0)
@@ -637,6 +666,18 @@ impl fmt::Display for Array {
 impl From<Vec<Expr>> for Array {
     fn from(value: Vec<Expr>) -> Self {
         Self(value)
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::ExprArray> for Array {
+    fn from(value: syn::ExprArray) -> Self {
+        let exprs = value
+            .elems
+            .into_iter()
+            .map(|expr| Expr::from(expr))
+            .collect();
+        Self(exprs)
     }
 }
 
@@ -740,6 +781,20 @@ impl fmt::Display for Binary {
             write!(f, "{}", self.rhs)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::ExprBinary> for Binary {
+    fn from(value: syn::ExprBinary) -> Self {
+        let lhs = Expr::from(*value.left);
+        let op = BinOpKind::from(value.op);
+        let rhs = Expr::from(*value.right);
+        Self {
+            lhs: Box::new(lhs),
+            op,
+            rhs: Box::new(rhs),
+        }
     }
 }
 
@@ -1470,6 +1525,15 @@ impl fmt::Display for Await {
     }
 }
 
+#[cfg(feature = "syn")]
+impl From<syn::ExprAwait> for Await {
+    fn from(value: syn::ExprAwait) -> Self {
+        Self {
+            expr: Box::new(Expr::from(*value.base)),
+        }
+    }
+}
+
 impl From<Await> for TokenStream {
     fn from(value: Await) -> Self {
         let mut ts = TokenStream::new();
@@ -1697,6 +1761,20 @@ impl fmt::Display for Range {
     }
 }
 
+#[cfg(feature = "syn")]
+impl From<syn::ExprRange> for Range {
+    fn from(value: syn::ExprRange) -> Self {
+        let start = value.start.map(|e| Box::new(Expr::from(*e)));
+        let end = value.end.map(|e| Box::new(Expr::from(*e)));
+        let limits = if let syn::RangeLimits::Closed(_) = value.limits {
+            RangeLimits::Closed
+        } else {
+            RangeLimits::HalfOpen
+        };
+        Self { start, end, limits }
+    }
+}
+
 impl From<Range> for TokenStream {
     fn from(value: Range) -> Self {
         let mut ts = TokenStream::new();
@@ -1873,6 +1951,16 @@ impl fmt::Display for Assign {
     }
 }
 
+#[cfg(feature = "syn")]
+impl From<syn::ExprAssign> for Assign {
+    fn from(value: syn::ExprAssign) -> Self {
+        Self {
+            lhs: Box::new(Expr::from(*value.left)),
+            rhs: Box::new(Expr::from(*value.right)),
+        }
+    }
+}
+
 impl From<Assign> for TokenStream {
     fn from(value: Assign) -> Self {
         let mut ts = TokenStream::new();
@@ -1984,6 +2072,43 @@ impl HasPrecedence for BinOpKind {
             Self::BitOr => OperatorPrecedence::BitOr,
             Self::BitXor => OperatorPrecedence::BitXor,
             Self::Shl | Self::Shr => OperatorPrecedence::Shift,
+        }
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::BinOp> for BinOpKind {
+    fn from(value: syn::BinOp) -> Self {
+        match value {
+            syn::BinOp::Add(_) => Self::Add,
+            syn::BinOp::Sub(_) => Self::Sub,
+            syn::BinOp::Mul(_) => Self::Mul,
+            syn::BinOp::Div(_) => Self::Div,
+            syn::BinOp::Rem(_) => Self::Rem,
+            syn::BinOp::And(_) => Self::LazyAnd,
+            syn::BinOp::Or(_) => Self::LazyOr,
+            syn::BinOp::BitAnd(_) => Self::BitAnd,
+            syn::BinOp::BitOr(_) => Self::BitOr,
+            syn::BinOp::BitXor(_) => Self::BitXor,
+            syn::BinOp::Shl(_) => Self::Shl,
+            syn::BinOp::Shr(_) => Self::Shr,
+            syn::BinOp::Eq(_) => Self::Eq,
+            syn::BinOp::Lt(_) => Self::Lt,
+            syn::BinOp::Le(_) => Self::Le,
+            syn::BinOp::Ne(_) => Self::Ne,
+            syn::BinOp::Ge(_) => Self::Ge,
+            syn::BinOp::Gt(_) => Self::Gt,
+            syn::BinOp::AddAssign(_)
+            | syn::BinOp::SubAssign(_)
+            | syn::BinOp::MulAssign(_)
+            | syn::BinOp::DivAssign(_)
+            | syn::BinOp::RemAssign(_)
+            | syn::BinOp::BitAndAssign(_)
+            | syn::BinOp::BitOrAssign(_)
+            | syn::BinOp::BitXorAssign(_)
+            | syn::BinOp::ShlAssign(_)
+            | syn::BinOp::ShrAssign(_) => panic!("Cannot convert assignment operator to BinOpKind"),
+            _ => unreachable!(),
         }
     }
 }
@@ -2139,11 +2264,58 @@ impl fmt::Display for Lit {
     }
 }
 
-impl<S: Into<String>> From<S> for Lit {
-    fn from(symbol: S) -> Self {
+#[cfg(feature = "syn")]
+impl From<syn::Lit> for Lit {
+    fn from(value: syn::Lit) -> Self {
+        match value {
+            syn::Lit::Bool(lit) => Self {
+                kind: LitKind::Bool,
+                symbol: lit.value().to_string(),
+            },
+            syn::Lit::Byte(lit) => Self {
+                kind: LitKind::Byte,
+                symbol: lit.value().to_string(),
+            },
+            syn::Lit::Char(lit) => Self {
+                kind: LitKind::Char,
+                symbol: lit.value().to_string(),
+            },
+            syn::Lit::Int(lit) => Self {
+                kind: LitKind::Integer,
+                symbol: lit.base10_digits().to_string(),
+            },
+            syn::Lit::Float(lit) => Self {
+                kind: LitKind::Float,
+                symbol: lit.base10_digits().to_string(),
+            },
+            syn::Lit::Str(lit) => Self {
+                kind: LitKind::Str,
+                symbol: lit.value(),
+            },
+            _ => todo!("Handle other lit types"),
+        }
+    }
+}
+#[cfg(feature = "syn")]
+impl From<syn::ExprLit> for Lit {
+    fn from(value: syn::ExprLit) -> Self {
+        Self::from(value.lit)
+    }
+}
+
+impl From<String> for Lit {
+    fn from(symbol: String) -> Self {
         Self {
             kind: LitKind::Str,
-            symbol: symbol.into(),
+            symbol,
+        }
+    }
+}
+impl From<&str> for Lit {
+    fn from(symbol: &str) -> Self {
+        Self {
+            kind: LitKind::Str,
+            symbol: symbol.to_string(),
         }
     }
 }
@@ -2321,6 +2493,16 @@ impl fmt::Display for Call {
     }
 }
 
+#[cfg(feature = "syn")]
+impl From<syn::ExprCall> for Call {
+    fn from(value: syn::ExprCall) -> Self {
+        Self {
+            func: Box::new(Expr::from(*value.func)),
+            args: value.args.into_iter().map(Expr::from).collect(),
+        }
+    }
+}
+
 impl From<Call> for TokenStream {
     fn from(value: Call) -> Self {
         let mut ts = TokenStream::new();
@@ -2454,9 +2636,38 @@ impl fmt::Display for Path {
     }
 }
 
-impl<S: Into<PathSegment>> From<S> for Path {
-    fn from(ident: S) -> Self {
+#[cfg(feature = "syn")]
+impl From<syn::Path> for Path {
+    fn from(value: syn::Path) -> Self {
+        Self {
+            segments: value
+                .segments
+                .into_iter()
+                .map(|seg| PathSegment::from(seg))
+                .collect(),
+        }
+    }
+}
+#[cfg(feature = "syn")]
+impl From<syn::TypePath> for Path {
+    fn from(value: syn::TypePath) -> Self {
+        Self::from(value.path)
+    }
+}
+
+impl From<PathSegment> for Path {
+    fn from(ident: PathSegment) -> Self {
         Self::single(ident)
+    }
+}
+impl From<String> for Path {
+    fn from(ident: String) -> Self {
+        Self::single(PathSegment::simple(ident))
+    }
+}
+impl From<&str> for Path {
+    fn from(ident: &str) -> Self {
+        Self::single(PathSegment::simple(ident))
     }
 }
 
@@ -2528,10 +2739,36 @@ impl fmt::Display for PathSegment {
     }
 }
 
-impl<S: Into<String>> From<S> for PathSegment {
-    fn from(ident: S) -> Self {
+#[cfg(feature = "syn")]
+impl From<syn::PathSegment> for PathSegment {
+    fn from(value: syn::PathSegment) -> Self {
+        match value.arguments {
+            syn::PathArguments::None => Self {
+                ident: value.ident.to_string(),
+                args: None,
+            },
+            syn::PathArguments::AngleBracketed(args) => Self {
+                ident: value.ident.to_string(),
+                args: Some(
+                    args.args
+                        .into_iter()
+                        .map(|arg| GenericArg::from(arg))
+                        .collect(),
+                ),
+            },
+            syn::PathArguments::Parenthesized(_) => todo!(),
+        }
+    }
+}
+impl From<String> for PathSegment {
+    fn from(ident: String) -> Self {
+        Self { ident, args: None }
+    }
+}
+impl From<&str> for PathSegment {
+    fn from(ident: &str) -> Self {
         Self {
-            ident: ident.into(),
+            ident: ident.to_string(),
             args: None,
         }
     }
@@ -2708,6 +2945,15 @@ impl fmt::Display for Break {
     }
 }
 
+#[cfg(feature = "syn")]
+impl From<syn::ExprBreak> for Break {
+    fn from(value: syn::ExprBreak) -> Self {
+        let label = value.label.map(|l| l.to_string());
+        let expr = value.expr.map(|e| Box::new(Expr::from(*e)));
+        Self { label, expr }
+    }
+}
+
 impl From<Break> for TokenStream {
     fn from(value: Break) -> Self {
         let mut ts = TokenStream::new();
@@ -2783,6 +3029,18 @@ impl fmt::Display for GenericArg {
             Self::Lifetime(lifetime) => write!(f, "'{lifetime}"),
             Self::Type(ty) => write!(f, "{ty}"),
             Self::Const(constant) => write!(f, "{constant}"),
+        }
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::GenericArgument> for GenericArg {
+    fn from(value: syn::GenericArgument) -> Self {
+        match value {
+            syn::GenericArgument::Lifetime(lifetime) => Self::Lifetime(lifetime.to_string()),
+            syn::GenericArgument::Type(ty) => Self::Type(Type::from(ty)),
+            syn::GenericArgument::Const(constant) => Self::Const(Const::from(constant)),
+            _ => unreachable!(),
         }
     }
 }
@@ -2934,6 +3192,11 @@ impl fmt::Display for MacCall {
         write!(f, "{}!{}", self.path, self.args)?;
         Ok(())
     }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::Macro> for MacCall {
+    // TODO:
 }
 
 impl From<MacCall> for TokenStream {

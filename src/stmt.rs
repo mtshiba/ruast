@@ -149,6 +149,20 @@ impl fmt::Display for Local {
     }
 }
 
+#[cfg(feature = "syn")]
+impl From<syn::Local> for Local {
+    fn from(value: syn::Local) -> Self {
+        let pat = Pat::from(value.pat);
+        // TODO:
+        let ty = Option::<Type>::from(value.pat);
+        let kind = match value.init {
+            Some(init) => LocalKind::Init(Expr::from(*init.expr)),
+            None => LocalKind::Decl,
+        };
+        Self { pat, ty, kind }
+    }
+}
+
 impl From<Local> for TokenStream {
     fn from(value: Local) -> Self {
         let mut ts = TokenStream::new();
@@ -275,13 +289,32 @@ impl fmt::Display for IdentPat {
     }
 }
 
-impl<S: Into<String>> From<S> for IdentPat {
-    fn from(ident: S) -> Self {
+impl From<&str> for IdentPat {
+    fn from(ident: &str) -> Self {
         Self {
             is_mut: false,
-            ident: ident.into(),
+            ident: ident.to_string(),
             pat: None,
         }
+    }
+}
+impl From<String> for IdentPat {
+    fn from(ident: String) -> Self {
+        Self {
+            is_mut: false,
+            ident,
+            pat: None,
+        }
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::PatIdent> for IdentPat {
+    fn from(value: syn::PatIdent) -> Self {
+        let ident = value.ident.to_string();
+        let is_mut = value.mutability.is_some();
+        let pat = value.subpat.map(|(_, x)| Box::new(Pat::from(*x)));
+        Self { is_mut, ident, pat }
     }
 }
 
@@ -341,6 +374,23 @@ impl fmt::Display for StructPat {
     }
 }
 
+#[cfg(feature = "syn")]
+impl From<syn::PatStruct> for StructPat {
+    fn from(value: syn::PatStruct) -> Self {
+        let path = Path::from(value.path);
+        let fields = value
+            .fields
+            .into_iter()
+            .map(|field| PatField {
+                // TODO: Member does not have a `to_string` method
+                ident: field.member.to_string(),
+                pat: Pat::from(*field.pat),
+            })
+            .collect();
+        Self { path, fields }
+    }
+}
+
 impl From<StructPat> for TokenStream {
     fn from(value: StructPat) -> Self {
         let mut ts = TokenStream::new();
@@ -373,6 +423,15 @@ impl fmt::Display for TupleStructPat {
             write!(f, "{pat}")?;
         }
         write!(f, ")")
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::PatTupleStruct> for TupleStructPat {
+    fn from(value: syn::PatTupleStruct) -> Self {
+        let path = Path::from(value.path);
+        let pats = value.elems.into_iter().map(Pat::from).collect();
+        Self { path, pats }
     }
 }
 
@@ -504,9 +563,61 @@ impl fmt::Display for Pat {
     }
 }
 
-impl<I: Into<IdentPat>> From<I> for Pat {
-    fn from(ident: I) -> Self {
-        Self::Ident(ident.into())
+impl From<IdentPat> for Pat {
+    fn from(ident: IdentPat) -> Self {
+        Self::Ident(ident)
+    }
+}
+impl From<StructPat> for Pat {
+    fn from(struct_pat: StructPat) -> Self {
+        Self::Struct(struct_pat)
+    }
+}
+impl From<TupleStructPat> for Pat {
+    fn from(tuple_struct_pat: TupleStructPat) -> Self {
+        Self::TupleStruct(tuple_struct_pat)
+    }
+}
+impl From<RefPat> for Pat {
+    fn from(ref_pat: RefPat) -> Self {
+        Self::Ref(ref_pat)
+    }
+}
+impl From<MacCall> for Pat {
+    fn from(mac_call: MacCall) -> Self {
+        Self::MacCall(mac_call)
+    }
+}
+impl From<Lit> for Pat {
+    fn from(lit: Lit) -> Self {
+        Self::Lit(Expr::from(lit))
+    }
+}
+impl From<Expr> for Pat {
+    fn from(expr: Expr) -> Self {
+        Self::Lit(expr)
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::Pat> for Pat {
+    fn from(value: syn::Pat) -> Self {
+        match value {
+            syn::Pat::Wild(_) => Pat::Wild,
+            syn::Pat::Ident(ident) => Pat::Ident(IdentPat::from(ident)),
+            syn::Pat::Struct(struct_pat) => Pat::Struct(StructPat::from(struct_pat)),
+            syn::Pat::TupleStruct(tuple_struct_pat) => {
+                Pat::TupleStruct(TupleStructPat::from(tuple_struct_pat))
+            }
+            syn::Pat::Or(pats) => Pat::Or(pats.cases.into_iter().map(Pat::from).collect()),
+            syn::Pat::Tuple(pats) => Pat::Tuple(pats.elems.into_iter().map(Pat::from).collect()),
+            syn::Pat::Lit(expr) => Pat::Lit(Expr::from(expr)),
+            syn::Pat::Range(range) => Pat::Range(Range::from(range)),
+            syn::Pat::Slice(pats) => Pat::Slice(pats.elems.into_iter().map(Pat::from).collect()),
+            syn::Pat::Rest(_) => Pat::Rest,
+            syn::Pat::Paren(pat) => Pat::Paren(Box::new(Pat::from(*pat.pat))),
+            _ => unimplemented!(),
+        }
     }
 }
 
@@ -1167,6 +1278,28 @@ impl fmt::Display for Block {
             write!(f, "}}")?;
         }
         Ok(())
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::Block> for Block {
+    fn from(value: syn::Block) -> Self {
+        let mut stmts = Vec::new();
+        for stmt in value.stmts {
+            stmts.push(Stmt::from(stmt));
+        }
+        Self { label: None, stmts }
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::ExprBlock> for Block {
+    fn from(value: syn::ExprBlock) -> Self {
+        let mut stmts = Vec::new();
+        for stmt in value.block.stmts {
+            stmts.push(Stmt::from(stmt));
+        }
+        Self { label: None, stmts }
     }
 }
 
@@ -2654,6 +2787,27 @@ impl MaybeIdent for ItemKind {
     }
 }
 
+#[cfg(feature = "syn")]
+impl From<syn::Item> for ItemKind {
+    fn from(item: syn::Item) -> Self {
+        match item {
+            syn::Item::Use(item) => Self::Use(Use::from(item)),
+            syn::Item::Static(item) => Self::StaticItem(StaticItem::from(item)),
+            syn::Item::Const(item) => Self::ConstItem(ConstItem::from(item)),
+            syn::Item::Fn(item) => Self::Fn(Fn::from(item)),
+            syn::Item::Mod(item) => Self::Mod(Mod::from(item)),
+            syn::Item::Type(item) => Self::TyAlias(TyAlias::from(item)),
+            syn::Item::Enum(item) => Self::EnumDef(EnumDef::from(item)),
+            syn::Item::Struct(item) => Self::StructDef(StructDef::from(item)),
+            syn::Item::Union(item) => Self::UnionDef(UnionDef::from(item)),
+            syn::Item::Trait(item) => Self::TraitDef(TraitDef::from(item)),
+            syn::Item::Impl(item) => Self::Impl(Impl::from(item)),
+            syn::Item::Macro(_) => todo!(),
+            _ => unimplemented!(),
+        }
+    }
+}
+
 impl ItemKind {
     pub fn ident(&self) -> Option<&str> {
         MaybeIdent::ident(self)
@@ -3094,6 +3248,19 @@ impl From<ExternBlock> for Stmt {
 impl From<ExternCrate> for Stmt {
     fn from(item: ExternCrate) -> Self {
         Self::Item(Item::inherited(item))
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::Stmt> for Stmt {
+    fn from(stmt: syn::Stmt) -> Self {
+        match stmt {
+            syn::Stmt::Local(local) => Self::Local(Local::from(local)),
+            syn::Stmt::Item(item) => Self::Item(Item::from(item)),
+            syn::Stmt::Expr(expr, None) => Self::Expr(Expr::from(expr)),
+            syn::Stmt::Expr(expr, Some(_)) => Self::Semi(Semi(Expr::from(expr))),
+            syn::Stmt::Macro(mac_call) => Self::MacCall(MacCall::from(mac_call.mac)),
+        }
     }
 }
 

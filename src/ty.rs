@@ -77,6 +77,19 @@ impl fmt::Display for Ref {
     }
 }
 
+#[cfg(feature = "syn")]
+impl From<syn::TypeReference> for Ref {
+    fn from(value: syn::TypeReference) -> Self {
+        let lifetime = value.lifetime.map(|l| l.ident.to_string());
+        let mutable = value.mutability.is_some();
+        let mut_ty = MutTy::new(mutable, *value.elem);
+        Self {
+            lifetime,
+            ty: mut_ty,
+        }
+    }
+}
+
 impl From<Ref> for TokenStream {
     fn from(value: Ref) -> Self {
         let mut ts = TokenStream::new();
@@ -136,6 +149,21 @@ impl fmt::Display for Ptr {
     }
 }
 
+#[cfg(feature = "syn")]
+impl From<syn::TypePtr> for Ptr {
+    fn from(value: syn::TypePtr) -> Self {
+        let kind = if value.mutability.is_some() {
+            PtrKind::Mut
+        } else {
+            PtrKind::Const
+        };
+        Self {
+            ty: Box::new(Type::from(*value.elem)),
+            kind,
+        }
+    }
+}
+
 impl From<Ptr> for TokenStream {
     fn from(value: Ptr) -> Self {
         let mut ts = TokenStream::new();
@@ -156,9 +184,59 @@ impl Ptr {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct BareFnArg {
+    name: Option<String>,
+    ty: Type,
+}
+
+impl fmt::Display for BareFnArg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(name) = &self.name {
+            write!(f, "{name}: ")?;
+        }
+        write!(f, "{}", self.ty)
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::BareFnArg> for BareFnArg {
+    fn from(value: syn::BareFnArg) -> Self {
+        let name = value.name.map(|(name, _)| name.to_string());
+        let ty = Type::from(value.ty);
+        Self { name, ty }
+    }
+}
+
+impl From<BareFnArg> for TokenStream {
+    fn from(value: BareFnArg) -> Self {
+        let mut ts = TokenStream::new();
+        if let Some(name) = value.name {
+            ts.push(Token::ident(name));
+            ts.push(Token::Colon);
+        }
+        ts.extend(TokenStream::from(value.ty));
+        ts
+    }
+}
+
+impl BareFnArg {
+    pub fn new(name: Option<impl Into<String>>, ty: impl Into<Type>) -> Self {
+        Self {
+            name: name.map(|n| n.into()),
+            ty: ty.into(),
+        }
+    }
+
+    pub fn simple(ty: impl Into<Type>) -> Self {
+        Self::new(None::<String>, ty)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BareFn {
     pub generic_params: Vec<GenericParam>,
     pub inputs: Vec<Param>,
+    // TODO: Change to `ReturnType` when syn supports it
     pub output: Box<Type>,
     pub is_unsafe: bool,
     pub abi: Option<String>,
@@ -181,7 +259,25 @@ impl fmt::Display for BareFn {
             }
             write!(f, "{param}")?;
         }
-        write!(f, ") -> {}", self.output)
+        write!(f, ") -> {}", self.output)?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::TypeBareFn> for BareFn {
+    fn from(value: syn::TypeBareFn) -> Self {
+        // TODO: impl From<syn::BareFnArg> for BareFnArg
+        let inputs = value.inputs.into_iter().map(BareFnArg::from).collect();
+        let output = match value.output {
+            syn::ReturnType::Default => None,
+            syn::ReturnType::Type(_, ty) => Some(Box::new(Type::from(*ty))),
+        };
+        Self {
+            generic_params: vec![],
+            inputs,
+            output,
+        }
     }
 }
 
@@ -381,6 +477,22 @@ impl fmt::Display for GenericBound {
     }
 }
 
+#[cfg(feature = "syn")]
+impl From<syn::TypeParamBound> for GenericBound {
+    fn from(value: syn::TypeParamBound) -> Self {
+        match value {
+            syn::TypeParamBound::Trait(trait_bound) => {
+                // TODO: impl From<syn::TraitBound> for PolyTraitRef
+                GenericBound::Trait(PolyTraitRef::from(trait_bound))
+            }
+            syn::TypeParamBound::Lifetime(lifetime) => {
+                GenericBound::Outlives(lifetime.ident.to_string())
+            }
+            _ => todo!(),
+        }
+    }
+}
+
 impl From<GenericBound> for TokenStream {
     fn from(value: GenericBound) -> Self {
         match value {
@@ -411,6 +523,15 @@ impl fmt::Display for TraitObject {
                 .collect::<Vec<_>>()
                 .join(" + ")
         )
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::TypeTraitObject> for TraitObject {
+    fn from(value: syn::TypeTraitObject) -> Self {
+        let is_dyn = value.dyn_token.is_some();
+        let bounds = value.bounds.into_iter().map(GenericBound::from).collect();
+        Self { is_dyn, bounds }
     }
 }
 
@@ -447,6 +568,14 @@ impl fmt::Display for ImplTrait {
                 .collect::<Vec<_>>()
                 .join(" + ")
         )
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::TypeImplTrait> for ImplTrait {
+    fn from(value: syn::TypeImplTrait) -> Self {
+        let bounds = value.bounds.into_iter().map(GenericBound::from).collect();
+        Self { bounds }
     }
 }
 
@@ -516,9 +645,24 @@ impl fmt::Display for Type {
     }
 }
 
-impl<P: Into<PathSegment>> From<P> for Type {
-    fn from(p: P) -> Self {
+impl From<PathSegment> for Type {
+    fn from(p: PathSegment) -> Self {
         Self::Path(Path::single(p))
+    }
+}
+impl From<Path> for Type {
+    fn from(path: Path) -> Self {
+        Self::Path(path)
+    }
+}
+impl From<&str> for Type {
+    fn from(path: &str) -> Self {
+        Self::Path(Path::single(path))
+    }
+}
+impl From<String> for Type {
+    fn from(path: String) -> Self {
+        Self::Path(Path::single(path))
     }
 }
 
@@ -550,6 +694,28 @@ impl From<TraitObject> for Type {
 impl From<ImplTrait> for Type {
     fn from(impl_trait: ImplTrait) -> Self {
         Self::ImplTrait(impl_trait)
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::Type> for Type {
+    fn from(value: syn::Type) -> Self {
+        match value {
+            syn::Type::Slice(ty) => Type::Slice(Box::new(Type::from(*ty.elem))),
+            syn::Type::Array(ty) => Type::Array(
+                Box::new(Type::from(*ty.elem)),
+                Box::new(Const::from(ty.len)),
+            ),
+            syn::Type::Ptr(ptr) => Type::Ptr(Ptr::from(ptr)),
+            syn::Type::Reference(ref_) => Type::Ref(Ref::from(ref_)),
+            syn::Type::BareFn(bare_fn) => Type::BareFn(BareFn::from(bare_fn)),
+            syn::Type::Path(path) => Type::Path(Path::from(path)),
+            syn::Type::TraitObject(trait_object) => {
+                Type::TraitObject(TraitObject::from(trait_object))
+            }
+            syn::Type::ImplTrait(impl_trait) => Type::ImplTrait(ImplTrait::from(impl_trait)),
+            _ => unimplemented!(),
+        }
     }
 }
 
