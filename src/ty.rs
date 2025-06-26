@@ -1,7 +1,6 @@
 use std::fmt;
 
 use crate::expr::{Const, GenericArg, Lit, MacCall, Path, PathSegment};
-use crate::stmt::Param;
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 use crate::{impl_display_for_enum, impl_obvious_conversion};
 
@@ -235,9 +234,8 @@ impl BareFnArg {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BareFn {
     pub generic_params: Vec<GenericParam>,
-    pub inputs: Vec<Param>,
-    // TODO: Change to `ReturnType` when syn supports it
-    pub output: Box<Type>,
+    pub inputs: Vec<BareFnArg>,
+    pub output: Option<Box<Type>>,
     pub is_unsafe: bool,
     pub abi: Option<String>,
 }
@@ -259,7 +257,10 @@ impl fmt::Display for BareFn {
             }
             write!(f, "{param}")?;
         }
-        write!(f, ") -> {}", self.output)?;
+        write!(f, ")")?;
+        if let Some(output) = &self.output {
+            write!(f, " -> {}", output)?;
+        }
         Ok(())
     }
 }
@@ -267,16 +268,19 @@ impl fmt::Display for BareFn {
 #[cfg(feature = "syn")]
 impl From<syn::TypeBareFn> for BareFn {
     fn from(value: syn::TypeBareFn) -> Self {
-        // TODO: impl From<syn::BareFnArg> for BareFnArg
         let inputs = value.inputs.into_iter().map(BareFnArg::from).collect();
         let output = match value.output {
             syn::ReturnType::Default => None,
             syn::ReturnType::Type(_, ty) => Some(Box::new(Type::from(*ty))),
         };
+        let is_unsafe = value.unsafety.is_some();
+        let abi = value.abi.map(|a| a.name.as_ref().unwrap().value());
         Self {
-            generic_params: vec![],
+            generic_params: vec![], // TODO:
             inputs,
             output,
+            is_unsafe,
+            abi,
         }
     }
 }
@@ -296,15 +300,17 @@ impl From<BareFn> for TokenStream {
 
         ts.push(Token::Keyword(KeywordToken::Fn));
         ts.push(Token::OpenDelim(Delimiter::Parenthesis));
-        for (i, param) in value.inputs.iter().enumerate() {
+        for (i, param) in value.inputs.into_iter().enumerate() {
             if i > 0 {
                 ts.push(Token::Comma);
             }
-            ts.extend(TokenStream::from(param.clone()));
+            ts.extend(TokenStream::from(param));
         }
         ts.push(Token::CloseDelim(Delimiter::Parenthesis));
-        ts.push(Token::RArrow);
-        ts.extend(TokenStream::from(*value.output));
+        if let Some(output) = value.output {
+            ts.push(Token::RArrow);
+            ts.extend(TokenStream::from(*output));
+        }
         ts
     }
 }
@@ -312,15 +318,15 @@ impl From<BareFn> for TokenStream {
 impl BareFn {
     pub fn new(
         generic_params: Vec<GenericParam>,
-        inputs: Vec<Param>,
-        output: impl Into<Type>,
+        inputs: Vec<BareFnArg>,
+        output: Option<impl Into<Type>>,
         abi: Option<String>,
         is_unsafe: bool,
     ) -> Self {
         Self {
             generic_params,
             inputs,
-            output: Box::new(output.into()),
+            output: output.map(|o| Box::new(o.into())),
             abi,
             is_unsafe,
         }
@@ -328,8 +334,8 @@ impl BareFn {
 
     pub fn safe(
         generic_params: Vec<GenericParam>,
-        inputs: Vec<Param>,
-        output: impl Into<Type>,
+        inputs: Vec<BareFnArg>,
+        output: Option<impl Into<Type>>,
     ) -> Self {
         BareFn::new(generic_params, inputs, output, None, false)
     }
@@ -440,9 +446,15 @@ impl fmt::Display for PolyTraitRef {
     }
 }
 
-impl From<PolyTraitRef> for TokenStream {
-    fn from(value: PolyTraitRef) -> Self {
-        TokenStream::from(value.trait_ref)
+#[cfg(feature = "syn")]
+impl From<syn::TraitBound> for PolyTraitRef {
+    fn from(value: syn::TraitBound) -> Self {
+        let bound_generic_params = vec![]; // TODO:
+        let trait_ref = Path::from(value.path);
+        Self {
+            bound_generic_params,
+            trait_ref,
+        }
     }
 }
 
@@ -482,7 +494,6 @@ impl From<syn::TypeParamBound> for GenericBound {
     fn from(value: syn::TypeParamBound) -> Self {
         match value {
             syn::TypeParamBound::Trait(trait_bound) => {
-                // TODO: impl From<syn::TraitBound> for PolyTraitRef
                 GenericBound::Trait(PolyTraitRef::from(trait_bound))
             }
             syn::TypeParamBound::Lifetime(lifetime) => {
@@ -714,7 +725,14 @@ impl From<syn::Type> for Type {
                 Type::TraitObject(TraitObject::from(trait_object))
             }
             syn::Type::ImplTrait(impl_trait) => Type::ImplTrait(ImplTrait::from(impl_trait)),
-            _ => unimplemented!(),
+            syn::Type::Tuple(ty) => Type::Tuple(ty.elems.into_iter().map(Type::from).collect()),
+            syn::Type::Macro(mac) => Type::Macro(MacCall::from(mac.mac)),
+            syn::Type::Never(_) => Type::Never,
+            syn::Type::Infer(_) => Type::Infer,
+            syn::Type::Group(g) => Type::from(*g.elem),
+            syn::Type::Paren(p) => Type::from(*p.elem),
+            // non-exhaustive
+            _ => todo!(),
         }
     }
 }
