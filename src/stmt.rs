@@ -2491,6 +2491,7 @@ pub enum Visibility {
     #[default]
     Inherited,
     Public,
+    Scoped(Path),
 }
 
 impl fmt::Display for Visibility {
@@ -2498,6 +2499,7 @@ impl fmt::Display for Visibility {
         match self {
             Self::Inherited => write!(f, ""),
             Self::Public => write!(f, "pub "),
+            Self::Scoped(path) => write!(f, "pub({}) ", path),
         }
     }
 }
@@ -2507,6 +2509,14 @@ impl From<Visibility> for TokenStream {
         match value {
             Visibility::Inherited => TokenStream::new(),
             Visibility::Public => TokenStream::from(vec![Token::Keyword(KeywordToken::Pub)]),
+            Visibility::Scoped(path) => {
+                let mut ts = TokenStream::new();
+                ts.push(Token::Keyword(KeywordToken::Pub));
+                ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+                ts.extend(TokenStream::from(path));
+                ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+                ts
+            }
         }
     }
 }
