@@ -5,7 +5,7 @@ use std::ops::{Add, Div, Mul, Neg, Sub};
 use crate::stmt::{Block, EmptyItem, FnDecl, Pat, Use};
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 use crate::ty::Type;
-use crate::{impl_display_for_enum, impl_obvious_conversion};
+use crate::{impl_display_for_enum, impl_obvious_conversion, UsePath, UseRename, UseTree};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u8)]
@@ -466,6 +466,10 @@ impl Attribute {
         Self { kind: kind.into() }
     }
 
+    pub fn normal(item: AttributeItem) -> Self {
+        Self::new(AttrKind::Normal(item))
+    }
+
     pub fn doc_comment(comment: impl Into<String>) -> Self {
         Self::new(AttrKind::DocComment(comment.into()))
     }
@@ -476,6 +480,7 @@ pub enum AttrKind {
     Normal(AttributeItem),
     /// This will be displayed but erased when converted to tokens.
     /// To preserve doc comments, use `#[doc = "..."]` instead.
+    /// Note that this variant outputs the stored string as it is (without displaying a leading `///`).
     DocComment(String),
 }
 
@@ -531,6 +536,21 @@ impl AttributeItem {
             path: path.into(),
             args: args.into(),
         }
+    }
+
+    pub fn simple(path: impl Into<Path>) -> Self {
+        Self::new(path, AttrArgs::Empty)
+    }
+
+    /// `#[cfg(feature = "...")]`
+    pub fn cfg_feature(feature: impl Into<String>) -> Self {
+        let tokens = TokenStream::from(vec![
+            Token::ident("feature"),
+            Token::Eq,
+            Token::Lit(Lit::str(feature)),
+        ]);
+        let arg = DelimArgs::new(MacDelimiter::Parenthesis, tokens);
+        Self::new(Path::single("cfg"), AttrArgs::Delimited(arg))
     }
 }
 
@@ -1206,7 +1226,7 @@ impl fmt::Display for Arm {
         }
         write!(f, "{pat}", pat = self.pat)?;
         if let Some(guard) = &self.guard {
-            write!(f, " if {guard}", guard = guard)?;
+            write!(f, " if {guard}")?;
         }
         write!(f, " => {body}", body = self.body)
     }
@@ -2492,6 +2512,29 @@ impl Path {
         Self { segments }
     }
 
+    pub fn chain_use_group(self, group: Vec<UseTree>) -> UseTree {
+        let iter = self.segments.into_iter().rev();
+        iter.fold(UseTree::group(group), |acc, segment| {
+            UseTree::path(UsePath::new(segment.ident, acc))
+        })
+    }
+
+    pub fn chain_use_glob(self) -> UseTree {
+        let iter = self.segments.into_iter().rev();
+        iter.fold(UseTree::Glob, |acc, segment| {
+            UseTree::path(UsePath::new(segment.ident, acc))
+        })
+    }
+
+    pub fn chain_use_rename(self, alias: impl Into<String>) -> UseTree {
+        let mut iter = self.segments.into_iter().rev();
+        let last = iter.next().expect("Path must have at least one segment");
+        iter.fold(
+            UseTree::rename(UseRename::new(last.ident, alias)),
+            |acc, segment| UseTree::path(UsePath::new(segment.ident, acc)),
+        )
+    }
+
     pub fn mac_call(self, args: impl Into<DelimArgs>) -> MacCall {
         MacCall::new(self, args)
     }
@@ -2501,7 +2544,7 @@ impl Path {
     }
 
     pub fn use_(self) -> Use {
-        Use::path(self)
+        Use::from(self)
     }
 }
 
@@ -2566,6 +2609,12 @@ impl PathSegment {
 
     pub fn simple(ident: impl Into<String>) -> Self {
         Self::new(ident, None)
+    }
+
+    #[cfg(feature = "checked-ident")]
+    pub fn checked_simple(ident: impl Into<String>) -> Result<Self, String> {
+        let ident = crate::check_ident(ident)?;
+        Ok(Self::simple(ident))
     }
 }
 

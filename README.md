@@ -27,7 +27,7 @@ krate.add_item(def);
 println!("{krate}");
 // krate.dump("test.rs")?;
 // krate.compile("test.rs", CompileOptions::default())?;
-krate.remove_item_by_id("main");
+krate.try_remove_item_by_id("main");
 assert!(krate.is_empty());
 ```
 
@@ -53,7 +53,7 @@ krate.add_item(Fn {
 println!("{krate}");
 // krate.dump("test.rs")?;
 // krate.compile("test.rs", CompileOptions::default())?;
-krate.remove_item_by_id("main");
+krate.try_remove_item_by_id("main");
 assert!(krate.is_empty());
 ```
 
@@ -160,6 +160,11 @@ println!("{tokens}");
 ```
 
 You can also find examples on how to create a proc macro using this crate in [`examples/proc_macro_example`](https://github.com/mtshiba/ruast/tree/main/examples/proc_macro_example).
+
+## Feature flags
+
+* `tokenize`: Enables conversion to `proc_macro2::TokenStream`.
+* `checked-ident`: Enables `check_ident`, `Identifier`, etc.
 
 ## Why this is needed?
 

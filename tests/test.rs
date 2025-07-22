@@ -18,7 +18,7 @@ fn test() {
         println!("Hello, world!");
     }
     "###);
-    krate.remove_item_by_id("main");
+    krate.try_remove_item_by_id("main");
     assert!(krate.is_empty());
     assert_snapshot!(krate, @"");
 }
@@ -26,7 +26,7 @@ fn test() {
 #[test]
 fn test_general() {
     let mut krate = Crate::new();
-    krate.add_item(Fn {
+    let i = krate.add_item(Fn {
         is_unsafe: false,
         is_const: false,
         is_async: false,
@@ -44,7 +44,7 @@ fn test_general() {
         println!("Hello, world!");
     }
     "###);
-    assert_snapshot!(krate[0], @r###"
+    assert_snapshot!(krate[i], @r###"
     fn main() {
         println!("Hello, world!");
     }
@@ -199,6 +199,35 @@ fn test_match() {
     2 => 2,
     _ => 0,
 }");
+}
+
+#[test]
+fn test_use() {
+    let path = Path::single("foo").chain("bar").chain("baz");
+    let use_ = Use::from(path.clone());
+
+    assert_snapshot!(use_, @"use foo::bar::baz;");
+
+    let use_tree = UseTree::path(UsePath::from(path));
+    let use_ = Use::from(use_tree);
+    assert_snapshot!(use_, @"use foo::bar::baz;");
+
+    let baz = UseTree::name("baz");
+    let qux = UseTree::name("qux");
+    let group = vec![baz, qux];
+    let items = UseTree::Group(group.clone());
+    let items = UseTree::Path(UsePath::new("bar", items));
+    let tree = UseTree::Path(UsePath::new("foo", items));
+    let use_ = Use::tree(tree);
+    assert_snapshot!(use_, @"use foo::bar::{baz, qux};");
+
+    let tree = Path::single("foo").chain("bar").chain_use_group(group);
+    let use_ = Use::from(tree);
+    assert_snapshot!(use_, @"use foo::bar::{baz, qux};");
+
+    let tree = Path::single("foo").chain("bar").chain_use_glob();
+    let use_ = Use::from(tree);
+    assert_snapshot!(use_, @"use foo::bar::*;");
 }
 
 #[test]

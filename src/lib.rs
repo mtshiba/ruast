@@ -65,16 +65,20 @@ macro_rules! impl_hasitem_methods {
                 HasItem::with_item(self, item)
             }
 
-            pub fn add_item(&mut self, item: impl Into<Item>) {
-                HasItem::add_item(self, item);
+            pub fn add_item(&mut self, item: impl Into<Item>) -> $crate::ItemIndex {
+                HasItem::add_item(self, item)
             }
 
-            pub fn remove_item(&mut self, index: usize) -> Option<Item> {
+            pub fn try_remove_item(&mut self, index: usize) -> Option<Item> {
+                HasItem::try_remove_item(self, index)
+            }
+
+            pub fn remove_item(&mut self, index: $crate::ItemIndex) -> Item {
                 HasItem::remove_item(self, index)
             }
 
-            pub fn remove_item_by_id(&mut self, ident: &str) -> Option<Item> {
-                HasItem::remove_item_by_id(self, ident)
+            pub fn try_remove_item_by_id(&mut self, ident: &str) -> Option<Item> {
+                HasItem::try_remove_item_by_id(self, ident)
             }
 
             pub fn get_item(&self, index: usize) -> Option<&Item> {
@@ -97,6 +101,18 @@ macro_rules! impl_hasitem_methods {
                 self.items_mut()
             }
         }
+        impl std::ops::Index<$crate::ItemIndex> for $Ty {
+            type Output = Item;
+
+            fn index(&self, index: $crate::ItemIndex) -> &Self::Output {
+                self.get_item(index.0).expect("index out of bounds")
+            }
+        }
+        impl std::ops::IndexMut<$crate::ItemIndex> for $Ty {
+            fn index_mut(&mut self, index: $crate::ItemIndex) -> &mut Self::Output {
+                self.get_item_mut(index.0).expect("index out of bounds")
+            }
+        }
     };
     ($Ty: ident, $Item: ident) => {
         impl $Ty {
@@ -104,16 +120,20 @@ macro_rules! impl_hasitem_methods {
                 HasItem::with_item(self, item)
             }
 
-            pub fn add_item(&mut self, item: impl Into<$Item>) {
-                HasItem::add_item(self, item);
+            pub fn add_item(&mut self, item: impl Into<$Item>) -> $crate::ItemIndex {
+                HasItem::add_item(self, item)
             }
 
-            pub fn remove_item(&mut self, index: usize) -> Option<$Item> {
+            pub fn try_remove_item(&mut self, index: usize) -> Option<$Item> {
+                HasItem::try_remove_item(self, index)
+            }
+
+            pub fn remove_item(&mut self, index: $crate::ItemIndex) -> $Item {
                 HasItem::remove_item(self, index)
             }
 
-            pub fn remove_item_by_id(&mut self, ident: &str) -> Option<$Item> {
-                HasItem::remove_item_by_id(self, ident)
+            pub fn try_remove_item_by_id(&mut self, ident: &str) -> Option<$Item> {
+                HasItem::try_remove_item_by_id(self, ident)
             }
 
             pub fn get_item(&self, index: usize) -> Option<&$Item> {
@@ -134,6 +154,18 @@ macro_rules! impl_hasitem_methods {
         impl std::ops::DerefMut for $Ty {
             fn deref_mut(&mut self) -> &mut Self::Target {
                 self.items_mut()
+            }
+        }
+        impl std::ops::Index<$crate::ItemIndex> for $Ty {
+            type Output = $Item;
+
+            fn index(&self, index: $crate::ItemIndex) -> &Self::Output {
+                self.get_item(index.0).expect("index out of bounds")
+            }
+        }
+        impl std::ops::IndexMut<$crate::ItemIndex> for $Ty {
+            fn index_mut(&mut self, index: $crate::ItemIndex) -> &mut Self::Output {
+                self.get_item_mut(index.0).expect("index out of bounds")
             }
         }
     };
@@ -240,7 +272,7 @@ impl Crate {
 
     pub fn dump(self, path: impl AsRef<Pt>) -> Result<(), std::io::Error> {
         let mut file = File::create(path)?;
-        write!(file, "{}", self)?;
+        write!(file, "{self}")?;
         Ok(())
     }
 
@@ -251,7 +283,7 @@ impl Crate {
     ) -> Result<(), std::io::Error> {
         let rs_path = rs_path.as_ref();
         let mut file = File::create(rs_path)?;
-        write!(file, "{}", self)?;
+        write!(file, "{self}")?;
         drop(file);
         let mut cmd = std::process::Command::new("rustc");
         if let Some(allow) = options.allow {

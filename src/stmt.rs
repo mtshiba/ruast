@@ -1,6 +1,7 @@
 use core::fmt::Write;
 use std::fmt;
 use std::hash::Hash;
+use std::ops::{Index, IndexMut};
 
 use crate::expr::{
     Async, Attribute, Call, ConstBlock, DelimArgs, Expr, MacCall, MethodCall, Path, Range,
@@ -74,6 +75,11 @@ pub trait EmptyItem {
     type Input;
     fn empty(ident: impl Into<Self::Input>) -> Self;
 }
+
+/// This index should not be kept after the item is removed.
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct ItemIndex(pub(crate) usize);
+
 pub trait HasItem<Itm: MaybeIdent = Item> {
     fn items(&self) -> &[Itm];
     fn items_mut(&mut self) -> &mut Vec<Itm>;
@@ -84,15 +90,17 @@ pub trait HasItem<Itm: MaybeIdent = Item> {
         self.add_item(item);
         self
     }
-    fn add_item(&mut self, item: impl Into<Itm>) {
+    fn add_item(&mut self, item: impl Into<Itm>) -> ItemIndex {
         self.items_mut().push(item.into());
+        ItemIndex(self.items().len() - 1)
     }
-    fn add_pub_item<K>(&mut self, item: impl Into<K>)
+    fn add_pub_item<K>(&mut self, item: impl Into<K>) -> ItemIndex
     where
         Itm: AddVisibility<K>,
     {
         let item = Itm::public(item);
         self.items_mut().push(item);
+        ItemIndex(self.items().len() - 1)
     }
     fn with_pub_item<K>(mut self, item: impl Into<K>) -> Self
     where
@@ -102,19 +110,25 @@ pub trait HasItem<Itm: MaybeIdent = Item> {
         self.add_pub_item(item);
         self
     }
-    fn remove_item(&mut self, index: usize) -> Option<Itm> {
+    fn try_remove_item(&mut self, index: usize) -> Option<Itm> {
         self.items_mut().get(index)?;
         Some(self.items_mut().remove(index))
     }
-    fn remove_item_by_id(&mut self, ident: &str) -> Option<Itm> {
+    fn remove_item(&mut self, index: ItemIndex) -> Itm {
+        self.items_mut().remove(index.0)
+    }
+    fn try_remove_item_by_id(&mut self, ident: &str) -> Option<Itm> {
         let index = self
             .items()
             .iter()
             .position(|item| item.ident() == Some(ident))?;
-        Some(self.remove_item(index).unwrap())
+        Some(self.try_remove_item(index).unwrap())
     }
     fn get_item(&self, index: usize) -> Option<&Itm> {
         self.items().get(index)
+    }
+    fn get_item_mut(&mut self, index: usize) -> Option<&mut Itm> {
+        self.items_mut().get_mut(index)
     }
     fn get_item_by_id(&self, ident: &str) -> Option<&Itm> {
         self.items().iter().find(|item| item.ident() == Some(ident))
@@ -467,7 +481,7 @@ impl fmt::Display for Pat {
                     if i != 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{pat}", pat = pat)?;
+                    write!(f, "{pat}")?;
                 }
                 write!(f, ")")
             }
@@ -481,7 +495,7 @@ impl fmt::Display for Pat {
                     if i != 0 {
                         write!(f, " | ")?;
                     }
-                    write!(f, "{pat}", pat = pat)?;
+                    write!(f, "{pat}")?;
                 }
                 write!(f, ")")
             }
@@ -493,7 +507,7 @@ impl fmt::Display for Pat {
                     if i != 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{pat}", pat = pat)?;
+                    write!(f, "{pat}")?;
                 }
                 write!(f, "]")
             }
@@ -977,14 +991,14 @@ impl Fn {
         }
     }
 
-    pub fn add_stmt(&mut self, stmt: impl Into<Stmt>) {
-        self.body.get_or_insert_with(Block::empty).add_stmt(stmt);
+    pub fn add_stmt(&mut self, stmt: impl Into<Stmt>) -> StmtIndex {
+        self.body.get_or_insert_with(Block::empty).add_stmt(stmt)
     }
 
-    pub fn add_semi_stmt(&mut self, expr: impl Into<Expr>) {
+    pub fn add_semi_stmt(&mut self, expr: impl Into<Expr>) -> StmtIndex {
         self.body
             .get_or_insert_with(Block::empty)
-            .add_stmt(Semi::new(expr));
+            .add_stmt(Semi::new(expr))
     }
 
     pub fn with_stmt(mut self, stmt: impl Into<Stmt>) -> Self {
@@ -997,8 +1011,12 @@ impl Fn {
         self
     }
 
-    pub fn remove_stmt(&mut self, index: usize) -> Option<Stmt> {
-        self.body.as_mut()?.remove_stmt(index)
+    pub fn try_remove_stmt(&mut self, index: usize) -> Option<Stmt> {
+        self.body.as_mut()?.try_remove_stmt(index)
+    }
+
+    pub fn remove_stmt(&mut self, index: StmtIndex) -> Stmt {
+        self.body.as_mut().unwrap().remove_stmt(index)
     }
 }
 
@@ -1138,6 +1156,10 @@ impl Mod {
     }
 }
 
+/// This index should not be kept after the statement is removed.
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct StmtIndex(usize);
+
 /// `('label:)? { ... }`
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Block {
@@ -1201,6 +1223,20 @@ impl From<Block> for TokenStream {
     }
 }
 
+impl Index<StmtIndex> for Block {
+    type Output = Stmt;
+
+    fn index(&self, index: StmtIndex) -> &Self::Output {
+        &self.stmts[index.0]
+    }
+}
+
+impl IndexMut<StmtIndex> for Block {
+    fn index_mut(&mut self, index: StmtIndex) -> &mut Self::Output {
+        &mut self.stmts[index.0]
+    }
+}
+
 impl HasItem<Stmt> for Block {
     fn items(&self) -> &[Stmt] {
         &self.stmts
@@ -1253,21 +1289,26 @@ impl Block {
         self
     }
 
-    pub fn add_stmt(&mut self, stmt: impl Into<Stmt>) {
+    pub fn add_stmt(&mut self, stmt: impl Into<Stmt>) -> StmtIndex {
         self.stmts.push(stmt.into());
+        StmtIndex(self.stmts.len() - 1)
     }
 
-    pub fn remove_stmt(&mut self, index: usize) -> Option<Stmt> {
+    pub fn try_remove_stmt(&mut self, index: usize) -> Option<Stmt> {
         self.stmts.get(index)?;
         Some(self.stmts.remove(index))
     }
 
-    pub fn remove_item_by_id(&mut self, ident: &str) -> Option<Item> {
+    pub fn remove_stmt(&mut self, index: StmtIndex) -> Stmt {
+        self.stmts.remove(index.0)
+    }
+
+    pub fn try_remove_item_by_id(&mut self, ident: &str) -> Option<Item> {
         let index = self
             .stmts
             .iter()
             .position(|stmt| stmt.ident() == Some(ident))?;
-        let Some(Stmt::Item(item)) = self.remove_stmt(index) else {
+        let Some(Stmt::Item(item)) = self.try_remove_stmt(index) else {
             unreachable!()
         };
         Some(item)
@@ -2451,7 +2492,7 @@ impl fmt::Display for ExternCrate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "extern crate {}", self.ident)?;
         if let Some(alias) = &self.alias {
-            write!(f, " as {}", alias)?;
+            write!(f, " as {alias}")?;
         }
         write!(f, ";")?;
         Ok(())
@@ -2731,33 +2772,98 @@ impl ItemKind {
     }
 }
 
-/// `path 'as' alias`
+/// `ident '::' tree`
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct UsePath {
+    ident: String,
+    tree: Box<UseTree>,
+}
+
+impl fmt::Display for UsePath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}::{}", self.ident, self.tree)
+    }
+}
+
+impl From<UsePath> for TokenStream {
+    fn from(value: UsePath) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::ident(value.ident));
+        ts.push(Token::ModSep);
+        ts.extend(TokenStream::from(*value.tree));
+        ts
+    }
+}
+
+impl From<Path> for UsePath {
+    fn from(value: Path) -> Self {
+        let mut iter = value.segments.into_iter().rev();
+        let ident = iter
+            .next()
+            .expect("Path must have at least one segment")
+            .ident;
+        let next = iter.next().expect("Path must have at least two segments");
+        iter.fold(
+            UsePath::new(next.ident, UseTree::name(ident)),
+            |acc, path| UsePath::new(path.ident, UseTree::Path(acc)),
+        )
+    }
+}
+
+impl UsePath {
+    pub fn new(ident: impl Into<String>, tree: UseTree) -> Self {
+        Self {
+            ident: ident.into(),
+            tree: Box::new(tree),
+        }
+    }
+
+    pub fn ident(&self) -> &str {
+        &self.ident
+    }
+
+    pub fn tree(&self) -> &UseTree {
+        &self.tree
+    }
+}
+
+/// `ident 'as' alias`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UseRename {
-    pub path: Path,
+    pub ident: String,
     pub alias: String,
 }
 
 impl fmt::Display for UseRename {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} as {}", self.path, self.alias)
+        write!(f, "{} as {}", self.ident, self.alias)
     }
 }
 
 impl From<UseRename> for TokenStream {
     fn from(value: UseRename) -> Self {
         let mut ts = TokenStream::new();
-        ts.extend(TokenStream::from(value.path));
+        ts.push(Token::ident(value.ident));
         ts.push(Token::Keyword(KeywordToken::As));
         ts.push(Token::ident(value.alias));
         ts
     }
 }
 
+impl UseRename {
+    pub fn new(ident: impl Into<String>, alias: impl Into<String>) -> Self {
+        Self {
+            ident: ident.into(),
+            alias: alias.into(),
+        }
+    }
+}
+
 /// `path | use_rename | '*' | '{' (use_tree ',')+ '}'`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum UseTree {
-    Path(Path),
+    Name(String),
+    Path(UsePath),
     Rename(UseRename),
     Glob,
     Group(Vec<UseTree>),
@@ -2766,8 +2872,9 @@ pub enum UseTree {
 impl fmt::Display for UseTree {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Path(path) => write!(f, "{}", path),
-            Self::Rename(rename) => write!(f, "{}", rename),
+            Self::Name(name) => write!(f, "{name}"),
+            Self::Path(path) => path.fmt(f),
+            Self::Rename(rename) => rename.fmt(f),
             Self::Glob => write!(f, "*"),
             Self::Group(trees) => {
                 write!(f, "{{")?;
@@ -2775,7 +2882,7 @@ impl fmt::Display for UseTree {
                     if i != 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}", tree)?;
+                    tree.fmt(f)?;
                 }
                 write!(f, "}}")
             }
@@ -2786,6 +2893,7 @@ impl fmt::Display for UseTree {
 impl From<UseTree> for TokenStream {
     fn from(value: UseTree) -> Self {
         match value {
+            UseTree::Name(name) => TokenStream::from(vec![Token::ident(name)]),
             UseTree::Path(path) => TokenStream::from(path),
             UseTree::Rename(rename) => TokenStream::from(rename),
             UseTree::Glob => TokenStream::from(vec![Token::BinOp(BinOpToken::Star)]),
@@ -2805,9 +2913,27 @@ impl From<UseTree> for TokenStream {
     }
 }
 
+impl From<Path> for UseTree {
+    fn from(value: Path) -> Self {
+        let mut iter = value.segments.into_iter().rev();
+        let init = UseTree::Name(
+            iter.next()
+                .expect("Path must have at least one segment")
+                .ident,
+        );
+        iter.fold(init, |acc, segment| {
+            UseTree::Path(UsePath::new(segment.ident, acc))
+        })
+    }
+}
+
 impl UseTree {
-    pub fn path(path: impl Into<Path>) -> Self {
-        Self::Path(path.into())
+    pub fn name(path: impl Into<String>) -> Self {
+        Self::Name(path.into())
+    }
+
+    pub fn path(path: UsePath) -> Self {
+        Self::Path(path)
     }
 
     pub fn rename(rename: UseRename) -> Self {
@@ -2840,13 +2966,27 @@ impl From<Use> for TokenStream {
 
 impl From<Path> for Use {
     fn from(value: Path) -> Self {
-        Self(UseTree::Path(value))
+        Self(UseTree::from(value))
+    }
+}
+
+impl From<UseTree> for Use {
+    fn from(tree: UseTree) -> Self {
+        Self(tree)
     }
 }
 
 impl Use {
-    pub fn path(path: impl Into<Path>) -> Self {
-        Self(UseTree::Path(path.into()))
+    pub fn name(name: impl Into<String>) -> Self {
+        Self(UseTree::Name(name.into()))
+    }
+
+    pub fn path(path: UsePath) -> Self {
+        Self(UseTree::Path(path))
+    }
+
+    pub fn tree(tree: UseTree) -> Self {
+        Self(tree)
     }
 
     pub fn rename(rename: UseRename) -> Self {
@@ -2877,7 +3017,7 @@ impl fmt::Display for StaticItem {
             ty = self.ty
         )?;
         if let Some(expr) = &self.expr {
-            write!(f, " = {expr}", expr = expr)?;
+            write!(f, " = {expr}")?;
         }
         write!(f, ";")?;
         Ok(())
@@ -2920,7 +3060,7 @@ impl fmt::Display for ConstItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "const {ident}: {ty}", ident = self.ident, ty = self.ty)?;
         if let Some(expr) = &self.expr {
-            write!(f, " = {expr}", expr = expr)?;
+            write!(f, " = {expr}")?;
         }
         write!(f, ";")?;
         Ok(())
@@ -2969,7 +3109,7 @@ impl fmt::Display for TyAlias {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "type {ident}", ident = self.ident)?;
         if let Some(ty) = &self.ty {
-            write!(f, " = {ty}", ty = ty)?;
+            write!(f, " = {ty}")?;
         }
         write!(f, ";")?;
         Ok(())
