@@ -252,6 +252,7 @@ pub enum Token {
     Ident(String),
     Lifetime(String),
     Keyword(KeywordToken),
+    /// Note that this variant outputs the stored string as it is (without displaying a leading `///`).
     DocComment(String),
     Eof,
 }

@@ -476,6 +476,7 @@ pub enum AttrKind {
     Normal(AttributeItem),
     /// This will be displayed but erased when converted to tokens.
     /// To preserve doc comments, use `#[doc = "..."]` instead.
+    /// Note that this variant outputs the stored string as it is (without displaying a leading `///`).
     DocComment(String),
 }
 
