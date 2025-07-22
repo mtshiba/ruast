@@ -161,6 +161,11 @@ println!("{tokens}");
 
 You can also find examples on how to create a proc macro using this crate in [`examples/proc_macro_example`](https://github.com/mtshiba/ruast/tree/main/examples/proc_macro_example).
 
+## Feature flags
+
+* `tokenize`: Enables conversion to `proc_macro2::TokenStream`.
+* `checked-ident`: Enables `check_ident`, `Identifier`, etc.
+
 ## Why this is needed?
 
 [The Rust project](https://github.com/rust-lang/rust) has a submodule called [`rustc_ast`](https://github.com/rust-lang/rust/tree/master/compiler/rustc_ast) that defines an AST, but it is not published on crates.io and requires a huge build of `rust` itself. Also, `rustc_ast` is not designed for third parties to build ASTs by hand.
