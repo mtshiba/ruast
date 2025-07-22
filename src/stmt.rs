@@ -2660,33 +2660,98 @@ impl ItemKind {
     }
 }
 
-/// `path 'as' alias`
+/// `ident '::' tree`
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct UsePath {
+    ident: String,
+    tree: Box<UseTree>,
+}
+
+impl fmt::Display for UsePath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}::{}", self.ident, self.tree)
+    }
+}
+
+impl From<UsePath> for TokenStream {
+    fn from(value: UsePath) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::ident(value.ident));
+        ts.push(Token::ModSep);
+        ts.extend(TokenStream::from(*value.tree));
+        ts
+    }
+}
+
+impl From<Path> for UsePath {
+    fn from(value: Path) -> Self {
+        let mut iter = value.segments.into_iter().rev();
+        let ident = iter
+            .next()
+            .expect("Path must have at least one segment")
+            .ident;
+        let next = iter.next().expect("Path must have at least two segments");
+        iter.fold(
+            UsePath::new(next.ident, UseTree::name(ident)),
+            |acc, path| UsePath::new(path.ident, UseTree::Path(acc)),
+        )
+    }
+}
+
+impl UsePath {
+    pub fn new(ident: impl Into<String>, tree: UseTree) -> Self {
+        Self {
+            ident: ident.into(),
+            tree: Box::new(tree),
+        }
+    }
+
+    pub fn ident(&self) -> &str {
+        &self.ident
+    }
+
+    pub fn tree(&self) -> &UseTree {
+        &self.tree
+    }
+}
+
+/// `ident 'as' alias`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UseRename {
-    pub path: Path,
+    pub ident: String,
     pub alias: String,
 }
 
 impl fmt::Display for UseRename {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} as {}", self.path, self.alias)
+        write!(f, "{} as {}", self.ident, self.alias)
     }
 }
 
 impl From<UseRename> for TokenStream {
     fn from(value: UseRename) -> Self {
         let mut ts = TokenStream::new();
-        ts.extend(TokenStream::from(value.path));
+        ts.push(Token::ident(value.ident));
         ts.push(Token::Keyword(KeywordToken::As));
         ts.push(Token::ident(value.alias));
         ts
     }
 }
 
+impl UseRename {
+    pub fn new(ident: impl Into<String>, alias: impl Into<String>) -> Self {
+        Self {
+            ident: ident.into(),
+            alias: alias.into(),
+        }
+    }
+}
+
 /// `path | use_rename | '*' | '{' (use_tree ',')+ '}'`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum UseTree {
-    Path(Path),
+    Name(String),
+    Path(UsePath),
     Rename(UseRename),
     Glob,
     Group(Vec<UseTree>),
@@ -2695,6 +2760,7 @@ pub enum UseTree {
 impl fmt::Display for UseTree {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Name(name) => write!(f, "{name}"),
             Self::Path(path) => path.fmt(f),
             Self::Rename(rename) => rename.fmt(f),
             Self::Glob => write!(f, "*"),
@@ -2715,6 +2781,7 @@ impl fmt::Display for UseTree {
 impl From<UseTree> for TokenStream {
     fn from(value: UseTree) -> Self {
         match value {
+            UseTree::Name(name) => TokenStream::from(vec![Token::ident(name)]),
             UseTree::Path(path) => TokenStream::from(path),
             UseTree::Rename(rename) => TokenStream::from(rename),
             UseTree::Glob => TokenStream::from(vec![Token::BinOp(BinOpToken::Star)]),
@@ -2734,9 +2801,27 @@ impl From<UseTree> for TokenStream {
     }
 }
 
+impl From<Path> for UseTree {
+    fn from(value: Path) -> Self {
+        let mut iter = value.segments.into_iter().rev();
+        let init = UseTree::Name(
+            iter.next()
+                .expect("Path must have at least one segment")
+                .ident,
+        );
+        iter.fold(init, |acc, segment| {
+            UseTree::Path(UsePath::new(segment.ident, acc))
+        })
+    }
+}
+
 impl UseTree {
-    pub fn path(path: impl Into<Path>) -> Self {
-        Self::Path(path.into())
+    pub fn name(path: impl Into<String>) -> Self {
+        Self::Name(path.into())
+    }
+
+    pub fn path(path: UsePath) -> Self {
+        Self::Path(path)
     }
 
     pub fn rename(rename: UseRename) -> Self {
@@ -2769,13 +2854,27 @@ impl From<Use> for TokenStream {
 
 impl From<Path> for Use {
     fn from(value: Path) -> Self {
-        Self(UseTree::Path(value))
+        Self(UseTree::from(value))
+    }
+}
+
+impl From<UseTree> for Use {
+    fn from(tree: UseTree) -> Self {
+        Self(tree)
     }
 }
 
 impl Use {
-    pub fn path(path: impl Into<Path>) -> Self {
-        Self(UseTree::Path(path.into()))
+    pub fn name(name: impl Into<String>) -> Self {
+        Self(UseTree::Name(name.into()))
+    }
+
+    pub fn path(path: UsePath) -> Self {
+        Self(UseTree::Path(path))
+    }
+
+    pub fn tree(tree: UseTree) -> Self {
+        Self(tree)
     }
 
     pub fn rename(rename: UseRename) -> Self {

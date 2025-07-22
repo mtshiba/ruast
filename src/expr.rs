@@ -5,7 +5,7 @@ use std::ops::{Add, Div, Mul, Neg, Sub};
 use crate::stmt::{Block, EmptyItem, FnDecl, Pat, Use};
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 use crate::ty::Type;
-use crate::{impl_display_for_enum, impl_obvious_conversion};
+use crate::{impl_display_for_enum, impl_obvious_conversion, UsePath, UseRename, UseTree};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u8)]
@@ -2492,6 +2492,29 @@ impl Path {
         Self { segments }
     }
 
+    pub fn chain_use_group(self, group: Vec<UseTree>) -> UseTree {
+        let iter = self.segments.into_iter().rev();
+        iter.fold(UseTree::group(group), |acc, segment| {
+            UseTree::path(UsePath::new(segment.ident, acc))
+        })
+    }
+
+    pub fn chain_use_glob(self) -> UseTree {
+        let iter = self.segments.into_iter().rev();
+        iter.fold(UseTree::Glob, |acc, segment| {
+            UseTree::path(UsePath::new(segment.ident, acc))
+        })
+    }
+
+    pub fn chain_use_rename(self, alias: impl Into<String>) -> UseTree {
+        let mut iter = self.segments.into_iter().rev();
+        let last = iter.next().expect("Path must have at least one segment");
+        iter.fold(
+            UseTree::rename(UseRename::new(last.ident, alias)),
+            |acc, segment| UseTree::path(UsePath::new(segment.ident, acc)),
+        )
+    }
+
     pub fn mac_call(self, args: impl Into<DelimArgs>) -> MacCall {
         MacCall::new(self, args)
     }
@@ -2501,7 +2524,7 @@ impl Path {
     }
 
     pub fn use_(self) -> Use {
-        Use::path(self)
+        Use::from(self)
     }
 }
 

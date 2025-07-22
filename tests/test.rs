@@ -200,3 +200,32 @@ fn test_match() {
     _ => 0,
 }");
 }
+
+#[test]
+fn test_use() {
+    let path = Path::single("foo").chain("bar").chain("baz");
+    let use_ = Use::from(path.clone());
+
+    assert_snapshot!(use_, @"use foo::bar::baz;");
+
+    let use_tree = UseTree::path(UsePath::from(path));
+    let use_ = Use::from(use_tree);
+    assert_snapshot!(use_, @"use foo::bar::baz;");
+
+    let baz = UseTree::name("baz");
+    let qux = UseTree::name("qux");
+    let group = vec![baz, qux];
+    let items = UseTree::Group(group.clone());
+    let items = UseTree::Path(UsePath::new("bar", items));
+    let tree = UseTree::Path(UsePath::new("foo", items));
+    let use_ = Use::tree(tree);
+    assert_snapshot!(use_, @"use foo::bar::{baz, qux};");
+
+    let tree = Path::single("foo").chain("bar").chain_use_group(group);
+    let use_ = Use::from(tree);
+    assert_snapshot!(use_, @"use foo::bar::{baz, qux};");
+
+    let tree = Path::single("foo").chain("bar").chain_use_glob();
+    let use_ = Use::from(tree);
+    assert_snapshot!(use_, @"use foo::bar::*;");
+}
