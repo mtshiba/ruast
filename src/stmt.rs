@@ -467,7 +467,7 @@ impl fmt::Display for Pat {
                     if i != 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{pat}", pat = pat)?;
+                    write!(f, "{pat}")?;
                 }
                 write!(f, ")")
             }
@@ -481,7 +481,7 @@ impl fmt::Display for Pat {
                     if i != 0 {
                         write!(f, " | ")?;
                     }
-                    write!(f, "{pat}", pat = pat)?;
+                    write!(f, "{pat}")?;
                 }
                 write!(f, ")")
             }
@@ -493,7 +493,7 @@ impl fmt::Display for Pat {
                     if i != 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{pat}", pat = pat)?;
+                    write!(f, "{pat}")?;
                 }
                 write!(f, "]")
             }
@@ -2451,7 +2451,7 @@ impl fmt::Display for ExternCrate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "extern crate {}", self.ident)?;
         if let Some(alias) = &self.alias {
-            write!(f, " as {}", alias)?;
+            write!(f, " as {alias}")?;
         }
         write!(f, ";")?;
         Ok(())
@@ -2695,8 +2695,8 @@ pub enum UseTree {
 impl fmt::Display for UseTree {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Path(path) => write!(f, "{}", path),
-            Self::Rename(rename) => write!(f, "{}", rename),
+            Self::Path(path) => path.fmt(f),
+            Self::Rename(rename) => rename.fmt(f),
             Self::Glob => write!(f, "*"),
             Self::Group(trees) => {
                 write!(f, "{{")?;
@@ -2704,7 +2704,7 @@ impl fmt::Display for UseTree {
                     if i != 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}", tree)?;
+                    tree.fmt(f)?;
                 }
                 write!(f, "}}")
             }
@@ -2806,7 +2806,7 @@ impl fmt::Display for StaticItem {
             ty = self.ty
         )?;
         if let Some(expr) = &self.expr {
-            write!(f, " = {expr}", expr = expr)?;
+            write!(f, " = {expr}")?;
         }
         write!(f, ";")?;
         Ok(())
@@ -2849,7 +2849,7 @@ impl fmt::Display for ConstItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "const {ident}: {ty}", ident = self.ident, ty = self.ty)?;
         if let Some(expr) = &self.expr {
-            write!(f, " = {expr}", expr = expr)?;
+            write!(f, " = {expr}")?;
         }
         write!(f, ";")?;
         Ok(())
@@ -2898,7 +2898,7 @@ impl fmt::Display for TyAlias {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "type {ident}", ident = self.ident)?;
         if let Some(ty) = &self.ty {
-            write!(f, " = {ty}", ty = ty)?;
+            write!(f, " = {ty}")?;
         }
         write!(f, ";")?;
         Ok(())

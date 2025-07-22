@@ -240,7 +240,7 @@ impl Crate {
 
     pub fn dump(self, path: impl AsRef<Pt>) -> Result<(), std::io::Error> {
         let mut file = File::create(path)?;
-        write!(file, "{}", self)?;
+        write!(file, "{self}")?;
         Ok(())
     }
 
@@ -251,7 +251,7 @@ impl Crate {
     ) -> Result<(), std::io::Error> {
         let rs_path = rs_path.as_ref();
         let mut file = File::create(rs_path)?;
-        write!(file, "{}", self)?;
+        write!(file, "{self}")?;
         drop(file);
         let mut cmd = std::process::Command::new("rustc");
         if let Some(allow) = options.allow {

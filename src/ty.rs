@@ -171,7 +171,7 @@ impl fmt::Display for BareFn {
         }
 
         if let Some(abi) = &self.abi {
-            write!(f, "extern \"{}\" ", abi)?;
+            write!(f, "extern \"{abi}\" ")?;
         }
 
         write!(f, "fn(")?;

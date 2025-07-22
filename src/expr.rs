@@ -1206,7 +1206,7 @@ impl fmt::Display for Arm {
         }
         write!(f, "{pat}", pat = self.pat)?;
         if let Some(guard) = &self.guard {
-            write!(f, " if {guard}", guard = guard)?;
+            write!(f, " if {guard}")?;
         }
         write!(f, " => {body}", body = self.body)
     }
