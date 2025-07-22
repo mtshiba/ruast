@@ -27,7 +27,7 @@ krate.add_item(def);
 println!("{krate}");
 // krate.dump("test.rs")?;
 // krate.compile("test.rs", CompileOptions::default())?;
-krate.remove_item_by_id("main");
+krate.try_remove_item_by_id("main");
 assert!(krate.is_empty());
 ```
 
@@ -53,7 +53,7 @@ krate.add_item(Fn {
 println!("{krate}");
 // krate.dump("test.rs")?;
 // krate.compile("test.rs", CompileOptions::default())?;
-krate.remove_item_by_id("main");
+krate.try_remove_item_by_id("main");
 assert!(krate.is_empty());
 ```
 

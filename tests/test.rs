@@ -18,7 +18,7 @@ fn test() {
         println!("Hello, world!");
     }
     "###);
-    krate.remove_item_by_id("main");
+    krate.try_remove_item_by_id("main");
     assert!(krate.is_empty());
     assert_snapshot!(krate, @"");
 }
@@ -26,7 +26,7 @@ fn test() {
 #[test]
 fn test_general() {
     let mut krate = Crate::new();
-    krate.add_item(Fn {
+    let i = krate.add_item(Fn {
         is_unsafe: false,
         is_const: false,
         is_async: false,
@@ -44,7 +44,7 @@ fn test_general() {
         println!("Hello, world!");
     }
     "###);
-    assert_snapshot!(krate[0], @r###"
+    assert_snapshot!(krate[i], @r###"
     fn main() {
         println!("Hello, world!");
     }

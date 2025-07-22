@@ -1,6 +1,7 @@
 use core::fmt::Write;
 use std::fmt;
 use std::hash::Hash;
+use std::ops::{Index, IndexMut};
 
 use crate::expr::{
     Async, Attribute, Call, ConstBlock, DelimArgs, Expr, MacCall, MethodCall, Path, Range,
@@ -74,6 +75,11 @@ pub trait EmptyItem {
     type Input;
     fn empty(ident: impl Into<Self::Input>) -> Self;
 }
+
+/// This index should not be kept after the item is removed.
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct ItemIndex(pub(crate) usize);
+
 pub trait HasItem<Itm: MaybeIdent = Item> {
     fn items(&self) -> &[Itm];
     fn items_mut(&mut self) -> &mut Vec<Itm>;
@@ -84,15 +90,17 @@ pub trait HasItem<Itm: MaybeIdent = Item> {
         self.add_item(item);
         self
     }
-    fn add_item(&mut self, item: impl Into<Itm>) {
+    fn add_item(&mut self, item: impl Into<Itm>) -> ItemIndex {
         self.items_mut().push(item.into());
+        ItemIndex(self.items().len() - 1)
     }
-    fn add_pub_item<K>(&mut self, item: impl Into<K>)
+    fn add_pub_item<K>(&mut self, item: impl Into<K>) -> ItemIndex
     where
         Itm: AddVisibility<K>,
     {
         let item = Itm::public(item);
         self.items_mut().push(item);
+        ItemIndex(self.items().len() - 1)
     }
     fn with_pub_item<K>(mut self, item: impl Into<K>) -> Self
     where
@@ -102,19 +110,25 @@ pub trait HasItem<Itm: MaybeIdent = Item> {
         self.add_pub_item(item);
         self
     }
-    fn remove_item(&mut self, index: usize) -> Option<Itm> {
+    fn try_remove_item(&mut self, index: usize) -> Option<Itm> {
         self.items_mut().get(index)?;
         Some(self.items_mut().remove(index))
     }
-    fn remove_item_by_id(&mut self, ident: &str) -> Option<Itm> {
+    fn remove_item(&mut self, index: ItemIndex) -> Itm {
+        self.items_mut().remove(index.0)
+    }
+    fn try_remove_item_by_id(&mut self, ident: &str) -> Option<Itm> {
         let index = self
             .items()
             .iter()
             .position(|item| item.ident() == Some(ident))?;
-        Some(self.remove_item(index).unwrap())
+        Some(self.try_remove_item(index).unwrap())
     }
     fn get_item(&self, index: usize) -> Option<&Itm> {
         self.items().get(index)
+    }
+    fn get_item_mut(&mut self, index: usize) -> Option<&mut Itm> {
+        self.items_mut().get_mut(index)
     }
     fn get_item_by_id(&self, ident: &str) -> Option<&Itm> {
         self.items().iter().find(|item| item.ident() == Some(ident))
@@ -977,14 +991,14 @@ impl Fn {
         }
     }
 
-    pub fn add_stmt(&mut self, stmt: impl Into<Stmt>) {
-        self.body.get_or_insert_with(Block::empty).add_stmt(stmt);
+    pub fn add_stmt(&mut self, stmt: impl Into<Stmt>) -> StmtIndex {
+        self.body.get_or_insert_with(Block::empty).add_stmt(stmt)
     }
 
-    pub fn add_semi_stmt(&mut self, expr: impl Into<Expr>) {
+    pub fn add_semi_stmt(&mut self, expr: impl Into<Expr>) -> StmtIndex {
         self.body
             .get_or_insert_with(Block::empty)
-            .add_stmt(Semi::new(expr));
+            .add_stmt(Semi::new(expr))
     }
 
     pub fn with_stmt(mut self, stmt: impl Into<Stmt>) -> Self {
@@ -997,8 +1011,12 @@ impl Fn {
         self
     }
 
-    pub fn remove_stmt(&mut self, index: usize) -> Option<Stmt> {
-        self.body.as_mut()?.remove_stmt(index)
+    pub fn try_remove_stmt(&mut self, index: usize) -> Option<Stmt> {
+        self.body.as_mut()?.try_remove_stmt(index)
+    }
+
+    pub fn remove_stmt(&mut self, index: StmtIndex) -> Stmt {
+        self.body.as_mut().unwrap().remove_stmt(index)
     }
 }
 
@@ -1138,6 +1156,10 @@ impl Mod {
     }
 }
 
+/// This index should not be kept after the statement is removed.
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct StmtIndex(usize);
+
 /// `('label:)? { ... }`
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Block {
@@ -1201,6 +1223,20 @@ impl From<Block> for TokenStream {
     }
 }
 
+impl Index<StmtIndex> for Block {
+    type Output = Stmt;
+
+    fn index(&self, index: StmtIndex) -> &Self::Output {
+        &self.stmts[index.0]
+    }
+}
+
+impl IndexMut<StmtIndex> for Block {
+    fn index_mut(&mut self, index: StmtIndex) -> &mut Self::Output {
+        &mut self.stmts[index.0]
+    }
+}
+
 impl HasItem<Stmt> for Block {
     fn items(&self) -> &[Stmt] {
         &self.stmts
@@ -1253,21 +1289,26 @@ impl Block {
         self
     }
 
-    pub fn add_stmt(&mut self, stmt: impl Into<Stmt>) {
+    pub fn add_stmt(&mut self, stmt: impl Into<Stmt>) -> StmtIndex {
         self.stmts.push(stmt.into());
+        StmtIndex(self.stmts.len() - 1)
     }
 
-    pub fn remove_stmt(&mut self, index: usize) -> Option<Stmt> {
+    pub fn try_remove_stmt(&mut self, index: usize) -> Option<Stmt> {
         self.stmts.get(index)?;
         Some(self.stmts.remove(index))
     }
 
-    pub fn remove_item_by_id(&mut self, ident: &str) -> Option<Item> {
+    pub fn remove_stmt(&mut self, index: StmtIndex) -> Stmt {
+        self.stmts.remove(index.0)
+    }
+
+    pub fn try_remove_item_by_id(&mut self, ident: &str) -> Option<Item> {
         let index = self
             .stmts
             .iter()
             .position(|stmt| stmt.ident() == Some(ident))?;
-        let Some(Stmt::Item(item)) = self.remove_stmt(index) else {
+        let Some(Stmt::Item(item)) = self.try_remove_stmt(index) else {
             unreachable!()
         };
         Some(item)
