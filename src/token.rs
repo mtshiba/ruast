@@ -3,6 +3,59 @@ use std::ops::{Deref, DerefMut};
 
 use crate::expr::Lit;
 
+/// A string that is confirmed at the time of construction to be a valid Rust identifier.
+#[cfg(feature = "checked-ident")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Identifier(String);
+
+#[cfg(feature = "checked-ident")]
+impl fmt::Display for Identifier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[cfg(feature = "checked-ident")]
+impl Deref for Identifier {
+    type Target = String;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[cfg(feature = "checked-ident")]
+impl Identifier {
+    pub fn new(ident: impl Into<String>) -> Result<Self, String> {
+        let ident = check_ident(ident)?;
+        Ok(Self(ident))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[cfg(feature = "checked-ident")]
+pub fn check_ident(maybe_ident: impl Into<String>) -> Result<String, String> {
+    use unicode_ident;
+
+    let ident = maybe_ident.into();
+    let mut chars = ident.chars();
+    let Some(first) = chars.next() else {
+        return Err(ident);
+    };
+    if !unicode_ident::is_xid_start(first) {
+        return Err(ident);
+    }
+
+    if chars.all(unicode_ident::is_xid_continue) && KeywordToken::try_from(&ident[..]).is_err() {
+        Ok(ident)
+    } else {
+        Err(ident)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KeywordToken {
     As,
@@ -90,6 +143,56 @@ impl fmt::Display for KeywordToken {
             Self::Where => write!(f, "where"),
             Self::While => write!(f, "while"),
             Self::Yield => write!(f, "yield"),
+        }
+    }
+}
+
+impl TryFrom<&str> for KeywordToken {
+    type Error = ();
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "as" => Ok(Self::As),
+            "async" => Ok(Self::Async),
+            "await" => Ok(Self::Await),
+            "box" => Ok(Self::Box),
+            "break" => Ok(Self::Break),
+            "const" => Ok(Self::Const),
+            "continue" => Ok(Self::Continue),
+            "crate" => Ok(Self::Crate),
+            "dyn" => Ok(Self::Dyn),
+            "else" => Ok(Self::Else),
+            "enum" => Ok(Self::Enum),
+            "extern" => Ok(Self::Extern),
+            "false" => Ok(Self::False),
+            "fn" => Ok(Self::Fn),
+            "for" => Ok(Self::For),
+            "if" => Ok(Self::If),
+            "impl" => Ok(Self::Impl),
+            "in" => Ok(Self::In),
+            "let" => Ok(Self::Let),
+            "loop" => Ok(Self::Loop),
+            "match" => Ok(Self::Match),
+            "mod" => Ok(Self::Mod),
+            "move" => Ok(Self::Move),
+            "mut" => Ok(Self::Mut),
+            "pub" => Ok(Self::Pub),
+            "ref" => Ok(Self::Ref),
+            "return" => Ok(Self::Return),
+            "self" | "Self" => Ok(Self::Self_),
+            "static" => Ok(Self::Static),
+            "struct" => Ok(Self::Struct),
+            "super" => Ok(Self::Super),
+            "trait" => Ok(Self::Trait),
+            "true" => Ok(Self::True),
+            "try" => Ok(Self::Try),
+            "type" => Ok(Self::Type),
+            "unsafe" => Ok(Self::Unsafe),
+            "use" => Ok(Self::Use),
+            "where" => Ok(Self::Where),
+            "while" => Ok(Self::While),
+            "yield" => Ok(Self::Yield),
+            _ => Err(()),
         }
     }
 }
@@ -308,6 +411,12 @@ impl Token {
 
     pub fn ident(ident: impl Into<String>) -> Self {
         Self::Ident(ident.into())
+    }
+
+    #[cfg(feature = "checked-ident")]
+    pub fn checked_ident(ident: impl Into<String>) -> Result<Self, String> {
+        let ident = check_ident(ident)?;
+        Ok(Self::Ident(ident))
     }
 
     /// `Token::lifetime("a")` => `'a`

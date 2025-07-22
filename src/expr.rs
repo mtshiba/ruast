@@ -2591,6 +2591,12 @@ impl PathSegment {
     pub fn simple(ident: impl Into<String>) -> Self {
         Self::new(ident, None)
     }
+
+    #[cfg(feature = "checked-ident")]
+    pub fn checked_simple(ident: impl Into<String>) -> Result<Self, String> {
+        let ident = crate::check_ident(ident)?;
+        Ok(Self::simple(ident))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
