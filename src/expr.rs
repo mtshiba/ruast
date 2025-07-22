@@ -466,6 +466,10 @@ impl Attribute {
         Self { kind: kind.into() }
     }
 
+    pub fn normal(item: AttributeItem) -> Self {
+        Self::new(AttrKind::Normal(item))
+    }
+
     pub fn doc_comment(comment: impl Into<String>) -> Self {
         Self::new(AttrKind::DocComment(comment.into()))
     }
@@ -532,6 +536,21 @@ impl AttributeItem {
             path: path.into(),
             args: args.into(),
         }
+    }
+
+    pub fn simple(path: impl Into<Path>) -> Self {
+        Self::new(path, AttrArgs::Empty)
+    }
+
+    /// `#[cfg(feature = "...")]`
+    pub fn cfg_feature(feature: impl Into<String>) -> Self {
+        let tokens = TokenStream::from(vec![
+            Token::ident("feature"),
+            Token::Eq,
+            Token::Lit(Lit::str(feature)),
+        ]);
+        let arg = DelimArgs::new(MacDelimiter::Parenthesis, tokens);
+        Self::new(Path::single("cfg"), AttrArgs::Delimited(arg))
     }
 }
 
