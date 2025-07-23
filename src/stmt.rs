@@ -194,6 +194,15 @@ impl Local {
     pub fn let_else(pat: impl Into<Pat>, expr: impl Into<Expr>, block: Block) -> Self {
         Self::new(pat, None, LocalKind::InitElse(expr.into(), block))
     }
+
+    pub fn set_ty(&mut self, ty: Type) {
+        self.ty = Some(ty);
+    }
+
+    pub fn with_ty(mut self, ty: Type) -> Self {
+        self.set_ty(ty);
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -334,6 +343,15 @@ impl IdentPat {
     pub fn simple(ident: impl Into<String>) -> Self {
         Self::from(ident.into())
     }
+
+    pub fn set_pat(&mut self, pat: impl Into<Pat>) {
+        self.pat = Some(Box::new(pat.into()));
+    }
+
+    pub fn with_pat(mut self, pat: impl Into<Pat>) -> Self {
+        self.set_pat(pat);
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -403,6 +421,21 @@ impl From<TupleStructPat> for TokenStream {
         }
         ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         ts
+    }
+}
+
+impl TupleStructPat {
+    pub fn new(path: Path, pats: Vec<Pat>) -> Self {
+        Self { path, pats }
+    }
+
+    pub fn add_pat(&mut self, pat: Pat) {
+        self.pats.push(pat);
+    }
+
+    pub fn with_pat(mut self, pat: Pat) -> Self {
+        self.add_pat(pat);
+        self
     }
 }
 
@@ -617,6 +650,16 @@ impl Pat {
     pub fn bind(self, kind: impl Into<LocalKind>) -> Local {
         Local::new(self, None, kind)
     }
+
+    pub fn or(self, pat: Pat) -> Self {
+        match self {
+            Pat::Or(mut pats) => {
+                pats.push(pat);
+                Pat::Or(pats)
+            }
+            _ => Pat::Or(vec![self, pat]),
+        }
+    }
 }
 
 /// `pat ':' ty`
@@ -745,6 +788,24 @@ impl FnDecl {
 
     pub fn empty() -> Self {
         Self::regular(Vec::new(), None)
+    }
+
+    pub fn add_input(&mut self, input: Param) {
+        self.inputs.push(input);
+    }
+
+    pub fn with_input(mut self, input: Param) -> Self {
+        self.add_input(input);
+        self
+    }
+
+    pub fn set_output(&mut self, output: Type) {
+        self.output = Some(output);
+    }
+
+    pub fn with_output(mut self, output: Type) -> Self {
+        self.set_output(output);
+        self
     }
 }
 
@@ -1017,6 +1078,15 @@ impl Fn {
 
     pub fn remove_stmt(&mut self, index: StmtIndex) -> Stmt {
         self.body.as_mut().unwrap().remove_stmt(index)
+    }
+
+    pub fn add_generic_param(&mut self, param: GenericParam) {
+        self.generics.push(param);
+    }
+
+    pub fn with_generic_param(mut self, param: GenericParam) -> Self {
+        self.add_generic_param(param);
+        self
     }
 }
 
@@ -1499,7 +1569,7 @@ impl VariantData {
         self
     }
 
-    pub fn add_field(&mut self, field: FieldDef) {
+    pub fn add_field(&mut self, field: FieldDef) -> ItemIndex {
         match self {
             Self::Unit => {
                 let new = if field.ident.is_some() {
@@ -1512,9 +1582,10 @@ impl VariantData {
             Self::Tuple(fields) => fields.push(field),
             Self::Struct(fields) => fields.push(field),
         }
+        ItemIndex(self.items().len() - 1)
     }
 
-    pub fn remove_field(&mut self, index: usize) -> Option<FieldDef> {
+    pub fn try_remove_field(&mut self, index: usize) -> Option<FieldDef> {
         match self {
             Self::Unit => None,
             Self::Tuple(fields) => {
@@ -1528,7 +1599,11 @@ impl VariantData {
         }
     }
 
-    pub fn remove_field_by_id(&mut self, ident: &str) -> Option<FieldDef> {
+    pub fn remove_field(&mut self, index: ItemIndex) -> FieldDef {
+        self.try_remove_field(index.0).expect("index out of bounds")
+    }
+
+    pub fn try_remove_field_by_id(&mut self, ident: &str) -> Option<FieldDef> {
         let index = match self {
             Self::Unit => return None,
             Self::Tuple(fields) => fields
@@ -1538,7 +1613,7 @@ impl VariantData {
                 .iter()
                 .position(|field| field.ident.as_deref() == Some(ident))?,
         };
-        Some(self.remove_field(index).unwrap())
+        Some(self.try_remove_field(index).unwrap())
     }
 
     pub fn get_field_by_id(&self, ident: &str) -> Option<&FieldDef> {
@@ -1639,6 +1714,10 @@ impl Variant {
             VariantData::Tuple(fields),
             None,
         )
+    }
+
+    pub fn tuple1(ident: impl Into<String>, ty: impl Into<Type>) -> Self {
+        Self::tuple(ident, vec![FieldDef::anonymous(ty)])
     }
 }
 
@@ -1743,17 +1822,23 @@ impl EnumDef {
         self
     }
 
-    pub fn add_variant(&mut self, item: Variant) {
+    pub fn add_variant(&mut self, item: Variant) -> ItemIndex {
         self.variants.push(item);
+        ItemIndex(self.variants.len() - 1)
     }
 
-    pub fn remove_variant(&mut self, index: usize) -> Variant {
-        self.variants.remove(index)
+    pub fn try_remove_variant(&mut self, index: usize) -> Option<Variant> {
+        self.variants.get(index)?;
+        Some(self.variants.remove(index))
     }
 
-    pub fn remove_variant_by_id(&mut self, ident: &str) -> Option<Variant> {
+    pub fn remove_variant(&mut self, index: ItemIndex) -> Variant {
+        self.variants.remove(index.0)
+    }
+
+    pub fn try_remove_variant_by_id(&mut self, ident: &str) -> Option<Variant> {
         let index = self.variants.iter().position(|va| va.ident == ident)?;
-        Some(self.remove_variant(index))
+        self.try_remove_variant(index)
     }
 
     pub fn get_variant(&self, index: usize) -> Option<&Variant> {
@@ -1854,16 +1939,21 @@ impl StructDef {
         self
     }
 
-    pub fn add_field(&mut self, field: FieldDef) {
+    pub fn add_field(&mut self, field: FieldDef) -> ItemIndex {
         self.variant.add_field(field);
+        ItemIndex(self.variant.items().len() - 1)
     }
 
-    pub fn remove_field(&mut self, index: usize) -> Option<FieldDef> {
+    pub fn try_remove_field(&mut self, index: usize) -> Option<FieldDef> {
+        self.variant.try_remove_field(index)
+    }
+
+    pub fn remove_field(&mut self, index: ItemIndex) -> FieldDef {
         self.variant.remove_field(index)
     }
 
-    pub fn remove_field_by_id(&mut self, ident: &str) -> Option<FieldDef> {
-        self.variant.remove_field_by_id(ident)
+    pub fn try_remove_field_by_id(&mut self, ident: &str) -> Option<FieldDef> {
+        self.variant.try_remove_field_by_id(ident)
     }
 
     pub fn get_field_by_id(&self, ident: &str) -> Option<&FieldDef> {
@@ -1929,6 +2019,17 @@ impl Ident for UnionDef {
     }
 }
 
+impl HasItem<FieldDef> for UnionDef {
+    fn items(&self) -> &[FieldDef] {
+        self.variants.items()
+    }
+    fn items_mut(&mut self) -> &mut Vec<FieldDef> {
+        self.variants.items_mut()
+    }
+}
+
+impl_hasitem_methods!(UnionDef, FieldDef);
+
 impl UnionDef {
     pub fn new(
         ident: impl Into<String>,
@@ -1944,6 +2045,32 @@ impl UnionDef {
 
     pub fn empty(ident: impl Into<String>) -> Self {
         Self::new(ident, Vec::new(), VariantData::Unit)
+    }
+
+    pub fn with_field(mut self, field: FieldDef) -> Self {
+        self.add_field(field);
+        self
+    }
+
+    pub fn add_field(&mut self, field: FieldDef) -> ItemIndex {
+        self.variants.add_field(field);
+        ItemIndex(self.variants.items().len() - 1)
+    }
+
+    pub fn try_remove_field(&mut self, index: usize) -> Option<FieldDef> {
+        self.variants.try_remove_field(index)
+    }
+
+    pub fn remove_field(&mut self, index: ItemIndex) -> FieldDef {
+        self.variants.remove_field(index)
+    }
+
+    pub fn try_remove_field_by_id(&mut self, ident: &str) -> Option<FieldDef> {
+        self.variants.try_remove_field_by_id(ident)
+    }
+
+    pub fn get_field_by_id(&self, ident: &str) -> Option<&FieldDef> {
+        self.variants.get_field_by_id(ident)
     }
 }
 
@@ -2067,6 +2194,24 @@ impl TraitDef {
     pub fn empty(ident: impl Into<String>) -> Self {
         Self::new(ident, Vec::new(), Vec::new(), Vec::new())
     }
+
+    pub fn add_supertrait(&mut self, ty: impl Into<Type>) {
+        self.supertraits.push(ty.into());
+    }
+
+    pub fn with_supertrait(mut self, ty: impl Into<Type>) -> Self {
+        self.add_supertrait(ty);
+        self
+    }
+
+    pub fn add_generic_param(&mut self, param: GenericParam) {
+        self.generics.push(param);
+    }
+
+    pub fn with_generic_param(mut self, param: GenericParam) -> Self {
+        self.add_generic_param(param);
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -2110,6 +2255,15 @@ impl PredicateType {
             bounds,
         }
     }
+
+    pub fn add_bound(&mut self, bound: impl Into<Type>) {
+        self.bounds.push(bound.into());
+    }
+
+    pub fn with_bound(mut self, bound: impl Into<Type>) -> Self {
+        self.add_bound(bound);
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -2152,6 +2306,15 @@ impl PredicateLifetime {
             lifetime: lifetime.into(),
             bounds: bounds.into_iter().collect(),
         }
+    }
+
+    pub fn add_bound(&mut self, bound: impl Into<String>) {
+        self.bounds.push(bound.into());
+    }
+
+    pub fn with_bound(mut self, bound: impl Into<String>) -> Self {
+        self.add_bound(bound);
+        self
     }
 }
 
@@ -2322,6 +2485,28 @@ impl Impl {
             where_clauses: None,
             items,
         }
+    }
+
+    pub fn add_generic_param(&mut self, param: GenericParam) {
+        self.generics.push(param);
+    }
+
+    pub fn with_generic_param(mut self, param: GenericParam) -> Self {
+        self.add_generic_param(param);
+        self
+    }
+
+    pub fn add_where_clause(&mut self, clause: WherePredicate) {
+        if let Some(clauses) = &mut self.where_clauses {
+            clauses.push(clause);
+        } else {
+            self.where_clauses = Some(vec![clause]);
+        }
+    }
+
+    pub fn with_where_clause(mut self, clause: WherePredicate) -> Self {
+        self.add_where_clause(clause);
+        self
     }
 }
 
@@ -2942,6 +3127,19 @@ impl UseTree {
 
     pub fn group(trees: Vec<UseTree>) -> Self {
         Self::Group(trees)
+    }
+
+    pub fn add_group_element(&mut self, tree: UseTree) {
+        if let Self::Group(trees) = self {
+            trees.push(tree);
+        } else {
+            *self = Self::Group(vec![self.clone(), tree]);
+        }
+    }
+
+    pub fn with_group_element(mut self, tree: UseTree) -> Self {
+        self.add_group_element(tree);
+        self
     }
 }
 

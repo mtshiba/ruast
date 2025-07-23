@@ -3,7 +3,7 @@ use std::fmt;
 use crate::expr::{Const, GenericArg, Lit, MacCall, Path, PathSegment};
 use crate::stmt::Param;
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
-use crate::{impl_display_for_enum, impl_obvious_conversion};
+use crate::{impl_display_for_enum, impl_obvious_conversion, EmptyItem};
 
 #[cfg(feature = "tokenize")]
 crate::impl_to_tokens!(
@@ -237,6 +237,24 @@ impl BareFn {
     ) -> Self {
         BareFn::new(generic_params, inputs, output, None, false)
     }
+
+    pub fn add_input(&mut self, input: Param) {
+        self.inputs.push(input);
+    }
+
+    pub fn with_input(mut self, input: Param) -> Self {
+        self.add_input(input);
+        self
+    }
+
+    pub fn add_generic_param(&mut self, param: GenericParam) {
+        self.generic_params.push(param);
+    }
+
+    pub fn with_generic_param(mut self, param: GenericParam) -> Self {
+        self.add_generic_param(param);
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -286,6 +304,22 @@ impl TypeParam {
             ident: ident.into(),
             bounds,
         }
+    }
+
+    pub fn simple(ident: impl Into<String>) -> Self {
+        Self {
+            ident: ident.into(),
+            bounds: vec![],
+        }
+    }
+
+    pub fn add_bound(&mut self, bound: GenericBound) {
+        self.bounds.push(bound);
+    }
+
+    pub fn with_bound(mut self, bound: GenericBound) -> Self {
+        self.add_bound(bound);
+        self
     }
 }
 
@@ -364,6 +398,15 @@ impl PolyTraitRef {
             trait_ref: trait_ref.into(),
         }
     }
+
+    pub fn add_bound_generic_param(&mut self, param: GenericParam) {
+        self.bound_generic_params.push(param);
+    }
+
+    pub fn with_bound_generic_param(mut self, param: GenericParam) -> Self {
+        self.add_bound_generic_param(param);
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -430,6 +473,29 @@ impl From<TraitObject> for TokenStream {
     }
 }
 
+impl TraitObject {
+    pub fn new(is_dyn: bool, bounds: Vec<GenericBound>) -> Self {
+        Self { is_dyn, bounds }
+    }
+
+    pub fn dyn_(bounds: Vec<GenericBound>) -> Self {
+        Self::new(true, bounds)
+    }
+
+    pub fn static_(bounds: Vec<GenericBound>) -> Self {
+        Self::new(false, bounds)
+    }
+
+    pub fn add_bound(&mut self, bound: GenericBound) {
+        self.bounds.push(bound);
+    }
+
+    pub fn with_bound(mut self, bound: GenericBound) -> Self {
+        self.add_bound(bound);
+        self
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ImplTrait {
     pub bounds: Vec<GenericBound>,
@@ -450,6 +516,13 @@ impl fmt::Display for ImplTrait {
     }
 }
 
+impl EmptyItem for ImplTrait {
+    type Input = ();
+    fn empty(_: impl Into<Self::Input>) -> Self {
+        Self { bounds: vec![] }
+    }
+}
+
 impl From<ImplTrait> for TokenStream {
     fn from(value: ImplTrait) -> Self {
         let mut ts = TokenStream::new();
@@ -467,6 +540,15 @@ impl From<ImplTrait> for TokenStream {
 impl ImplTrait {
     pub fn new(bounds: Vec<GenericBound>) -> Self {
         Self { bounds }
+    }
+
+    pub fn add_bound(&mut self, bound: GenericBound) {
+        self.bounds.push(bound);
+    }
+
+    pub fn with_bound(mut self, bound: GenericBound) -> Self {
+        self.add_bound(bound);
+        self
     }
 }
 
