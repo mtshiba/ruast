@@ -472,17 +472,21 @@ impl ImplTrait {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
+    /// `[T]`
     Slice(Box<Type>),
+    /// `[T; N]`
     Array(Box<Type>, Box<Const>),
     Ptr(Ptr),
     Ref(Ref),
     BareFn(BareFn),
     Macro(MacCall),
+    /// `!`
     Never,
     Tuple(Vec<Type>),
     Path(Path),
     TraitObject(TraitObject),
     ImplTrait(ImplTrait),
+    /// `_`
     Infer,
     ImplicitSelf,
     Err,
@@ -697,5 +701,13 @@ impl Type {
 
     pub fn mut_ptr(ty: impl Into<Type>) -> Type {
         Type::Ptr(Ptr::new(PtrKind::Mut, ty))
+    }
+
+    pub fn box_(inner: impl Into<Type>) -> Type {
+        Type::poly_path("Box", vec![GenericArg::Type(inner.into())])
+    }
+
+    pub fn vec(inner: impl Into<Type>) -> Type {
+        Type::poly_path("Vec", vec![GenericArg::Type(inner.into())])
     }
 }

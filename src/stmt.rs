@@ -2545,7 +2545,7 @@ impl fmt::Display for VisibilityScope {
             Self::Crate => write!(f, "crate"),
             Self::Super => write!(f, "super"),
             Self::Self_ => write!(f, "self"),
-            Self::Path(path) => write!(f, "in {}", path),
+            Self::Path(path) => write!(f, "in {path}"),
         }
     }
 }
@@ -2601,7 +2601,7 @@ impl fmt::Display for Visibility {
         match self {
             Self::Inherited => write!(f, ""),
             Self::Public => write!(f, "pub "),
-            Self::Scoped(scope) => write!(f, "pub({}) ", scope),
+            Self::Scoped(scope) => write!(f, "pub({scope}) "),
         }
     }
 }

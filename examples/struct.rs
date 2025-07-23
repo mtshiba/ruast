@@ -3,8 +3,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut krate = Crate::new();
     let def = StructDef::empty("Foo")
-        .with_field(FieldDef::inherited("foo", Type::from("u32")))
-        .with_field(FieldDef::inherited("bar", Type::from("u32")));
+        .with_field(FieldDef::inherited("foo", Type::u32()))
+        .with_field(FieldDef::inherited("bar", Type::u32()));
     krate.add_item(def);
     let fn_decl = FnDecl::regular(
         vec![Param::ref_self(), Param::ident("x", Type::usize())],
