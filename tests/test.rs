@@ -229,3 +229,29 @@ fn test_use() {
     let use_ = Use::from(tree);
     assert_snapshot!(use_, @"use foo::bar::*;");
 }
+
+#[test]
+fn test_visibility_scope() {
+    let vis_crate = Visibility::crate_();
+    assert_snapshot!(vis_crate, @"pub(crate) ");
+
+    let vis_super = Visibility::super_();
+    assert_snapshot!(vis_super, @"pub(super) ");
+
+    let vis_self = Visibility::self_();
+    assert_snapshot!(vis_self, @"pub(self) ");
+
+    let path = Path::single("my_module");
+    let vis_path = Visibility::in_path(path);
+    assert_snapshot!(vis_path, @"pub(in my_module) ");
+
+    let nested_path = Path::single("crate").chain("module").chain("submodule");
+    let vis_nested_path = Visibility::in_path(nested_path);
+    assert_snapshot!(vis_nested_path, @"pub(in crate::module::submodule) ");
+
+    let vis_inherited = Visibility::default();
+    assert_snapshot!(vis_inherited, @"");
+
+    let vis_public = Visibility::Public;
+    assert_snapshot!(vis_public, @"pub ");
+}

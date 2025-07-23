@@ -2527,11 +2527,73 @@ impl ExternCrate {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum VisibilityScope {
+    /// pub(crate)
+    Crate,
+    /// pub(super)
+    Super,
+    /// pub(self)
+    Self_,
+    /// pub(in path)
+    Path(Path),
+}
+
+impl fmt::Display for VisibilityScope {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Crate => write!(f, "crate"),
+            Self::Super => write!(f, "super"),
+            Self::Self_ => write!(f, "self"),
+            Self::Path(path) => write!(f, "in {}", path),
+        }
+    }
+}
+
+impl From<VisibilityScope> for TokenStream {
+    fn from(value: VisibilityScope) -> Self {
+        match value {
+            VisibilityScope::Crate => TokenStream::from(vec![Token::Keyword(KeywordToken::Crate)]),
+            VisibilityScope::Super => TokenStream::from(vec![Token::Keyword(KeywordToken::Super)]),
+            VisibilityScope::Self_ => TokenStream::from(vec![Token::Keyword(KeywordToken::Self_)]),
+            VisibilityScope::Path(path) => {
+                let mut ts = TokenStream::new();
+                ts.push(Token::Keyword(KeywordToken::In));
+                ts.extend(TokenStream::from(path));
+                ts
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum Visibility {
     #[default]
     Inherited,
     Public,
+    Scoped(VisibilityScope),
+}
+
+impl Visibility {
+    /// Creates a new `Visibility` with `pub(crate)` scope
+    pub fn crate_() -> Self {
+        Self::Scoped(VisibilityScope::Crate)
+    }
+
+    /// Creates a new `Visibility` with `pub(super)` scope
+    pub fn super_() -> Self {
+        Self::Scoped(VisibilityScope::Super)
+    }
+
+    /// Creates a new `Visibility` with `pub(self)` scope
+    pub fn self_() -> Self {
+        Self::Scoped(VisibilityScope::Self_)
+    }
+
+    /// Creates a new `Visibility` with `pub(in path)` scope
+    pub fn in_path(path: impl Into<Path>) -> Self {
+        Self::Scoped(VisibilityScope::Path(path.into()))
+    }
 }
 
 impl fmt::Display for Visibility {
@@ -2539,6 +2601,7 @@ impl fmt::Display for Visibility {
         match self {
             Self::Inherited => write!(f, ""),
             Self::Public => write!(f, "pub "),
+            Self::Scoped(scope) => write!(f, "pub({}) ", scope),
         }
     }
 }
@@ -2548,6 +2611,14 @@ impl From<Visibility> for TokenStream {
         match value {
             Visibility::Inherited => TokenStream::new(),
             Visibility::Public => TokenStream::from(vec![Token::Keyword(KeywordToken::Pub)]),
+            Visibility::Scoped(scope) => {
+                let mut ts = TokenStream::new();
+                ts.push(Token::Keyword(KeywordToken::Pub));
+                ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+                ts.extend(TokenStream::from(scope));
+                ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+                ts
+            }
         }
     }
 }
