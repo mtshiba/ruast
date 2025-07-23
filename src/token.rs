@@ -357,6 +357,7 @@ pub enum Token {
     Keyword(KeywordToken),
     /// Note that this variant outputs the stored string as it is (without displaying a leading `///`).
     DocComment(String),
+    Shebang(String),
     Eof,
 }
 
@@ -399,6 +400,7 @@ impl fmt::Display for Token {
             Self::Lifetime(lifetime) => write!(f, "'{lifetime}"),
             Self::Keyword(keyword) => write!(f, "{keyword}"),
             Self::DocComment(comment) => write!(f, "{comment}"),
+            Self::Shebang(shebang) => write!(f, "{shebang}"),
             Self::Eof => write!(f, ""),
         }
     }
