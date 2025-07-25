@@ -432,11 +432,8 @@ pub struct TokenStream(Vec<Token>);
 
 impl fmt::Display for TokenStream {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for (i, token) in self.0.iter().enumerate() {
-            if i > 0 {
-                write!(f, " ")?;
-            }
-            write!(f, "{token}")?;
+        for token in &self.0 {
+            token.fmt(f)?;
         }
         Ok(())
     }
