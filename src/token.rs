@@ -409,6 +409,10 @@ impl Token {
         Self::Lit(lit.into())
     }
 
+    pub fn verbatim(lit: impl Into<String>) -> Self {
+        Self::DocComment(lit.into())
+    }
+
     pub fn ident(ident: impl Into<String>) -> Self {
         Self::Ident(ident.into())
     }
