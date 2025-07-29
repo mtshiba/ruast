@@ -188,7 +188,7 @@ pub(crate) use impl_hasitem_methods;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Crate {
-    pub shebang: Option<String>,
+    pub shebangs: Vec<String>,
     pub attrs: Vec<Attribute>,
     pub items: Vec<Item>,
 }
@@ -213,6 +213,9 @@ impl_hasitem_methods!(Crate);
 
 impl fmt::Display for Crate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for shebang in &self.shebangs {
+            writeln!(f, "#!{shebang}")?;
+        }
         for attr in self.attrs.iter() {
             writeln!(f, "{attr}")?;
         }
@@ -227,6 +230,11 @@ impl fmt::Display for Crate {
 impl From<Crate> for TokenStream {
     fn from(value: Crate) -> Self {
         let mut ts = TokenStream::new();
+        for shebang in value.shebangs {
+            ts.push(Token::Pound);
+            ts.push(Token::Not);
+            ts.push(Token::Shebang(shebang));
+        }
         for attr in value.attrs {
             ts.extend(TokenStream::from(attr));
         }
@@ -264,7 +272,7 @@ pub struct CompileOptions {
 impl Crate {
     pub fn new() -> Self {
         Self {
-            shebang: None,
+            shebangs: vec![],
             attrs: Vec::new(),
             items: Vec::new(),
         }
