@@ -270,3 +270,27 @@ fn test_macro_call() {
 
     assert_snapshot!(mac_call, @"assign!(let mut x = 42)");
 }
+
+#[test]
+fn test_joint_token() {
+    let ts = TokenStream::from(vec![
+        Token::Ident("foo".into()),
+        Token::Dot,
+        Token::Ident("bar".into()),
+    ]);
+    assert_snapshot!(ts, @"foo . bar");
+
+    let ts = TokenStream::from(vec![
+        Token::Ident("foo".into()),
+        Token::Dot.into_joint(),
+        Token::Ident("bar".into()),
+    ]);
+    assert_snapshot!(ts, @"foo .bar");
+
+    let ts = TokenStream::from(vec![
+        Token::Ident("foo".into()).into_joint(),
+        Token::Dot.into_joint(),
+        Token::Ident("bar".into()),
+    ]);
+    assert_snapshot!(ts, @"foo.bar");
+}

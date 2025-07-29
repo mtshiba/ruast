@@ -150,6 +150,7 @@ impl ToTokens for Token {
                 Span::call_site(),
             ))]),
             Self::DocComment(_) => {}
+            Self::Joint(token) => token.to_tokens(tokens),
             Self::Eof => {}
         }
     }

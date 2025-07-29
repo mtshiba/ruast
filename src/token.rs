@@ -357,6 +357,8 @@ pub enum Token {
     Keyword(KeywordToken),
     /// Note that this variant outputs the stored string as it is (without displaying a leading `///`).
     DocComment(String),
+    /// When print this variant as an element of a `TokenStream`, it is displayed combined with the preceding tokens (no spacing).
+    Joint(Box<Token>),
     Eof,
 }
 
@@ -399,6 +401,7 @@ impl fmt::Display for Token {
             Self::Lifetime(lifetime) => write!(f, "'{lifetime}"),
             Self::Keyword(keyword) => write!(f, "{keyword}"),
             Self::DocComment(comment) => write!(f, "{comment}"),
+            Self::Joint(token) => write!(f, "{token}"),
             Self::Eof => write!(f, ""),
         }
     }
@@ -427,6 +430,26 @@ impl Token {
     pub fn lifetime(lifetime: impl Into<String>) -> Self {
         Self::Lifetime(lifetime.into())
     }
+
+    pub const fn is_keyword(&self) -> bool {
+        matches!(self, Self::Keyword(_))
+    }
+
+    pub const fn is_ident(&self) -> bool {
+        matches!(self, Self::Ident(_))
+    }
+
+    pub const fn is_lit(&self) -> bool {
+        matches!(self, Self::Lit(_))
+    }
+
+    pub const fn is_joint(&self) -> bool {
+        matches!(self, Self::Joint(_))
+    }
+
+    pub fn into_joint(self) -> Self {
+        Self::Joint(Box::new(self))
+    }
 }
 
 /// This structure is not related to `proc_macro2::TokenStream`.
@@ -436,11 +459,13 @@ pub struct TokenStream(Vec<Token>);
 
 impl fmt::Display for TokenStream {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut previous_was_joint = false;
         for (i, token) in self.0.iter().enumerate() {
-            if i > 0 {
+            if i > 0 && !previous_was_joint {
                 write!(f, " ")?;
             }
             write!(f, "{token}")?;
+            previous_was_joint = token.is_joint();
         }
         Ok(())
     }
