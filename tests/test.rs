@@ -294,3 +294,161 @@ fn test_joint_token() {
     ]);
     assert_snapshot!(ts, @"foo.bar");
 }
+
+#[test]
+fn test_mutty_to_tokenstream() {
+    let immut_ty = MutTy::immut(Type::i32());
+    let ts = TokenStream::from(immut_ty);
+    assert_snapshot!(ts, @"i32");
+
+    let mut_ty = MutTy::mut_(Type::i32());
+    let ts = TokenStream::from(mut_ty);
+    assert_snapshot!(ts, @"mut i32");
+}
+
+#[test]
+fn test_ref_to_tokenstream() {
+    let ref_ty = Ref::new(None::<String>, MutTy::immut(Type::i32()));
+    let ts = TokenStream::from(ref_ty);
+    assert_snapshot!(ts, @"&i32");
+
+    let ref_mut_ty = Ref::new(None::<String>, MutTy::mut_(Type::i32()));
+    let ts = TokenStream::from(ref_mut_ty);
+    assert_snapshot!(ts, @"&mut i32");
+
+    let ref_lifetime_ty = Ref::new(Some("static"), MutTy::immut(Type::i32()));
+    let ts = TokenStream::from(ref_lifetime_ty);
+    assert_snapshot!(ts, @"&'static i32");
+}
+
+#[test]
+fn test_ptrkind_to_tokenstream() {
+    let const_ptr = PtrKind::Const;
+    let ts = TokenStream::from(const_ptr);
+    assert_snapshot!(ts, @"const");
+
+    let mut_ptr = PtrKind::Mut;
+    let ts = TokenStream::from(mut_ptr);
+    assert_snapshot!(ts, @"mut");
+}
+
+#[test]
+fn test_ptr_to_tokenstream() {
+    let const_ptr = Ptr::new(PtrKind::Const, Type::i32());
+    let ts = TokenStream::from(const_ptr);
+    assert_snapshot!(ts, @"*const i32");
+
+    let mut_ptr = Ptr::new(PtrKind::Mut, Type::i32());
+    let ts = TokenStream::from(mut_ptr);
+    assert_snapshot!(ts, @"*mut i32");
+}
+
+#[test]
+fn test_barefn_to_tokenstream() {
+    let simple_fn = BareFn::safe(vec![], vec![], Type::unit());
+    let ts = TokenStream::from(simple_fn);
+    assert_snapshot!(ts, @"fn () -> ()");
+
+    let unsafe_fn = BareFn::new(vec![], vec![], Type::i32(), None, true);
+    let ts = TokenStream::from(unsafe_fn);
+    assert_snapshot!(ts, @"unsafe fn () -> i32");
+
+    let extern_fn = BareFn::new(vec![], vec![], Type::i32(), Some("C".to_string()), false);
+    let ts = TokenStream::from(extern_fn);
+    assert_snapshot!(ts, @"extern \"C\" fn () -> i32");
+}
+
+#[test]
+fn test_typeparam_to_tokenstream() {
+    let simple_param = TypeParam::simple("T");
+    let ts = TokenStream::from(simple_param);
+    assert_snapshot!(ts, @"T");
+
+    let bounded_param = TypeParam::new(
+        "T",
+        vec![GenericBound::Trait(PolyTraitRef::simple(Path::single(
+            "Clone",
+        )))],
+    );
+    let ts = TokenStream::from(bounded_param);
+    assert_snapshot!(ts, @"T: Clone");
+}
+
+#[test]
+fn test_constparam_to_tokenstream() {
+    let const_param = ConstParam::new("N", Type::usize());
+    let ts = TokenStream::from(const_param);
+    assert_snapshot!(ts, @"const N: usize");
+}
+
+#[test]
+fn test_polytraitref_to_tokenstream() {
+    let simple_trait_ref = PolyTraitRef::simple(Path::single("Clone"));
+    let ts = TokenStream::from(simple_trait_ref);
+    assert_snapshot!(ts, @"Clone");
+
+    let complex_trait_ref = PolyTraitRef::simple(Path::single("Iterator").chain("Item"));
+    let ts = TokenStream::from(complex_trait_ref);
+    assert_snapshot!(ts, @"Iterator::Item");
+}
+
+#[test]
+fn test_genericbound_to_tokenstream() {
+    let trait_bound = GenericBound::Trait(PolyTraitRef::simple(Path::single("Clone")));
+    let ts = TokenStream::from(trait_bound);
+    assert_snapshot!(ts, @"Clone");
+
+    let lifetime_bound = GenericBound::Outlives("static".to_string());
+    let ts = TokenStream::from(lifetime_bound);
+    assert_snapshot!(ts, @"'static");
+}
+
+#[test]
+fn test_traitobject_to_tokenstream() {
+    let static_trait_obj = TraitObject::static_(vec![GenericBound::Trait(PolyTraitRef::simple(
+        Path::single("Clone"),
+    ))]);
+    let ts = TokenStream::from(static_trait_obj);
+    assert_snapshot!(ts, @"Clone");
+
+    let dyn_trait_obj = TraitObject::dyn_(vec![GenericBound::Trait(PolyTraitRef::simple(
+        Path::single("Clone"),
+    ))]);
+    let ts = TokenStream::from(dyn_trait_obj);
+    assert_snapshot!(ts, @"dyn Clone");
+}
+
+#[test]
+fn test_impltrait_to_tokenstream() {
+    let impl_trait = ImplTrait::new(vec![GenericBound::Trait(PolyTraitRef::simple(
+        Path::single("Clone"),
+    ))]);
+    let ts = TokenStream::from(impl_trait);
+    assert_snapshot!(ts, @"impl Clone");
+}
+
+#[test]
+fn test_type_to_tokenstream() {
+    let slice_ty = Type::Slice(Box::new(Type::i32()));
+    let ts = TokenStream::from(slice_ty);
+    assert_snapshot!(ts, @"[i32]");
+
+    let array_ty = Type::Array(
+        Box::new(Type::i32()),
+        Box::new(Const(Expr::new(Lit::int("5")))),
+    );
+    let ts = TokenStream::from(array_ty);
+    assert_snapshot!(ts, @"[i32; 5]");
+
+    let never_ty = Type::Never;
+    let ts = TokenStream::from(never_ty);
+    assert_snapshot!(ts, @"!");
+
+    let tuple_ty = Type::Tuple(vec![Type::i32(), Type::bool()]);
+    let ts = TokenStream::from(tuple_ty);
+    assert_snapshot!(ts, @"(i32, bool)");
+
+    let infer_ty = Type::Infer;
+    let ts = TokenStream::from(infer_ty);
+    assert_snapshot!(ts, @"_");
+}
