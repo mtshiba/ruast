@@ -255,3 +255,18 @@ fn test_visibility_scope() {
     let vis_public = Visibility::Public;
     assert_snapshot!(vis_public, @"pub ");
 }
+
+#[test]
+fn test_macro_call() {
+    let tokens = vec![
+        Token::Keyword(KeywordToken::Let),
+        Token::Keyword(KeywordToken::Mut),
+        Token::Ident("x".into()),
+        Token::Eq,
+        Token::Lit(Lit::int("42")),
+    ];
+    let mac_call =
+        Path::single("assign").mac_call(DelimArgs::new(MacDelimiter::Parenthesis, tokens.into()));
+
+    assert_snapshot!(mac_call, @"assign!(let mut x = 42)");
+}
