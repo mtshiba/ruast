@@ -1592,7 +1592,7 @@ impl From<Field> for TokenStream {
             ts.extend(TokenStream::from(*value.expr));
         }
         ts.push(Token::Dot);
-        ts.push(Token::ident(value.ident));
+        ts.push(Token::ident(value.ident).into_joint());
         ts
     }
 }
@@ -2170,7 +2170,7 @@ impl<S: Into<String>> From<S> for Lit {
 
 impl From<Lit> for TokenStream {
     fn from(value: Lit) -> Self {
-        TokenStream::from(vec![Token::Lit(value)])
+        TokenStream::from(vec![Token::Lit(value).into_joint()])
     }
 }
 
@@ -2487,7 +2487,7 @@ impl From<Path> for TokenStream {
         if let Some(segment) = iter.next() {
             ts.extend(TokenStream::from(segment.clone()));
             for segment in iter {
-                ts.push(Token::ModSep);
+                ts.push(Token::ModSep.into_joint());
                 ts.extend(TokenStream::from(segment.clone()));
             }
         }
@@ -2583,10 +2583,10 @@ impl<S: Into<String>> From<S> for PathSegment {
 impl From<PathSegment> for TokenStream {
     fn from(value: PathSegment) -> Self {
         let mut ts = TokenStream::new();
-        ts.push(Token::ident(value.ident));
+        ts.push(Token::ident(value.ident).into_joint());
         if let Some(args) = value.args {
             ts.push(Token::ModSep);
-            ts.push(Token::Lt);
+            ts.push(Token::Lt.into_joint());
             for (i, arg) in args.iter().enumerate() {
                 if i > 0 {
                     ts.push(Token::Comma);
