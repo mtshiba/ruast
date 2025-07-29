@@ -357,7 +357,7 @@ pub enum Token {
     Keyword(KeywordToken),
     /// Note that this variant outputs the stored string as it is (without displaying a leading `///`).
     DocComment(String),
-    /// When print this variant as an element of a `TokenStream`, it is displayed combined with the preceding tokens (no spacing).
+    /// When print this variant as an element of a `TokenStream`, it is displayed combined with the following tokens (no spacing).
     Joint(Box<Token>),
     Eof,
 }
