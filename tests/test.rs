@@ -669,7 +669,17 @@ fn test_match_to_tokenstream() {
 fn test_closure_to_tokenstream() {
     let closure = Closure::simple(FnDecl::regular(vec![], None), Lit::int("42"));
     let ts = TokenStream::from(closure);
-    assert_snapshot!(ts, @"| | -> { 42 }");
+    assert_snapshot!(ts, @"|| -> { 42 }");
+
+    let closure_with_params = Closure::simple(
+        FnDecl::regular(
+            vec![Param::new(Pat::Ident(IdentPat::simple("x")), Type::i32())],
+            None,
+        ),
+        Lit::int("x"),
+    );
+    let ts = TokenStream::from(closure_with_params);
+    assert_snapshot!(ts, @"|x: i32| -> { x }");
 }
 
 #[test]
@@ -966,7 +976,7 @@ fn test_struct_to_tokenstream() {
         ],
     );
     let ts = TokenStream::from(struct_expr);
-    assert_snapshot!(ts, @r#"Person{ name: "Alice", age: 30 }"#);
+    assert_snapshot!(ts, @r#"Person { name: "Alice", age: 30 }"#);
 }
 
 #[test]
@@ -1132,4 +1142,410 @@ fn test_typeparam_multiple_bounds_to_tokenstream() {
     );
     let ts = TokenStream::from(multi_bound_param);
     assert_snapshot!(ts, @"T: Clone + Debug + 'static");
+}
+
+// stmt.rs From<> for TokenStream tests
+
+#[test]
+fn test_local_to_tokenstream() {
+    let local = Local::new(
+        Pat::ident("x"),
+        Some(Type::i32()),
+        LocalKind::Init(Expr::new(Lit::int("42"))),
+    );
+    let ts = TokenStream::from(local);
+    assert_snapshot!(ts, @"let x: i32 = 42;");
+
+    let local = Local::new(
+        Pat::ident("x"),
+        None,
+        LocalKind::Init(Expr::new(Lit::int("42"))),
+    );
+    let ts = TokenStream::from(local);
+    assert_snapshot!(ts, @"let x = 42;");
+}
+
+#[test]
+fn test_localkind_to_tokenstream() {
+    let init_kind = LocalKind::Init(Expr::new(Lit::int("42")));
+    let ts = TokenStream::from(init_kind);
+    assert_snapshot!(ts, @"= 42");
+
+    let else_kind = LocalKind::InitElse(Expr::new(Lit::int("42")), Block::new(vec![], None));
+    let ts = TokenStream::from(else_kind);
+    assert_snapshot!(ts, @"= 42 else { }");
+}
+
+#[test]
+fn test_patfield_to_tokenstream() {
+    let pat_field = PatField {
+        ident: "name".to_string(),
+        pat: Pat::ident("value"),
+    };
+    let ts = TokenStream::from(pat_field);
+    assert_snapshot!(ts, @"name: value");
+}
+
+#[test]
+fn test_identpat_to_tokenstream() {
+    let ident_pat = IdentPat::new(false, "x", Option::<Pat>::None);
+    let ts = TokenStream::from(ident_pat);
+    assert_snapshot!(ts, @"x");
+
+    let mut_pat = IdentPat::new(true, "x", Option::<Pat>::None);
+    let ts = TokenStream::from(mut_pat);
+    assert_snapshot!(ts, @"mut x");
+}
+
+#[test]
+fn test_structpat_to_tokenstream() {
+    let struct_pat = StructPat {
+        path: Path::single("Point"),
+        fields: vec![PatField {
+            ident: "x".to_string(),
+            pat: Pat::ident("a"),
+        }],
+    };
+    let ts = TokenStream::from(struct_pat);
+    assert_snapshot!(ts, @"Point { x: a }");
+}
+
+#[test]
+fn test_tuplestructpat_to_tokenstream() {
+    let tuple_pat = TupleStructPat::new(Path::single("Some"), vec![Pat::ident("x")]);
+    let ts = TokenStream::from(tuple_pat);
+    assert_snapshot!(ts, @"Some(x)");
+}
+
+#[test]
+fn test_refpat_to_tokenstream() {
+    let ref_pat = RefPat::immut(Pat::ident("x"));
+    let ts = TokenStream::from(ref_pat);
+    assert_snapshot!(ts, @"& x");
+
+    let mut_ref_pat = RefPat::mut_(Pat::ident("x"));
+    let ts = TokenStream::from(mut_ref_pat);
+    assert_snapshot!(ts, @"&mut x");
+}
+
+#[test]
+fn test_pat_to_tokenstream() {
+    let wild_pat = Pat::Wild;
+    let ts = TokenStream::from(wild_pat);
+    assert_snapshot!(ts, @"_");
+
+    let ident_pat = Pat::Ident(IdentPat::new(false, "x", Option::<Pat>::None));
+    let ts = TokenStream::from(ident_pat);
+    assert_snapshot!(ts, @"x");
+
+    let tuple_pat = Pat::Tuple(vec![Pat::ident("x"), Pat::ident("y")]);
+    let ts = TokenStream::from(tuple_pat);
+    assert_snapshot!(ts, @"(x, y)");
+}
+
+#[test]
+fn test_param_to_tokenstream() {
+    let param = Param::new(Pat::ident("x"), Type::i32());
+    let ts = TokenStream::from(param);
+    assert_snapshot!(ts, @"x: i32");
+}
+
+#[test]
+fn test_fndecl_to_tokenstream() {
+    let fn_decl = FnDecl::new(
+        vec![Param::new(Pat::ident("x"), Type::i32())],
+        Some(Type::unit()),
+        false,
+    );
+    let ts = TokenStream::from(fn_decl);
+    assert_snapshot!(ts, @"(x: i32) -> ()");
+}
+
+#[test]
+fn test_fn_to_tokenstream() {
+    let fn_item = Fn::simple(
+        "test_func",
+        FnDecl::new(vec![], Some(Type::unit()), false),
+        Block::new(vec![], None),
+    );
+    let ts = TokenStream::from(fn_item);
+    assert_snapshot!(ts, @"fn test_func() -> () { }");
+}
+
+#[test]
+fn test_loadedmod_to_tokenstream() {
+    let loaded_mod = LoadedMod::new("test_mod", vec![]);
+    let ts = TokenStream::from(loaded_mod);
+    assert_snapshot!(ts, @"mod test_mod { }");
+}
+
+#[test]
+fn test_mod_to_tokenstream() {
+    let mod_item = Mod::new("test_mod", vec![]);
+    let ts = TokenStream::from(mod_item);
+    assert_snapshot!(ts, @"mod test_mod { }");
+}
+
+#[test]
+fn test_block_to_tokenstream() {
+    let block = Block::new(vec![], None);
+    let ts = TokenStream::from(block);
+    assert_snapshot!(ts, @"{ }");
+
+    let block_with_stmt = Block::new(vec![Stmt::Expr(Expr::new(Lit::int("42")))], None);
+    let ts = TokenStream::from(block_with_stmt);
+    assert_snapshot!(ts, @"{ 42 }");
+}
+
+#[test]
+fn test_fielddef_to_tokenstream() {
+    let field_def = FieldDef::inherited("name", Type::str());
+    let ts = TokenStream::from(field_def);
+    assert_snapshot!(ts, @"name: str");
+}
+
+#[test]
+fn test_variantdata_to_tokenstream() {
+    let unit_variant = VariantData::Unit;
+    let ts = TokenStream::from(unit_variant);
+    assert_snapshot!(ts, @"");
+
+    let tuple_variant = VariantData::Tuple(vec![
+        FieldDef::anonymous(Type::i32()),
+        FieldDef::anonymous(Type::i64()),
+    ]);
+    let ts = TokenStream::from(tuple_variant);
+    assert_snapshot!(ts, @"(i32, i64)");
+
+    let struct_variant = VariantData::Struct(vec![FieldDef::inherited("x", Type::i32())]);
+    let ts = TokenStream::from(struct_variant);
+    assert_snapshot!(ts, @"{ x: i32 }");
+}
+
+#[test]
+fn test_variant_to_tokenstream() {
+    let variant = Variant::inherited(
+        "Some",
+        VariantData::Tuple(vec![FieldDef::anonymous(Type::i32())]),
+    );
+    let ts = TokenStream::from(variant);
+    assert_snapshot!(ts, @"Some(i32)");
+}
+
+#[test]
+fn test_enumdef_to_tokenstream() {
+    let enum_def = EnumDef::new(
+        "Option",
+        vec![],
+        vec![
+            Variant::inherited("None", VariantData::Unit),
+            Variant::inherited(
+                "Some",
+                VariantData::Tuple(vec![FieldDef::anonymous(Type::i32())]),
+            ),
+        ],
+    );
+    let ts = TokenStream::from(enum_def);
+    assert_snapshot!(ts, @"enum Option { None, Some(i32), }");
+}
+
+#[test]
+fn test_structdef_to_tokenstream() {
+    let struct_def = StructDef::new(
+        "Point",
+        vec![],
+        VariantData::Struct(vec![FieldDef::inherited("x", Type::i32())]),
+    );
+    let ts = TokenStream::from(struct_def);
+    assert_snapshot!(ts, @"struct Point { x: i32 }");
+}
+
+#[test]
+fn test_uniondef_to_tokenstream() {
+    let union_def = UnionDef::new(
+        "MyUnion",
+        vec![],
+        VariantData::Struct(vec![FieldDef::inherited("x", Type::i32())]),
+    );
+    let ts = TokenStream::from(union_def);
+    assert_snapshot!(ts, @"union MyUnion { x: i32 }");
+}
+
+#[test]
+fn test_traitdef_to_tokenstream() {
+    let trait_def = TraitDef::simple("MyTrait", vec![]);
+    let ts = TokenStream::from(trait_def);
+    assert_snapshot!(ts, @"trait MyTrait { }");
+}
+
+#[test]
+fn test_predicatetype_to_tokenstream() {
+    let predicate = PredicateType::new(Type::simple_path("T"), vec![Type::simple_path("Clone")]);
+    let ts = TokenStream::from(predicate);
+    assert_snapshot!(ts, @"T: Clone");
+}
+
+#[test]
+fn test_predicatelifetime_to_tokenstream() {
+    let predicate = PredicateLifetime::new("'a", vec!["'static".to_string()]);
+    let ts = TokenStream::from(predicate);
+    assert_snapshot!(ts, @"''a: ''static");
+}
+
+#[test]
+fn test_wherepredicate_to_tokenstream() {
+    let predicate = WherePredicate::Type(PredicateType::new(
+        Type::simple_path("T"),
+        vec![Type::simple_path("Clone")],
+    ));
+    let ts = TokenStream::from(predicate);
+    assert_snapshot!(ts, @"T: Clone");
+}
+
+#[test]
+fn test_impl_to_tokenstream() {
+    let impl_block = Impl::simple(Type::simple_path("MyStruct"), vec![]);
+    let ts = TokenStream::from(impl_block);
+    assert_snapshot!(ts, @"impl MyStruct { }");
+}
+
+#[test]
+fn test_macrodef_to_tokenstream() {
+    let macro_def = MacroDef::new("my_macro", DelimArgs::from(vec![Token::ident("test")]));
+    let ts = TokenStream::from(macro_def);
+    assert_snapshot!(ts, @"macro_rules! my_macro(test)");
+}
+
+#[test]
+fn test_externblock_to_tokenstream() {
+    let extern_block = ExternBlock::new(false, Option::<String>::None, Block::new(vec![], None));
+    let ts = TokenStream::from(extern_block);
+    assert_snapshot!(ts, @"extern { }");
+}
+
+#[test]
+fn test_externcrate_to_tokenstream() {
+    let extern_crate = ExternCrate::new("std", Option::<String>::None);
+    let ts = TokenStream::from(extern_crate);
+    assert_snapshot!(ts, @"extern crate std;");
+}
+
+#[test]
+fn test_visibilityscope_to_tokenstream() {
+    let scope = VisibilityScope::Crate;
+    let ts = TokenStream::from(scope);
+    assert_snapshot!(ts, @"crate");
+
+    let super_scope = VisibilityScope::Super;
+    let ts = TokenStream::from(super_scope);
+    assert_snapshot!(ts, @"super");
+
+    let self_scope = VisibilityScope::Self_;
+    let ts = TokenStream::from(self_scope);
+    assert_snapshot!(ts, @"self");
+}
+
+#[test]
+fn test_visibility_to_tokenstream() {
+    let public = Visibility::Public;
+    let ts = TokenStream::from(public);
+    assert_snapshot!(ts, @"pub");
+
+    let inherited = Visibility::Inherited;
+    let ts = TokenStream::from(inherited);
+    assert_snapshot!(ts, @"");
+
+    let restricted = Visibility::crate_();
+    let ts = TokenStream::from(restricted);
+    assert_snapshot!(ts, @"pub(crate)");
+}
+
+#[test]
+fn test_usepath_to_tokenstream() {
+    let use_path = UsePath::new("std", UseTree::Name("std".to_string()));
+    let ts = TokenStream::from(use_path);
+    assert_snapshot!(ts, @"std::std");
+}
+
+#[test]
+fn test_userename_to_tokenstream() {
+    let rename = UseRename::new("old_name", "new_name");
+    let ts = TokenStream::from(rename);
+    assert_snapshot!(ts, @"old_name as new_name");
+}
+
+#[test]
+fn test_usetree_to_tokenstream() {
+    let use_tree = UseTree::Path(UsePath::new("std", UseTree::Name("std".to_string())));
+    let ts = TokenStream::from(use_tree);
+    assert_snapshot!(ts, @"std::std");
+
+    let glob_tree = UseTree::Path(UsePath::new("std", UseTree::Glob));
+    let ts = TokenStream::from(glob_tree);
+    assert_snapshot!(ts, @"std::*");
+}
+
+#[test]
+fn test_use_to_tokenstream() {
+    let use_item = Use::from(UseTree::Path(UsePath::new(
+        "std",
+        UseTree::Name("std".to_string()),
+    )));
+    let ts = TokenStream::from(use_item);
+    assert_snapshot!(ts, @"use std::std");
+
+    let use_glob = Use::from(UseTree::Path(UsePath::new("std", UseTree::Glob)));
+    let ts = TokenStream::from(use_glob);
+    assert_snapshot!(ts, @"use std::*");
+
+    let use_group = Use::from(Path::single("std").chain("sync").chain_use_group(vec![
+        UseTree::from(Path::single(PathSegment::new("Arc", None))),
+        UseTree::from(Path::single(PathSegment::new("Mutex", None))),
+        UseTree::from(Path::single(PathSegment::new("MutexGuard", None))),
+    ]));
+    let ts = TokenStream::from(use_group);
+    assert_snapshot!(ts, @"use std::sync::{Arc, Mutex, MutexGuard}");
+}
+
+#[test]
+fn test_staticitem_to_tokenstream() {
+    let static_item = StaticItem {
+        mutability: Mutability::Not,
+        ident: "MY_STATIC".to_string(),
+        ty: Type::i32(),
+        expr: Some(Expr::new(Lit::int("42"))),
+    };
+    let ts = TokenStream::from(static_item);
+    assert_snapshot!(ts, @"static MY_STATIC: i32 = 42");
+}
+
+#[test]
+fn test_constitem_to_tokenstream() {
+    let const_item = ConstItem::new("MY_CONST", Type::i32(), Some(Expr::new(Lit::int("42"))));
+    let ts = TokenStream::from(const_item);
+    assert_snapshot!(ts, @"const MY_CONST: i32 = 42");
+}
+
+#[test]
+fn test_tyalias_to_tokenstream() {
+    let ty_alias = TyAlias {
+        ident: "MyType".to_string(),
+        ty: Some(Type::i32()),
+    };
+    let ts = TokenStream::from(ty_alias);
+    assert_snapshot!(ts, @"type MyType = i32");
+}
+
+#[test]
+fn test_empty_to_tokenstream() {
+    let empty = Empty {};
+    let ts = TokenStream::from(empty);
+    assert_snapshot!(ts, @"");
+}
+
+#[test]
+fn test_semi_to_tokenstream() {
+    let semi = Semi(Expr::new(Lit::int("42")));
+    let ts = TokenStream::from(semi);
+    assert_snapshot!(ts, @"42;");
 }
