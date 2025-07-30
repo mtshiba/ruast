@@ -409,7 +409,7 @@ impl fmt::Display for Token {
 
 impl Token {
     pub fn lit(lit: impl Into<Lit>) -> Self {
-        Self::Lit(lit.into())
+        Self::Lit(lit.into()).into_joint()
     }
 
     pub fn verbatim(lit: impl Into<String>) -> Self {
@@ -522,5 +522,24 @@ impl TokenStream {
             tokens.extend(ts);
         }
         Self(tokens)
+    }
+
+    /// Converts the `TokenStream` into a joint token stream.
+    pub fn into_joint(self) -> Self {
+        self.0
+            .into_iter()
+            .map(Token::into_joint)
+            .collect::<Vec<_>>()
+            .into()
+    }
+
+    /// Convert last token to joint token.
+    pub fn joint_last(mut self) -> Self {
+        if let Some(last) = self.0.last_mut() {
+            if !last.is_joint() {
+                *last = last.clone().into_joint();
+            }
+        }
+        self
     }
 }

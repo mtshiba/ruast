@@ -198,13 +198,13 @@ impl From<BareFn> for TokenStream {
             ts.push(Token::Lit(Lit::str(abi)));
         }
 
-        ts.push(Token::Keyword(KeywordToken::Fn));
+        ts.push(Token::Keyword(KeywordToken::Fn).into_joint());
         ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
         for (i, param) in value.inputs.iter().enumerate() {
             if i > 0 {
                 ts.push(Token::Comma);
             }
-            ts.extend(TokenStream::from(param.clone()));
+            ts.extend(TokenStream::from(param.clone()).joint_last());
         }
         ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         ts.push(Token::RArrow);
@@ -645,20 +645,16 @@ impl From<Type> for TokenStream {
             Type::Slice(ty) => {
                 let mut ts = TokenStream::new();
                 ts.push(Token::OpenDelim(Delimiter::Bracket).into_joint());
-                let mut ty_ts = TokenStream::from(*ty);
-                if let Some(last_token) = ty_ts.last_mut() {
-                    *last_token = last_token.clone().into_joint();
-                }
-                ts.extend(ty_ts);
+                ts.extend(TokenStream::from(*ty).joint_last());
                 ts.push(Token::CloseDelim(Delimiter::Bracket));
                 ts
             }
             Type::Array(ty, len) => {
                 let mut ts = TokenStream::new();
                 ts.push(Token::OpenDelim(Delimiter::Bracket).into_joint());
-                ts.extend(TokenStream::from(*ty));
+                ts.extend(TokenStream::from(*ty).joint_last());
                 ts.push(Token::Semi);
-                ts.extend(TokenStream::from(*len));
+                ts.extend(TokenStream::from(*len).joint_last());
                 ts.push(Token::CloseDelim(Delimiter::Bracket));
                 ts
             }
@@ -670,22 +666,11 @@ impl From<Type> for TokenStream {
             Type::Tuple(tys) => {
                 let mut ts = TokenStream::new();
                 ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-                let len = tys.len();
                 for (i, ty) in tys.into_iter().enumerate() {
                     if i > 0 {
                         ts.push(Token::Comma);
                     }
-                    let mut ty_ts = TokenStream::from(ty);
-                    if i < len - 1 {
-                        if let Some(last_token) = ty_ts.last_mut() {
-                            *last_token = last_token.clone().into_joint();
-                        }
-                    } else if i == len - 1 {
-                        if let Some(last_token) = ty_ts.last_mut() {
-                            *last_token = last_token.clone().into_joint();
-                        }
-                    }
-                    ts.extend(ty_ts);
+                    ts.extend(TokenStream::from(ty).joint_last())
                 }
                 ts.push(Token::CloseDelim(Delimiter::Parenthesis));
                 ts
