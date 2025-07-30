@@ -168,13 +168,13 @@ impl From<Local> for TokenStream {
         let mut ts = TokenStream::new();
         ts.push(Token::Keyword(KeywordToken::Let));
         if let Some(ty) = value.ty {
-            ts.extend(TokenStream::from(value.pat).joint_last());
+            ts.extend(TokenStream::from(value.pat).into_joint());
             ts.push(Token::Colon);
             ts.extend(TokenStream::from(ty));
         } else {
             ts.extend(TokenStream::from(value.pat));
         }
-        ts.extend(TokenStream::from(value.kind).joint_last());
+        ts.extend(TokenStream::from(value.kind).into_joint());
         ts.push(Token::Semi);
         ts
     }
@@ -387,7 +387,7 @@ impl From<StructPat> for TokenStream {
             if i == value.fields.len() - 1 {
                 ts.extend(TokenStream::from(field.clone()));
             } else {
-                ts.extend(TokenStream::from(field.clone()).joint_last());
+                ts.extend(TokenStream::from(field.clone()).into_joint());
             }
         }
         ts.push(Token::CloseDelim(Delimiter::Brace));
@@ -417,13 +417,13 @@ impl fmt::Display for TupleStructPat {
 impl From<TupleStructPat> for TokenStream {
     fn from(value: TupleStructPat) -> Self {
         let mut ts = TokenStream::new();
-        ts.extend(TokenStream::from(value.path).joint_last());
+        ts.extend(TokenStream::from(value.path).into_joint());
         ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
         for (i, pat) in value.pats.iter().enumerate() {
             if i != 0 {
                 ts.push(Token::Comma);
             }
-            ts.extend(TokenStream::from(pat.clone()).joint_last());
+            ts.extend(TokenStream::from(pat.clone()).into_joint());
         }
         ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         ts
@@ -580,7 +580,7 @@ impl From<Pat> for TokenStream {
                         ts.push(Token::Or);
                     }
                     if i == pats.len() - 1 {
-                        ts.extend(TokenStream::from(pat.clone()).joint_last());
+                        ts.extend(TokenStream::from(pat.clone()).into_joint());
                     } else {
                         ts.extend(TokenStream::from(pat.clone()));
                     }
@@ -595,7 +595,7 @@ impl From<Pat> for TokenStream {
                     if i != 0 {
                         ts.push(Token::Comma);
                     }
-                    ts.extend(TokenStream::from(pat.clone()).joint_last());
+                    ts.extend(TokenStream::from(pat.clone()).into_joint());
                 }
                 ts.push(Token::CloseDelim(Delimiter::Parenthesis));
                 ts
@@ -694,7 +694,7 @@ impl fmt::Display for Param {
 impl From<Param> for TokenStream {
     fn from(value: Param) -> Self {
         let mut ts = TokenStream::new();
-        ts.extend(TokenStream::from(value.pat).joint_last());
+        ts.extend(TokenStream::from(value.pat).into_joint());
         if value.ty != Type::ImplicitSelf {
             ts.push(Token::Colon);
             ts.extend(TokenStream::from(value.ty));
@@ -765,7 +765,7 @@ impl From<FnDecl> for TokenStream {
             if i != 0 {
                 ts.push(Token::Comma);
             }
-            ts.extend(TokenStream::from(param.clone()).joint_last());
+            ts.extend(TokenStream::from(param.clone()).into_joint());
         }
         if value.is_variadic {
             ts.push(Token::Comma);
@@ -894,7 +894,7 @@ impl From<Fn> for TokenStream {
                 if i != 0 {
                     ts.push(Token::Comma);
                 }
-                ts.extend(TokenStream::from(generic.clone()).joint_last());
+                ts.extend(TokenStream::from(generic.clone()).into_joint());
             }
             ts.push(Token::Gt.into_joint());
         }
@@ -1535,7 +1535,7 @@ impl From<VariantData> for TokenStream {
                     if i != 0 {
                         ts.push(Token::Comma);
                     }
-                    ts.extend(TokenStream::from(field.clone()).joint_last());
+                    ts.extend(TokenStream::from(field.clone()).into_joint());
                 }
                 ts.push(Token::CloseDelim(Delimiter::Parenthesis));
                 ts
@@ -1550,7 +1550,7 @@ impl From<VariantData> for TokenStream {
                     if i == fields.len() - 1 {
                         ts.extend(TokenStream::from(field.clone()));
                     } else {
-                        ts.extend(TokenStream::from(field.clone()).joint_last());
+                        ts.extend(TokenStream::from(field.clone()).into_joint());
                     }
                 }
                 ts.push(Token::CloseDelim(Delimiter::Brace));
@@ -1777,13 +1777,13 @@ impl From<EnumDef> for TokenStream {
                 if i != 0 {
                     ts.push(Token::Comma);
                 }
-                ts.extend(TokenStream::from(generic.clone()).joint_last());
+                ts.extend(TokenStream::from(generic.clone()).into_joint());
             }
             ts.push(Token::Gt);
         }
         ts.push(Token::OpenDelim(Delimiter::Brace));
         for variant in value.variants.iter() {
-            ts.extend(TokenStream::from(variant.clone()).joint_last());
+            ts.extend(TokenStream::from(variant.clone()).into_joint());
             ts.push(Token::Comma);
         }
         ts.push(Token::CloseDelim(Delimiter::Brace));
@@ -2140,7 +2140,7 @@ impl From<TraitDef> for TokenStream {
                 if i != 0 {
                     ts.push(Token::Comma);
                 }
-                ts.extend(TokenStream::from(generic.clone()).joint_last());
+                ts.extend(TokenStream::from(generic.clone()).into_joint());
             }
             ts.push(Token::Gt);
         }
@@ -2252,7 +2252,7 @@ impl fmt::Display for PredicateType {
 impl From<PredicateType> for TokenStream {
     fn from(value: PredicateType) -> Self {
         let mut ts = TokenStream::new();
-        ts.extend(TokenStream::from(value.bounded_ty).joint_last());
+        ts.extend(TokenStream::from(value.bounded_ty).into_joint());
         ts.push(Token::Colon);
         for (i, bound) in value.bounds.iter().enumerate() {
             if i != 0 {
@@ -2413,7 +2413,7 @@ impl From<Impl> for TokenStream {
                 if i != 0 {
                     ts.push(Token::Comma);
                 }
-                ts.extend(TokenStream::from(generic.clone()).joint_last());
+                ts.extend(TokenStream::from(generic.clone()).into_joint());
             }
             ts.push(Token::Gt);
         }
@@ -2428,7 +2428,7 @@ impl From<Impl> for TokenStream {
                 if i != 0 {
                     ts.push(Token::Comma);
                 }
-                ts.extend(TokenStream::from(clause.clone()).joint_last());
+                ts.extend(TokenStream::from(clause.clone()).into_joint());
             }
         }
         ts.push(Token::OpenDelim(Delimiter::Brace));
@@ -2819,7 +2819,7 @@ impl From<Visibility> for TokenStream {
                 let mut ts = TokenStream::new();
                 ts.push(Token::Keyword(KeywordToken::Pub).into_joint());
                 ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-                ts.extend(TokenStream::from(scope).joint_last());
+                ts.extend(TokenStream::from(scope).into_joint());
                 ts.push(Token::CloseDelim(Delimiter::Parenthesis));
                 ts
             }
@@ -3108,7 +3108,7 @@ impl From<UseTree> for TokenStream {
                     if i != 0 {
                         ts.push(Token::Comma);
                     }
-                    ts.extend(TokenStream::from(tree.clone()).joint_last());
+                    ts.extend(TokenStream::from(tree.clone()).into_joint());
                 }
                 ts.push(Token::CloseDelim(Delimiter::Brace));
                 ts
@@ -3410,7 +3410,7 @@ impl fmt::Display for Semi {
 impl From<Semi> for TokenStream {
     fn from(value: Semi) -> Self {
         let mut ts = TokenStream::new();
-        ts.extend(TokenStream::from(value.0).joint_last());
+        ts.extend(TokenStream::from(value.0).into_joint());
         ts.push(Token::Semi);
         ts
     }

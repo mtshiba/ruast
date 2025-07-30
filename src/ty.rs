@@ -204,7 +204,7 @@ impl From<BareFn> for TokenStream {
             if i > 0 {
                 ts.push(Token::Comma);
             }
-            ts.extend(TokenStream::from(param.clone()).joint_last());
+            ts.extend(TokenStream::from(param.clone()).into_joint());
         }
         ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         ts.push(Token::RArrow);
@@ -645,16 +645,16 @@ impl From<Type> for TokenStream {
             Type::Slice(ty) => {
                 let mut ts = TokenStream::new();
                 ts.push(Token::OpenDelim(Delimiter::Bracket).into_joint());
-                ts.extend(TokenStream::from(*ty).joint_last());
+                ts.extend(TokenStream::from(*ty).into_joint());
                 ts.push(Token::CloseDelim(Delimiter::Bracket));
                 ts
             }
             Type::Array(ty, len) => {
                 let mut ts = TokenStream::new();
                 ts.push(Token::OpenDelim(Delimiter::Bracket).into_joint());
-                ts.extend(TokenStream::from(*ty).joint_last());
+                ts.extend(TokenStream::from(*ty).into_joint());
                 ts.push(Token::Semi);
-                ts.extend(TokenStream::from(*len).joint_last());
+                ts.extend(TokenStream::from(*len).into_joint());
                 ts.push(Token::CloseDelim(Delimiter::Bracket));
                 ts
             }
@@ -670,7 +670,7 @@ impl From<Type> for TokenStream {
                     if i > 0 {
                         ts.push(Token::Comma);
                     }
-                    ts.extend(TokenStream::from(ty).joint_last())
+                    ts.extend(TokenStream::from(ty).into_joint())
                 }
                 ts.push(Token::CloseDelim(Delimiter::Parenthesis));
                 ts

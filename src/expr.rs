@@ -526,7 +526,7 @@ impl From<AttributeItem> for TokenStream {
             Token::Pound.into_joint(),
             Token::OpenDelim(Delimiter::Bracket).into_joint(),
         ]);
-        ts.extend(TokenStream::from(attr.path).joint_last());
+        ts.extend(TokenStream::from(attr.path).into_joint());
         ts.extend(TokenStream::from(attr.args));
         ts.push(Token::CloseDelim(Delimiter::Bracket));
         ts
@@ -671,7 +671,7 @@ impl From<Array> for TokenStream {
             if i > 0 {
                 ts.push(Token::Comma);
             }
-            ts.extend(TokenStream::from(expr).joint_last());
+            ts.extend(TokenStream::from(expr).into_joint());
         }
         ts.push(Token::CloseDelim(Delimiter::Bracket));
         ts
@@ -725,7 +725,7 @@ impl From<Tuple> for TokenStream {
             if i > 0 {
                 ts.push(Token::Comma);
             }
-            ts.extend(TokenStream::from(expr).joint_last());
+            ts.extend(TokenStream::from(expr).into_joint());
         }
         ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         ts
@@ -772,7 +772,7 @@ impl From<Binary> for TokenStream {
         let precedence = value.precedence();
         if precedence < value.lhs.precedence() {
             ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-            ts.extend(TokenStream::from(*value.lhs).joint_last());
+            ts.extend(TokenStream::from(*value.lhs).into_joint());
             ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         } else {
             ts.extend(TokenStream::from(*value.lhs));
@@ -780,7 +780,7 @@ impl From<Binary> for TokenStream {
         ts.push(Token::from(value.op));
         if precedence < value.rhs.precedence() {
             ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-            ts.extend(TokenStream::from(*value.rhs).joint_last());
+            ts.extend(TokenStream::from(*value.rhs).into_joint());
             ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         } else {
             ts.extend(TokenStream::from(*value.rhs));
@@ -897,7 +897,7 @@ impl From<Unary> for TokenStream {
         ts.push(Token::from(value.op));
         if precedence < value.expr.precedence() {
             ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-            ts.extend(TokenStream::from(*value.expr).joint_last());
+            ts.extend(TokenStream::from(*value.expr).into_joint());
             ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         } else {
             ts.extend(TokenStream::from(*value.expr));
@@ -1293,7 +1293,7 @@ impl From<Match> for TokenStream {
         ts.extend(TokenStream::from(*value.expr));
         ts.push(Token::OpenDelim(Delimiter::Brace));
         for arm in value.arms {
-            ts.extend(TokenStream::from(arm).joint_last());
+            ts.extend(TokenStream::from(arm).into_joint());
             ts.push(Token::Comma);
         }
         ts.push(Token::CloseDelim(Delimiter::Brace));
@@ -1374,10 +1374,10 @@ impl From<Closure> for TokenStream {
         ts.push(Token::Or.into_joint());
         let mut iter = value.fn_decl.inputs.iter();
         if let Some(input) = iter.next() {
-            ts.extend(TokenStream::from(input.clone()).joint_last());
+            ts.extend(TokenStream::from(input.clone()).into_joint());
             for input in iter {
                 ts.push(Token::Comma);
-                ts.extend(TokenStream::from(input.clone()).joint_last());
+                ts.extend(TokenStream::from(input.clone()).into_joint());
             }
         }
         ts.push(Token::Or);
@@ -1499,10 +1499,10 @@ impl From<Await> for TokenStream {
         let precedence = value.precedence();
         if precedence < value.expr.precedence() {
             ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-            ts.extend(TokenStream::from(*value.expr).joint_last());
+            ts.extend(TokenStream::from(*value.expr).into_joint());
             ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         } else {
-            ts.extend(TokenStream::from(*value.expr).joint_last());
+            ts.extend(TokenStream::from(*value.expr).into_joint());
         }
         ts.push(Token::Dot.into_joint());
         ts.push(Token::Keyword(KeywordToken::Await));
@@ -1589,10 +1589,10 @@ impl From<Field> for TokenStream {
         let precedence = value.precedence();
         if precedence < value.expr.precedence() {
             ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-            ts.extend(TokenStream::from(*value.expr).joint_last());
+            ts.extend(TokenStream::from(*value.expr).into_joint());
             ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         } else {
-            ts.extend(TokenStream::from(*value.expr).joint_last());
+            ts.extend(TokenStream::from(*value.expr).into_joint());
         }
         ts.push(Token::Dot.into_joint());
         ts.push(Token::ident(value.ident).into_joint());
@@ -1639,13 +1639,13 @@ impl From<Index> for TokenStream {
         let precedence = value.precedence();
         if precedence < value.expr.precedence() {
             ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-            ts.extend(TokenStream::from(*value.expr).joint_last());
+            ts.extend(TokenStream::from(*value.expr).into_joint());
             ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         } else {
-            ts.extend(TokenStream::from(*value.expr).joint_last());
+            ts.extend(TokenStream::from(*value.expr).into_joint());
         }
         ts.push(Token::OpenDelim(Delimiter::Bracket).into_joint());
-        ts.extend(TokenStream::from(*value.index).joint_last());
+        ts.extend(TokenStream::from(*value.index).into_joint());
         ts.push(Token::CloseDelim(Delimiter::Bracket));
         ts
     }
@@ -1727,10 +1727,10 @@ impl From<Range> for TokenStream {
         if let Some(start) = value.start {
             if precedence < start.precedence() {
                 ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-                ts.extend(TokenStream::from(*start).joint_last());
+                ts.extend(TokenStream::from(*start).into_joint());
                 ts.push(Token::CloseDelim(Delimiter::Parenthesis));
             } else {
-                ts.extend(TokenStream::from(*start).joint_last());
+                ts.extend(TokenStream::from(*start).into_joint());
             }
         }
         match value.limits {
@@ -1902,7 +1902,7 @@ impl From<Assign> for TokenStream {
         let precedence = value.precedence();
         if precedence < value.lhs.precedence() {
             ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-            ts.extend(TokenStream::from(*value.lhs).joint_last());
+            ts.extend(TokenStream::from(*value.lhs).into_joint());
             ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         } else {
             ts.extend(TokenStream::from(*value.lhs));
@@ -1910,7 +1910,7 @@ impl From<Assign> for TokenStream {
         ts.push(Token::Eq);
         if precedence < value.rhs.precedence() {
             ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-            ts.extend(TokenStream::from(*value.rhs).joint_last());
+            ts.extend(TokenStream::from(*value.rhs).into_joint());
             ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         } else {
             ts.extend(TokenStream::from(*value.rhs));
@@ -2098,7 +2098,7 @@ impl From<AssignOp> for TokenStream {
         let precedence = value.precedence();
         if precedence < value.lhs.precedence() {
             ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-            ts.extend(TokenStream::from(*value.lhs).joint_last());
+            ts.extend(TokenStream::from(*value.lhs).into_joint());
             ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         } else {
             ts.extend(TokenStream::from(*value.lhs));
@@ -2106,7 +2106,7 @@ impl From<AssignOp> for TokenStream {
         ts.push(Token::from(value.op));
         if precedence < value.rhs.precedence() {
             ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-            ts.extend(TokenStream::from(*value.rhs).joint_last());
+            ts.extend(TokenStream::from(*value.rhs).into_joint());
             ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         } else {
             ts.extend(TokenStream::from(*value.rhs));
@@ -2244,7 +2244,7 @@ impl From<Cast> for TokenStream {
         let precedence = value.precedence();
         if precedence < value.expr.precedence() {
             ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-            ts.extend(TokenStream::from(*value.expr).joint_last());
+            ts.extend(TokenStream::from(*value.expr).into_joint());
             ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         } else {
             ts.extend(TokenStream::from(*value.expr));
@@ -2294,10 +2294,10 @@ impl From<TypeAscription> for TokenStream {
         let precedence = value.precedence();
         if precedence < value.expr.precedence() {
             ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-            ts.extend(TokenStream::from(*value.expr).joint_last());
+            ts.extend(TokenStream::from(*value.expr).into_joint());
             ts.push(Token::CloseDelim(Delimiter::Parenthesis).into_joint());
         } else {
-            ts.extend(TokenStream::from(*value.expr).joint_last());
+            ts.extend(TokenStream::from(*value.expr).into_joint());
         }
         ts.push(Token::Colon);
         ts.extend(TokenStream::from(value.ty));
@@ -2350,17 +2350,17 @@ impl From<Call> for TokenStream {
         let precedence = value.precedence();
         if precedence < value.func.precedence() {
             ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-            ts.extend(TokenStream::from(*value.func).joint_last());
+            ts.extend(TokenStream::from(*value.func).into_joint());
             ts.push(Token::CloseDelim(Delimiter::Parenthesis).into_joint());
         } else {
-            ts.extend(TokenStream::from(*value.func).joint_last());
+            ts.extend(TokenStream::from(*value.func).into_joint());
         }
         ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
         for (i, arg) in value.args.iter().enumerate() {
             if i > 0 {
                 ts.push(Token::Comma);
             }
-            ts.extend(TokenStream::from(arg.clone()).joint_last());
+            ts.extend(TokenStream::from(arg.clone()).into_joint());
         }
         ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         ts
@@ -2424,19 +2424,19 @@ impl From<MethodCall> for TokenStream {
         let precedence = value.precedence();
         if precedence < value.receiver.precedence() {
             ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-            ts.extend(TokenStream::from(*value.receiver).joint_last());
+            ts.extend(TokenStream::from(*value.receiver).into_joint());
             ts.push(Token::CloseDelim(Delimiter::Parenthesis).into_joint());
         } else {
-            ts.extend(TokenStream::from(*value.receiver).joint_last());
+            ts.extend(TokenStream::from(*value.receiver).into_joint());
         }
         ts.push(Token::Dot.into_joint());
-        ts.extend(TokenStream::from(value.seg).joint_last());
+        ts.extend(TokenStream::from(value.seg).into_joint());
         ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
         for (i, arg) in value.args.iter().enumerate() {
             if i > 0 {
                 ts.push(Token::Comma);
             }
-            ts.extend(TokenStream::from(arg.clone()).joint_last());
+            ts.extend(TokenStream::from(arg.clone()).into_joint());
         }
         ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         ts
@@ -2493,7 +2493,7 @@ impl From<Path> for TokenStream {
             if i == value.segments.len() - 1 {
                 ts.extend(TokenStream::from(segment.clone()));
             } else {
-                ts.extend(TokenStream::from(segment.clone()).joint_last());
+                ts.extend(TokenStream::from(segment.clone()).into_joint());
             }
         }
         ts
@@ -2597,7 +2597,7 @@ impl From<PathSegment> for TokenStream {
                 if i > 0 {
                     ts.push(Token::Comma);
                 }
-                ts.extend(TokenStream::from(arg.clone()).joint_last());
+                ts.extend(TokenStream::from(arg.clone()).into_joint());
             }
             ts.push(Token::Gt);
         } else {
@@ -2927,7 +2927,7 @@ impl From<DelimArgs> for TokenStream {
                 ts.push(Token::OpenDelim(Delimiter::Brace).into_joint());
             }
         }
-        ts.extend(value.tokens.joint_last());
+        ts.extend(value.tokens.into_joint());
         match value.delim {
             MacDelimiter::Parenthesis => {
                 ts.push(Token::CloseDelim(Delimiter::Parenthesis).into_joint());
@@ -2996,7 +2996,7 @@ impl fmt::Display for MacCall {
 impl From<MacCall> for TokenStream {
     fn from(value: MacCall) -> Self {
         let mut ts = TokenStream::new();
-        ts.extend(TokenStream::from(value.path).joint_last());
+        ts.extend(TokenStream::from(value.path).into_joint());
         ts.push(Token::Not.into_joint());
         ts.extend(TokenStream::from(value.args));
         ts
@@ -3100,7 +3100,7 @@ impl From<Struct> for TokenStream {
             if i == value.fields.len() - 1 {
                 ts.extend(TokenStream::from(field.clone()));
             } else {
-                ts.extend(TokenStream::from(field.clone()).joint_last());
+                ts.extend(TokenStream::from(field.clone()).into_joint());
             }
         }
         ts.push(Token::CloseDelim(Delimiter::Brace));
@@ -3140,9 +3140,9 @@ impl From<Repeat> for TokenStream {
     fn from(value: Repeat) -> Self {
         let mut ts = TokenStream::new();
         ts.push(Token::OpenDelim(Delimiter::Bracket).into_joint());
-        ts.extend(TokenStream::from(*value.expr).joint_last());
+        ts.extend(TokenStream::from(*value.expr).into_joint());
         ts.push(Token::Semi);
-        ts.extend(TokenStream::from(*value.len).joint_last());
+        ts.extend(TokenStream::from(*value.len).into_joint());
         ts.push(Token::CloseDelim(Delimiter::Bracket));
         ts
     }
@@ -3185,10 +3185,10 @@ impl From<Try> for TokenStream {
         let precedence = value.precedence();
         if precedence < value.expr.precedence() {
             ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-            ts.extend(TokenStream::from(*value.expr).joint_last());
+            ts.extend(TokenStream::from(*value.expr).into_joint());
             ts.push(Token::CloseDelim(Delimiter::Parenthesis).into_joint());
         } else {
-            ts.extend(TokenStream::from(*value.expr).joint_last());
+            ts.extend(TokenStream::from(*value.expr).into_joint());
         }
         ts.push(Token::Question);
         ts
