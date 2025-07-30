@@ -168,7 +168,7 @@ impl From<Local> for TokenStream {
         let mut ts = TokenStream::new();
         ts.push(Token::Keyword(KeywordToken::Let));
         if let Some(ty) = value.ty {
-            ts.extend(TokenStream::from(value.pat).into_joint());
+            ts.extend(TokenStream::from(value.pat).joint_last());
             ts.push(Token::Colon);
             ts.extend(TokenStream::from(ty));
         } else {
@@ -417,13 +417,13 @@ impl fmt::Display for TupleStructPat {
 impl From<TupleStructPat> for TokenStream {
     fn from(value: TupleStructPat) -> Self {
         let mut ts = TokenStream::new();
-        ts.extend(TokenStream::from(value.path).into_joint());
+        ts.extend(TokenStream::from(value.path).joint_last());
         ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
         for (i, pat) in value.pats.iter().enumerate() {
             if i != 0 {
                 ts.push(Token::Comma);
             }
-            ts.extend(TokenStream::from(pat.clone()).into_joint());
+            ts.extend(TokenStream::from(pat.clone()).joint_last());
         }
         ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         ts
@@ -694,7 +694,7 @@ impl fmt::Display for Param {
 impl From<Param> for TokenStream {
     fn from(value: Param) -> Self {
         let mut ts = TokenStream::new();
-        ts.extend(TokenStream::from(value.pat).into_joint());
+        ts.extend(TokenStream::from(value.pat).joint_last());
         if value.ty != Type::ImplicitSelf {
             ts.push(Token::Colon);
             ts.extend(TokenStream::from(value.ty));
@@ -894,7 +894,7 @@ impl From<Fn> for TokenStream {
                 if i != 0 {
                     ts.push(Token::Comma);
                 }
-                ts.extend(TokenStream::from(generic.clone()).into_joint());
+                ts.extend(TokenStream::from(generic.clone()).joint_last());
             }
             ts.push(Token::Gt.into_joint());
         }
@@ -1550,7 +1550,7 @@ impl From<VariantData> for TokenStream {
                     if i == fields.len() - 1 {
                         ts.extend(TokenStream::from(field.clone()));
                     } else {
-                        ts.extend(TokenStream::from(field.clone()).into_joint());
+                        ts.extend(TokenStream::from(field.clone()).joint_last());
                     }
                 }
                 ts.push(Token::CloseDelim(Delimiter::Brace));

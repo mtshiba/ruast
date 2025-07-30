@@ -526,7 +526,7 @@ impl From<AttributeItem> for TokenStream {
             Token::Pound.into_joint(),
             Token::OpenDelim(Delimiter::Bracket).into_joint(),
         ]);
-        ts.extend(TokenStream::from(attr.path).into_joint());
+        ts.extend(TokenStream::from(attr.path).joint_last());
         ts.extend(TokenStream::from(attr.args));
         ts.push(Token::CloseDelim(Delimiter::Bracket));
         ts
@@ -897,7 +897,7 @@ impl From<Unary> for TokenStream {
         ts.push(Token::from(value.op));
         if precedence < value.expr.precedence() {
             ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-            ts.extend(TokenStream::from(*value.expr).into_joint());
+            ts.extend(TokenStream::from(*value.expr).joint_last());
             ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         } else {
             ts.extend(TokenStream::from(*value.expr));
@@ -1377,7 +1377,7 @@ impl From<Closure> for TokenStream {
             ts.extend(TokenStream::from(input.clone()).joint_last());
             for input in iter {
                 ts.push(Token::Comma);
-                ts.extend(TokenStream::from(input.clone()).into_joint());
+                ts.extend(TokenStream::from(input.clone()).joint_last());
             }
         }
         ts.push(Token::Or);
@@ -2427,7 +2427,7 @@ impl From<MethodCall> for TokenStream {
             ts.extend(TokenStream::from(*value.receiver).joint_last());
             ts.push(Token::CloseDelim(Delimiter::Parenthesis).into_joint());
         } else {
-            ts.extend(TokenStream::from(*value.receiver).into_joint());
+            ts.extend(TokenStream::from(*value.receiver).joint_last());
         }
         ts.push(Token::Dot.into_joint());
         ts.extend(TokenStream::from(value.seg).joint_last());
