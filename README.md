@@ -98,8 +98,8 @@ use ruast::*;
 
 let mut krate = Crate::new();
 let def = StructDef::empty("Foo")
-    .with_field(FieldDef::inherited("foo", Type::from("u32")))
-    .with_field(FieldDef::inherited("bar", Type::from("u32")));
+    .with_field(FieldDef::inherited("foo", Type::u32()))
+    .with_field(FieldDef::inherited("bar", Type::u32()));
 krate.add_item(def);
 let imp = Impl::empty("Foo")
     .with_item(Fn::empty_method("test", Pat::ref_self()));
@@ -113,7 +113,7 @@ use ruast::*;
 let mut krate = Crate::new();
 let def = EnumDef::empty("Foo")
     .with_variant(Variant::empty("Bar"))
-    .with_variant(Variant::tuple("Baz", vec![FieldDef::anonymous("u32")]));
+    .with_variant(Variant::tuple("Baz", vec![FieldDef::anonymous(Type::u32())]));
 krate.add_item(def);
 let imp = Impl::empty("Foo")
     .with_item(Fn::empty_method("test", Pat::ref_self()));
