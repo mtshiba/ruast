@@ -6,6 +6,7 @@ description = "A printable & modifiable Rust AST"
 authors = ["Shunsuke Shibayama <sbym1346@gmail.com>"]
 license = "MIT OR Apache-2.0"
 categories = ["parsing"]
+keywords = ["ast", "rust", "syntax", "proc-macro", "code-generation"]
 repository = "https://github.com/mtshiba/ruast"
 homepage = "https://docs.rs/ruast"
 
