@@ -167,12 +167,14 @@ impl From<Local> for TokenStream {
     fn from(value: Local) -> Self {
         let mut ts = TokenStream::new();
         ts.push(Token::Keyword(KeywordToken::Let));
-        ts.extend(TokenStream::from(value.pat));
         if let Some(ty) = value.ty {
+            ts.extend(TokenStream::from(value.pat).into_joint());
             ts.push(Token::Colon);
             ts.extend(TokenStream::from(ty));
+        } else {
+            ts.extend(TokenStream::from(value.pat));
         }
-        ts.extend(TokenStream::from(value.kind));
+        ts.extend(TokenStream::from(value.kind).into_joint());
         ts.push(Token::Semi);
         ts
     }
@@ -271,7 +273,7 @@ impl fmt::Display for PatField {
 impl From<PatField> for TokenStream {
     fn from(value: PatField) -> Self {
         let mut ts = TokenStream::new();
-        ts.push(Token::ident(value.ident));
+        ts.push(Token::ident(value.ident).into_joint());
         ts.push(Token::Colon);
         ts.extend(TokenStream::from(value.pat));
         ts
@@ -382,7 +384,11 @@ impl From<StructPat> for TokenStream {
             if i != 0 {
                 ts.push(Token::Comma);
             }
-            ts.extend(TokenStream::from(field.clone()));
+            if i == value.fields.len() - 1 {
+                ts.extend(TokenStream::from(field.clone()));
+            } else {
+                ts.extend(TokenStream::from(field.clone()).into_joint());
+            }
         }
         ts.push(Token::CloseDelim(Delimiter::Brace));
         ts
@@ -411,13 +417,13 @@ impl fmt::Display for TupleStructPat {
 impl From<TupleStructPat> for TokenStream {
     fn from(value: TupleStructPat) -> Self {
         let mut ts = TokenStream::new();
-        ts.extend(TokenStream::from(value.path));
-        ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+        ts.extend(TokenStream::from(value.path).into_joint());
+        ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
         for (i, pat) in value.pats.iter().enumerate() {
             if i != 0 {
                 ts.push(Token::Comma);
             }
-            ts.extend(TokenStream::from(pat.clone()));
+            ts.extend(TokenStream::from(pat.clone()).into_joint());
         }
         ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         ts
@@ -460,9 +466,11 @@ impl fmt::Display for RefPat {
 impl From<RefPat> for TokenStream {
     fn from(value: RefPat) -> Self {
         let mut ts = TokenStream::new();
-        ts.push(Token::And);
         if value.is_mut {
+            ts.push(Token::And.into_joint());
             ts.push(Token::Keyword(KeywordToken::Mut));
+        } else {
+            ts.push(Token::And);
         }
         ts.extend(TokenStream::from(*value.pat));
         ts
@@ -566,24 +574,28 @@ impl From<Pat> for TokenStream {
             Pat::TupleStruct(tuple_struct_pat) => TokenStream::from(tuple_struct_pat),
             Pat::Or(pats) => {
                 let mut ts = TokenStream::new();
-                ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+                ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
                 for (i, pat) in pats.iter().enumerate() {
                     if i != 0 {
                         ts.push(Token::Or);
                     }
-                    ts.extend(TokenStream::from(pat.clone()));
+                    if i == pats.len() - 1 {
+                        ts.extend(TokenStream::from(pat.clone()).into_joint());
+                    } else {
+                        ts.extend(TokenStream::from(pat.clone()));
+                    }
                 }
                 ts.push(Token::CloseDelim(Delimiter::Parenthesis));
                 ts
             }
             Pat::Tuple(pats) => {
                 let mut ts = TokenStream::new();
-                ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+                ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
                 for (i, pat) in pats.iter().enumerate() {
                     if i != 0 {
                         ts.push(Token::Comma);
                     }
-                    ts.extend(TokenStream::from(pat.clone()));
+                    ts.extend(TokenStream::from(pat.clone()).into_joint());
                 }
                 ts.push(Token::CloseDelim(Delimiter::Parenthesis));
                 ts
@@ -682,7 +694,7 @@ impl fmt::Display for Param {
 impl From<Param> for TokenStream {
     fn from(value: Param) -> Self {
         let mut ts = TokenStream::new();
-        ts.extend(TokenStream::from(value.pat));
+        ts.extend(TokenStream::from(value.pat).into_joint());
         if value.ty != Type::ImplicitSelf {
             ts.push(Token::Colon);
             ts.extend(TokenStream::from(value.ty));
@@ -748,12 +760,12 @@ impl fmt::Display for FnDecl {
 impl From<FnDecl> for TokenStream {
     fn from(value: FnDecl) -> Self {
         let mut ts = TokenStream::new();
-        ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+        ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
         for (i, param) in value.inputs.iter().enumerate() {
             if i != 0 {
                 ts.push(Token::Comma);
             }
-            ts.extend(TokenStream::from(param.clone()));
+            ts.extend(TokenStream::from(param.clone()).into_joint());
         }
         if value.is_variadic {
             ts.push(Token::Comma);
@@ -875,16 +887,16 @@ impl From<Fn> for TokenStream {
             ts.push(Token::lit(format!("\"{abi}\"")));
         }
         ts.push(Token::Keyword(KeywordToken::Fn));
-        ts.push(Token::ident(value.ident));
+        ts.push(Token::ident(value.ident).into_joint());
         if !value.generics.is_empty() {
-            ts.push(Token::Lt);
+            ts.push(Token::Lt.into_joint());
             for (i, generic) in value.generics.iter().enumerate() {
                 if i != 0 {
                     ts.push(Token::Comma);
                 }
-                ts.extend(TokenStream::from(generic.clone()));
+                ts.extend(TokenStream::from(generic.clone()).into_joint());
             }
-            ts.push(Token::Gt);
+            ts.push(Token::Gt.into_joint());
         }
         ts.extend(TokenStream::from(value.fn_decl));
         if let Some(body) = value.body {
@@ -1426,7 +1438,7 @@ impl From<FieldDef> for TokenStream {
         }
         ts.extend(TokenStream::from(value.vis));
         if let Some(ident) = value.ident {
-            ts.push(Token::ident(ident));
+            ts.push(Token::ident(ident).into_joint());
             ts.push(Token::Colon);
         }
         ts.extend(TokenStream::from(value.ty));
@@ -1518,12 +1530,12 @@ impl From<VariantData> for TokenStream {
             VariantData::Unit => TokenStream::new(),
             VariantData::Tuple(fields) => {
                 let mut ts = TokenStream::new();
-                ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+                ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
                 for (i, field) in fields.iter().enumerate() {
                     if i != 0 {
                         ts.push(Token::Comma);
                     }
-                    ts.extend(TokenStream::from(field.clone()));
+                    ts.extend(TokenStream::from(field.clone()).into_joint());
                 }
                 ts.push(Token::CloseDelim(Delimiter::Parenthesis));
                 ts
@@ -1535,7 +1547,11 @@ impl From<VariantData> for TokenStream {
                     if i != 0 {
                         ts.push(Token::Comma);
                     }
-                    ts.extend(TokenStream::from(field.clone()));
+                    if i == fields.len() - 1 {
+                        ts.extend(TokenStream::from(field.clone()));
+                    } else {
+                        ts.extend(TokenStream::from(field.clone()).into_joint());
+                    }
                 }
                 ts.push(Token::CloseDelim(Delimiter::Brace));
                 ts
@@ -1651,7 +1667,7 @@ impl From<Variant> for TokenStream {
     fn from(value: Variant) -> Self {
         let mut ts = TokenStream::new();
         ts.extend(TokenStream::from(value.vis));
-        ts.push(Token::ident(value.ident));
+        ts.push(Token::ident(value.ident).into_joint());
         ts.extend(TokenStream::from(value.data));
         if let Some(disr_expr) = value.disr_expr {
             ts.push(Token::Eq);
@@ -1756,18 +1772,18 @@ impl From<EnumDef> for TokenStream {
         ts.push(Token::Keyword(KeywordToken::Enum));
         ts.push(Token::ident(value.ident));
         if !value.generics.is_empty() {
-            ts.push(Token::Lt);
+            ts.push(Token::Lt.into_joint());
             for (i, generic) in value.generics.iter().enumerate() {
                 if i != 0 {
                     ts.push(Token::Comma);
                 }
-                ts.extend(TokenStream::from(generic.clone()));
+                ts.extend(TokenStream::from(generic.clone()).into_joint());
             }
             ts.push(Token::Gt);
         }
         ts.push(Token::OpenDelim(Delimiter::Brace));
         for variant in value.variants.iter() {
-            ts.extend(TokenStream::from(variant.clone()));
+            ts.extend(TokenStream::from(variant.clone()).into_joint());
             ts.push(Token::Comma);
         }
         ts.push(Token::CloseDelim(Delimiter::Brace));
@@ -2119,12 +2135,12 @@ impl From<TraitDef> for TokenStream {
         ts.push(Token::Keyword(KeywordToken::Trait));
         ts.push(Token::ident(value.ident));
         if !value.generics.is_empty() {
-            ts.push(Token::Lt);
+            ts.push(Token::Lt.into_joint());
             for (i, generic) in value.generics.iter().enumerate() {
                 if i != 0 {
                     ts.push(Token::Comma);
                 }
-                ts.extend(TokenStream::from(generic.clone()));
+                ts.extend(TokenStream::from(generic.clone()).into_joint());
             }
             ts.push(Token::Gt);
         }
@@ -2236,7 +2252,7 @@ impl fmt::Display for PredicateType {
 impl From<PredicateType> for TokenStream {
     fn from(value: PredicateType) -> Self {
         let mut ts = TokenStream::new();
-        ts.extend(TokenStream::from(value.bounded_ty));
+        ts.extend(TokenStream::from(value.bounded_ty).into_joint());
         ts.push(Token::Colon);
         for (i, bound) in value.bounds.iter().enumerate() {
             if i != 0 {
@@ -2288,7 +2304,7 @@ impl fmt::Display for PredicateLifetime {
 impl From<PredicateLifetime> for TokenStream {
     fn from(value: PredicateLifetime) -> Self {
         let mut ts = TokenStream::new();
-        ts.push(Token::lifetime(value.lifetime));
+        ts.push(Token::lifetime(value.lifetime).into_joint());
         ts.push(Token::Colon);
         for (i, bound) in value.bounds.iter().enumerate() {
             if i != 0 {
@@ -2392,12 +2408,12 @@ impl From<Impl> for TokenStream {
         let mut ts = TokenStream::new();
         ts.push(Token::Keyword(KeywordToken::Impl));
         if !value.generics.is_empty() {
-            ts.push(Token::Lt);
+            ts.push(Token::Lt.into_joint());
             for (i, generic) in value.generics.iter().enumerate() {
                 if i != 0 {
                     ts.push(Token::Comma);
                 }
-                ts.extend(TokenStream::from(generic.clone()));
+                ts.extend(TokenStream::from(generic.clone()).into_joint());
             }
             ts.push(Token::Gt);
         }
@@ -2412,7 +2428,7 @@ impl From<Impl> for TokenStream {
                 if i != 0 {
                     ts.push(Token::Comma);
                 }
-                ts.extend(TokenStream::from(clause.clone()));
+                ts.extend(TokenStream::from(clause.clone()).into_joint());
             }
         }
         ts.push(Token::OpenDelim(Delimiter::Brace));
@@ -2525,9 +2541,9 @@ impl fmt::Display for MacroDef {
 impl From<MacroDef> for TokenStream {
     fn from(value: MacroDef) -> Self {
         let mut ts = TokenStream::new();
-        ts.push(Token::ident("macro_rules"));
+        ts.push(Token::ident("macro_rules").into_joint());
         ts.push(Token::Not);
-        ts.push(Token::ident(value.ident));
+        ts.push(Token::ident(value.ident).into_joint());
         ts.extend(TokenStream::from(value.args));
         ts
     }
@@ -2689,10 +2705,13 @@ impl From<ExternCrate> for TokenStream {
         let mut ts = TokenStream::new();
         ts.push(Token::Keyword(KeywordToken::Extern));
         ts.push(Token::Keyword(KeywordToken::Crate));
-        ts.push(Token::ident(value.ident));
+
         if let Some(alias) = value.alias {
+            ts.push(Token::ident(value.ident));
             ts.push(Token::Keyword(KeywordToken::As));
-            ts.push(Token::ident(alias));
+            ts.push(Token::ident(alias).into_joint());
+        } else {
+            ts.push(Token::ident(value.ident).into_joint());
         }
         ts.push(Token::Semi);
         ts
@@ -2798,9 +2817,9 @@ impl From<Visibility> for TokenStream {
             Visibility::Public => TokenStream::from(vec![Token::Keyword(KeywordToken::Pub)]),
             Visibility::Scoped(scope) => {
                 let mut ts = TokenStream::new();
-                ts.push(Token::Keyword(KeywordToken::Pub));
-                ts.push(Token::OpenDelim(Delimiter::Parenthesis));
-                ts.extend(TokenStream::from(scope));
+                ts.push(Token::Keyword(KeywordToken::Pub).into_joint());
+                ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
+                ts.extend(TokenStream::from(scope).into_joint());
                 ts.push(Token::CloseDelim(Delimiter::Parenthesis));
                 ts
             }
@@ -2973,8 +2992,8 @@ impl fmt::Display for UsePath {
 impl From<UsePath> for TokenStream {
     fn from(value: UsePath) -> Self {
         let mut ts = TokenStream::new();
-        ts.push(Token::ident(value.ident));
-        ts.push(Token::ModSep);
+        ts.push(Token::ident(value.ident).into_joint());
+        ts.push(Token::ModSep.into_joint());
         ts.extend(TokenStream::from(*value.tree));
         ts
     }
@@ -3084,12 +3103,12 @@ impl From<UseTree> for TokenStream {
             UseTree::Glob => TokenStream::from(vec![Token::BinOp(BinOpToken::Star)]),
             UseTree::Group(trees) => {
                 let mut ts = TokenStream::new();
-                ts.push(Token::OpenDelim(Delimiter::Brace));
+                ts.push(Token::OpenDelim(Delimiter::Brace).into_joint());
                 for (i, tree) in trees.iter().enumerate() {
                     if i != 0 {
                         ts.push(Token::Comma);
                     }
-                    ts.extend(TokenStream::from(tree.clone()));
+                    ts.extend(TokenStream::from(tree.clone()).into_joint());
                 }
                 ts.push(Token::CloseDelim(Delimiter::Brace));
                 ts
@@ -3229,7 +3248,7 @@ impl From<StaticItem> for TokenStream {
         if value.mutability.is_mut() {
             ts.push(Token::Keyword(KeywordToken::Mut));
         }
-        ts.push(Token::ident(value.ident));
+        ts.push(Token::ident(value.ident).into_joint());
         ts.push(Token::Colon);
         ts.extend(TokenStream::from(value.ty));
         if let Some(expr) = value.expr {
@@ -3269,7 +3288,7 @@ impl From<ConstItem> for TokenStream {
     fn from(value: ConstItem) -> Self {
         let mut ts = TokenStream::new();
         ts.push(Token::Keyword(KeywordToken::Const));
-        ts.push(Token::ident(value.ident));
+        ts.push(Token::ident(value.ident).into_joint());
         ts.push(Token::Colon);
         ts.extend(TokenStream::from(value.ty));
         if let Some(expr) = value.expr {
@@ -3391,7 +3410,7 @@ impl fmt::Display for Semi {
 impl From<Semi> for TokenStream {
     fn from(value: Semi) -> Self {
         let mut ts = TokenStream::new();
-        ts.extend(TokenStream::from(value.0));
+        ts.extend(TokenStream::from(value.0).into_joint());
         ts.push(Token::Semi);
         ts
     }

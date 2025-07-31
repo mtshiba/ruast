@@ -80,7 +80,7 @@ impl fmt::Display for Ref {
 impl From<Ref> for TokenStream {
     fn from(value: Ref) -> Self {
         let mut ts = TokenStream::new();
-        ts.push(Token::And);
+        ts.push(Token::And.into_joint());
         if let Some(lifetime) = value.lifetime {
             ts.push(Token::Lifetime(lifetime));
         }
@@ -139,7 +139,7 @@ impl fmt::Display for Ptr {
 impl From<Ptr> for TokenStream {
     fn from(value: Ptr) -> Self {
         let mut ts = TokenStream::new();
-        ts.push(Token::BinOp(BinOpToken::Star));
+        ts.push(Token::BinOp(BinOpToken::Star).into_joint());
         ts.extend(TokenStream::from(value.kind));
         ts.extend(TokenStream::from(*value.ty));
         ts
@@ -198,13 +198,13 @@ impl From<BareFn> for TokenStream {
             ts.push(Token::Lit(Lit::str(abi)));
         }
 
-        ts.push(Token::Keyword(KeywordToken::Fn));
-        ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+        ts.push(Token::Keyword(KeywordToken::Fn).into_joint());
+        ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
         for (i, param) in value.inputs.iter().enumerate() {
             if i > 0 {
                 ts.push(Token::Comma);
             }
-            ts.extend(TokenStream::from(param.clone()));
+            ts.extend(TokenStream::from(param.clone()).into_joint());
         }
         ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         ts.push(Token::RArrow);
@@ -284,7 +284,7 @@ impl fmt::Display for TypeParam {
 impl From<TypeParam> for TokenStream {
     fn from(value: TypeParam) -> Self {
         let mut ts = TokenStream::new();
-        ts.push(Token::ident(value.ident));
+        ts.push(Token::ident(value.ident).into_joint());
         if !value.bounds.is_empty() {
             ts.push(Token::Colon);
             for (i, bound) in value.bounds.into_iter().enumerate() {
@@ -339,7 +339,7 @@ impl From<ConstParam> for TokenStream {
     fn from(value: ConstParam) -> Self {
         let mut ts = TokenStream::new();
         ts.push(Token::Keyword(KeywordToken::Const));
-        ts.push(Token::ident(value.ident));
+        ts.push(Token::ident(value.ident).into_joint());
         ts.push(Token::Colon);
         ts.extend(TokenStream::from(value.ty));
         ts
@@ -644,17 +644,17 @@ impl From<Type> for TokenStream {
         match value {
             Type::Slice(ty) => {
                 let mut ts = TokenStream::new();
-                ts.push(Token::OpenDelim(Delimiter::Bracket));
-                ts.extend(TokenStream::from(*ty));
+                ts.push(Token::OpenDelim(Delimiter::Bracket).into_joint());
+                ts.extend(TokenStream::from(*ty).into_joint());
                 ts.push(Token::CloseDelim(Delimiter::Bracket));
                 ts
             }
             Type::Array(ty, len) => {
                 let mut ts = TokenStream::new();
-                ts.push(Token::OpenDelim(Delimiter::Bracket));
-                ts.extend(TokenStream::from(*ty));
+                ts.push(Token::OpenDelim(Delimiter::Bracket).into_joint());
+                ts.extend(TokenStream::from(*ty).into_joint());
                 ts.push(Token::Semi);
-                ts.extend(TokenStream::from(*len));
+                ts.extend(TokenStream::from(*len).into_joint());
                 ts.push(Token::CloseDelim(Delimiter::Bracket));
                 ts
             }
@@ -665,12 +665,12 @@ impl From<Type> for TokenStream {
             Type::Never => TokenStream::from(vec![Token::Not]),
             Type::Tuple(tys) => {
                 let mut ts = TokenStream::new();
-                ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+                ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
                 for (i, ty) in tys.into_iter().enumerate() {
                     if i > 0 {
                         ts.push(Token::Comma);
                     }
-                    ts.extend(TokenStream::from(ty));
+                    ts.extend(TokenStream::from(ty).into_joint())
                 }
                 ts.push(Token::CloseDelim(Delimiter::Parenthesis));
                 ts
