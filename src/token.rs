@@ -524,11 +524,13 @@ impl TokenStream {
         Self(tokens)
     }
 
-    /// Convert last token to joint token.
+    /// Convert the last token to a joint token.
     pub fn into_joint(mut self) -> Self {
-        if let Some(last) = self.0.last_mut() {
-            if !last.is_joint() {
-                *last = last.clone().into_joint();
+        if let Some(last) = self.0.pop() {
+            if last.is_joint() {
+                self.0.push(last);
+            } else {
+                self.0.push(last.into_joint());
             }
         }
         self
