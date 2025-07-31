@@ -2262,7 +2262,7 @@ impl fmt::Display for Cast {
         } else {
             write!(f, "{}", self.expr)?;
         }
-        write!(f, "as {}", self.ty)
+        write!(f, " as {}", self.ty)
     }
 }
 

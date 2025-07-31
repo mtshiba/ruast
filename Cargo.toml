@@ -26,6 +26,7 @@ unicode-ident = { version = "1.0", optional = true }
 
 [dev-dependencies]
 insta = "1.40.0"
+syn = { version = "2", features = ["full"] }
 
 [profile.dev.package]
 insta.opt-level = 3

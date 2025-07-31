@@ -448,7 +448,17 @@ impl Token {
     }
 
     pub fn into_joint(self) -> Self {
-        Self::Joint(Box::new(self))
+        match self {
+            Self::Joint(_) => self,
+            _ => Self::Joint(Box::new(self)),
+        }
+    }
+
+    pub fn as_unjoint(&self) -> &Self {
+        match self {
+            Self::Joint(token) => token,
+            _ => self,
+        }
     }
 }
 

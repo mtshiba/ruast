@@ -1,7 +1,7 @@
 use proc_macro2::{Group, Ident, Literal, Punct, Spacing, Span, TokenStream, TokenTree};
 use quote::ToTokens;
 
-use crate::{BinOpToken, Delimiter, Lit, LitKind, Token};
+use crate::{BinOpToken, Lit, LitKind, Token};
 
 impl BinOpToken {
     fn to_tokens_spacing(&self, spacing: Spacing, tokens: &mut TokenStream) {
@@ -113,30 +113,8 @@ impl ToTokens for Token {
             Self::SingleQuote => {
                 tokens.extend([TokenTree::Punct(Punct::new('\'', Spacing::Alone))])
             }
-            Self::OpenDelim(delim) => match delim {
-                Delimiter::Parenthesis => {
-                    tokens.extend([TokenTree::Punct(Punct::new('(', Spacing::Alone))])
-                }
-                Delimiter::Brace => {
-                    tokens.extend([TokenTree::Punct(Punct::new('{', Spacing::Alone))])
-                }
-                Delimiter::Bracket => {
-                    tokens.extend([TokenTree::Punct(Punct::new('[', Spacing::Alone))])
-                }
-                _ => todo!(),
-            },
-            Self::CloseDelim(delim) => match delim {
-                Delimiter::Parenthesis => {
-                    tokens.extend([TokenTree::Punct(Punct::new(')', Spacing::Alone))])
-                }
-                Delimiter::Brace => {
-                    tokens.extend([TokenTree::Punct(Punct::new('}', Spacing::Alone))])
-                }
-                Delimiter::Bracket => {
-                    tokens.extend([TokenTree::Punct(Punct::new(']', Spacing::Alone))])
-                }
-                _ => todo!(),
-            },
+            Self::OpenDelim(_) => unreachable!("OpenDelim should not be used in ToTokens"),
+            Self::CloseDelim(_) => unreachable!("CloseDelim should not be used in ToTokens"),
             Self::Lit(lit) => lit.to_tokens(tokens),
             Self::Ident(ident) => {
                 tokens.extend([TokenTree::Ident(Ident::new(ident, Span::call_site()))])
@@ -178,7 +156,7 @@ impl ToTokens for crate::TokenStream {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let mut iter = self.iter();
         while let Some(token) = iter.next() {
-            match token {
+            match token.as_unjoint() {
                 Token::OpenDelim(open) => {
                     let ts = crate::TokenStream::get_until_closed(&mut iter);
                     let group = TokenTree::Group(Group::new((*open).into(), ts));
@@ -196,7 +174,7 @@ impl crate::TokenStream {
     fn get_until_closed<'a>(iter: &mut impl Iterator<Item = &'a Token>) -> TokenStream {
         let mut tokens = TokenStream::new();
         while let Some(token) = iter.next() {
-            match token {
+            match token.as_unjoint() {
                 Token::CloseDelim(_) => break,
                 Token::OpenDelim(open) => {
                     let ts = Self::get_until_closed(iter);
