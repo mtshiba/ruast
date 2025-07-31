@@ -1,7 +1,6 @@
 use insta::assert_snapshot;
 use ruast::*;
 
-
 #[test]
 fn test_mutty_to_tokenstream() {
     let immut_ty = MutTy::immut(Type::i32());

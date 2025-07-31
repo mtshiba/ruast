@@ -1,6 +1,6 @@
 use core::fmt::Write;
 use std::fmt;
-use std::ops::{Add, Div, Mul, Neg, Sub};
+use std::ops::{Add, Deref, DerefMut, Div, Mul, Neg, Sub};
 
 use crate::stmt::{Block, EmptyItem, FnDecl, Pat, Use};
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
@@ -663,6 +663,20 @@ impl From<Vec<Expr>> for Array {
     }
 }
 
+impl Deref for Array {
+    type Target = Vec<Expr>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for Array {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 impl From<Array> for TokenStream {
     fn from(value: Array) -> Self {
         let mut ts = TokenStream::new();
@@ -729,6 +743,20 @@ impl From<Tuple> for TokenStream {
         }
         ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         ts
+    }
+}
+
+impl Deref for Tuple {
+    type Target = Vec<Expr>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for Tuple {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 
