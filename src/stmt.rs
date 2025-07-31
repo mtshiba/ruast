@@ -1864,6 +1864,15 @@ impl EnumDef {
     pub fn get_variant_by_id(&self, ident: &str) -> Option<&Variant> {
         self.variants.iter().find(|va| va.ident == ident)
     }
+
+    pub fn with_generic_param(mut self, param: GenericParam) -> Self {
+        self.add_generic_param(param);
+        self
+    }
+
+    pub fn add_generic_param(&mut self, param: GenericParam) {
+        self.generics.push(param);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -1974,6 +1983,15 @@ impl StructDef {
 
     pub fn get_field_by_id(&self, ident: &str) -> Option<&FieldDef> {
         self.variant.get_field_by_id(ident)
+    }
+
+    pub fn with_generic_param(mut self, param: GenericParam) -> Self {
+        self.add_generic_param(param);
+        self
+    }
+
+    pub fn add_generic_param(&mut self, param: GenericParam) {
+        self.generics.push(param);
     }
 }
 
@@ -2087,6 +2105,15 @@ impl UnionDef {
 
     pub fn get_field_by_id(&self, ident: &str) -> Option<&FieldDef> {
         self.variants.get_field_by_id(ident)
+    }
+
+    pub fn with_generic_param(mut self, param: GenericParam) -> Self {
+        self.add_generic_param(param);
+        self
+    }
+
+    pub fn add_generic_param(&mut self, param: GenericParam) {
+        self.generics.push(param);
     }
 }
 
