@@ -19,10 +19,15 @@ jobs:
 
     cargo-publish:
         runs-on: ubuntu-latest
+        permissions:
+          id-token: write
         steps:
-        - uses: actions/checkout@v3
+        - uses: actions/checkout@v4
+        - uses: rust-lang/crates-io-auth-action@v1
+          id: auth
         - name: publish
           run: |
             rustup update stable
-            cargo login ${{ secrets.CARGO_TOKEN }}
             cargo publish
+          env:
+            CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
