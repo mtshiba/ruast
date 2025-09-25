@@ -1623,7 +1623,7 @@ impl From<Field> for TokenStream {
             ts.extend(TokenStream::from(*value.expr).into_joint());
         }
         ts.push(Token::Dot.into_joint());
-        ts.push(Token::ident(value.ident).into_joint());
+        ts.push(Token::ident(value.ident));
         ts
     }
 }
