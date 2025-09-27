@@ -31,7 +31,7 @@ crate::impl_to_tokens!(
     Mod,
     Block,
     FieldDef,
-    VariantData,
+    Fields,
     Variant,
     EnumDef,
     StructDef,
@@ -1489,13 +1489,13 @@ impl FieldDef {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum VariantData {
+pub enum Fields {
     Unit,
     Tuple(Vec<FieldDef>),
     Struct(Vec<FieldDef>),
 }
 
-impl fmt::Display for VariantData {
+impl fmt::Display for Fields {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Unit => write!(f, ""),
@@ -1524,11 +1524,11 @@ impl fmt::Display for VariantData {
     }
 }
 
-impl From<VariantData> for TokenStream {
-    fn from(value: VariantData) -> Self {
+impl From<Fields> for TokenStream {
+    fn from(value: Fields) -> Self {
         match value {
-            VariantData::Unit => TokenStream::new(),
-            VariantData::Tuple(fields) => {
+            Fields::Unit => TokenStream::new(),
+            Fields::Tuple(fields) => {
                 let mut ts = TokenStream::new();
                 ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
                 for (i, field) in fields.iter().enumerate() {
@@ -1540,7 +1540,7 @@ impl From<VariantData> for TokenStream {
                 ts.push(Token::CloseDelim(Delimiter::Parenthesis));
                 ts
             }
-            VariantData::Struct(fields) => {
+            Fields::Struct(fields) => {
                 let mut ts = TokenStream::new();
                 ts.push(Token::OpenDelim(Delimiter::Brace));
                 for (i, field) in fields.iter().enumerate() {
@@ -1560,7 +1560,7 @@ impl From<VariantData> for TokenStream {
     }
 }
 
-impl HasItem<FieldDef> for VariantData {
+impl HasItem<FieldDef> for Fields {
     fn items(&self) -> &[FieldDef] {
         match self {
             Self::Unit => &[],
@@ -1577,9 +1577,9 @@ impl HasItem<FieldDef> for VariantData {
     }
 }
 
-impl_hasitem_methods!(VariantData, FieldDef, Deref);
+impl_hasitem_methods!(Fields, FieldDef, Deref);
 
-impl VariantData {
+impl Fields {
     pub fn with_field(mut self, field: FieldDef) -> Self {
         self.add_field(field);
         self
@@ -1649,15 +1649,15 @@ impl VariantData {
 pub struct Variant {
     pub vis: Visibility,
     pub ident: String,
-    pub data: VariantData,
-    pub disr_expr: Option<Expr>,
+    pub fields: Fields,
+    pub discriminant: Option<Expr>,
 }
 
 impl fmt::Display for Variant {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}{}{}", self.vis, self.ident, self.data)?;
-        if let Some(disr_expr) = &self.disr_expr {
-            write!(f, " = {disr_expr}")?;
+        write!(f, "{}{}{}", self.vis, self.ident, self.fields)?;
+        if let Some(discriminant) = &self.discriminant {
+            write!(f, " = {discriminant}")?;
         }
         Ok(())
     }
@@ -1668,10 +1668,10 @@ impl From<Variant> for TokenStream {
         let mut ts = TokenStream::new();
         ts.extend(TokenStream::from(value.vis));
         ts.push(Token::ident(value.ident).into_joint());
-        ts.extend(TokenStream::from(value.data));
-        if let Some(disr_expr) = value.disr_expr {
+        ts.extend(TokenStream::from(value.fields));
+        if let Some(discriminant) = value.discriminant {
             ts.push(Token::Eq);
-            ts.extend(TokenStream::from(disr_expr));
+            ts.extend(TokenStream::from(discriminant));
         }
         ts
     }
@@ -1695,41 +1695,31 @@ impl Variant {
     pub fn new(
         vis: Visibility,
         ident: impl Into<String>,
-        data: VariantData,
-        disr_expr: Option<Expr>,
+        data: Fields,
+        discriminant: Option<Expr>,
     ) -> Self {
         Self {
             vis,
             ident: ident.into(),
-            data,
-            disr_expr,
+            fields: data,
+            discriminant,
         }
     }
 
     pub fn empty(ident: impl Into<String>) -> Self {
-        Self::new(Visibility::Inherited, ident, VariantData::Unit, None)
+        Self::new(Visibility::Inherited, ident, Fields::Unit, None)
     }
 
-    pub fn inherited(ident: impl Into<String>, data: VariantData) -> Self {
+    pub fn inherited(ident: impl Into<String>, data: Fields) -> Self {
         Self::new(Visibility::Inherited, ident, data, None)
     }
 
     pub fn struct_(ident: impl Into<String>, fields: Vec<FieldDef>) -> Self {
-        Self::new(
-            Visibility::Inherited,
-            ident,
-            VariantData::Struct(fields),
-            None,
-        )
+        Self::new(Visibility::Inherited, ident, Fields::Struct(fields), None)
     }
 
     pub fn tuple(ident: impl Into<String>, fields: Vec<FieldDef>) -> Self {
-        Self::new(
-            Visibility::Inherited,
-            ident,
-            VariantData::Tuple(fields),
-            None,
-        )
+        Self::new(Visibility::Inherited, ident, Fields::Tuple(fields), None)
     }
 
     pub fn tuple1(ident: impl Into<String>, ty: impl Into<Type>) -> Self {
@@ -1879,7 +1869,7 @@ impl EnumDef {
 pub struct StructDef {
     pub ident: String,
     pub generics: Vec<GenericParam>,
-    pub variant: VariantData,
+    pub fields: Fields,
 }
 
 impl fmt::Display for StructDef {
@@ -1895,7 +1885,7 @@ impl fmt::Display for StructDef {
             }
             write!(f, ">")?;
         }
-        write!(f, "{}", self.variant)
+        write!(f, "{}", self.fields)
     }
 }
 
@@ -1914,7 +1904,7 @@ impl From<StructDef> for TokenStream {
             }
             ts.push(Token::Gt);
         }
-        ts.extend(TokenStream::from(value.variant));
+        ts.extend(TokenStream::from(value.fields));
         ts
     }
 }
@@ -1935,28 +1925,24 @@ impl Ident for StructDef {
 
 impl HasItem<FieldDef> for StructDef {
     fn items(&self) -> &[FieldDef] {
-        self.variant.items()
+        self.fields.items()
     }
     fn items_mut(&mut self) -> &mut Vec<FieldDef> {
-        self.variant.items_mut()
+        self.fields.items_mut()
     }
 }
 
 impl StructDef {
-    pub fn new(
-        ident: impl Into<String>,
-        generics: Vec<GenericParam>,
-        variant: VariantData,
-    ) -> Self {
+    pub fn new(ident: impl Into<String>, generics: Vec<GenericParam>, fields: Fields) -> Self {
         Self {
             ident: ident.into(),
             generics,
-            variant,
+            fields,
         }
     }
 
     pub fn empty(ident: impl Into<String>) -> Self {
-        Self::new(ident, Vec::new(), VariantData::Unit)
+        Self::new(ident, Vec::new(), Fields::Unit)
     }
 
     pub fn with_field(mut self, field: FieldDef) -> Self {
@@ -1965,24 +1951,24 @@ impl StructDef {
     }
 
     pub fn add_field(&mut self, field: FieldDef) -> ItemIndex {
-        self.variant.add_field(field);
-        ItemIndex(self.variant.items().len() - 1)
+        self.fields.add_field(field);
+        ItemIndex(self.fields.items().len() - 1)
     }
 
     pub fn try_remove_field(&mut self, index: usize) -> Option<FieldDef> {
-        self.variant.try_remove_field(index)
+        self.fields.try_remove_field(index)
     }
 
     pub fn remove_field(&mut self, index: ItemIndex) -> FieldDef {
-        self.variant.remove_field(index)
+        self.fields.remove_field(index)
     }
 
     pub fn try_remove_field_by_id(&mut self, ident: &str) -> Option<FieldDef> {
-        self.variant.try_remove_field_by_id(ident)
+        self.fields.try_remove_field_by_id(ident)
     }
 
     pub fn get_field_by_id(&self, ident: &str) -> Option<&FieldDef> {
-        self.variant.get_field_by_id(ident)
+        self.fields.get_field_by_id(ident)
     }
 
     pub fn with_generic_param(mut self, param: GenericParam) -> Self {
@@ -1999,7 +1985,7 @@ impl StructDef {
 pub struct UnionDef {
     pub ident: String,
     pub generics: Vec<GenericParam>,
-    pub variants: VariantData,
+    pub fields: Fields,
 }
 
 impl fmt::Display for UnionDef {
@@ -2015,7 +2001,7 @@ impl fmt::Display for UnionDef {
             }
             write!(f, ">")?;
         }
-        write!(f, "{}", self.variants)
+        write!(f, "{}", self.fields)
     }
 }
 
@@ -2034,7 +2020,7 @@ impl From<UnionDef> for TokenStream {
             }
             ts.push(Token::Gt);
         }
-        ts.extend(TokenStream::from(value.variants));
+        ts.extend(TokenStream::from(value.fields));
         ts
     }
 }
@@ -2055,30 +2041,26 @@ impl Ident for UnionDef {
 
 impl HasItem<FieldDef> for UnionDef {
     fn items(&self) -> &[FieldDef] {
-        self.variants.items()
+        self.fields.items()
     }
     fn items_mut(&mut self) -> &mut Vec<FieldDef> {
-        self.variants.items_mut()
+        self.fields.items_mut()
     }
 }
 
 impl_hasitem_methods!(UnionDef, FieldDef);
 
 impl UnionDef {
-    pub fn new(
-        ident: impl Into<String>,
-        generics: Vec<GenericParam>,
-        variants: VariantData,
-    ) -> Self {
+    pub fn new(ident: impl Into<String>, generics: Vec<GenericParam>, fields: Fields) -> Self {
         Self {
             ident: ident.into(),
             generics,
-            variants,
+            fields,
         }
     }
 
     pub fn empty(ident: impl Into<String>) -> Self {
-        Self::new(ident, Vec::new(), VariantData::Unit)
+        Self::new(ident, Vec::new(), Fields::Unit)
     }
 
     pub fn with_field(mut self, field: FieldDef) -> Self {
@@ -2087,24 +2069,24 @@ impl UnionDef {
     }
 
     pub fn add_field(&mut self, field: FieldDef) -> ItemIndex {
-        self.variants.add_field(field);
-        ItemIndex(self.variants.items().len() - 1)
+        self.fields.add_field(field);
+        ItemIndex(self.fields.items().len() - 1)
     }
 
     pub fn try_remove_field(&mut self, index: usize) -> Option<FieldDef> {
-        self.variants.try_remove_field(index)
+        self.fields.try_remove_field(index)
     }
 
     pub fn remove_field(&mut self, index: ItemIndex) -> FieldDef {
-        self.variants.remove_field(index)
+        self.fields.remove_field(index)
     }
 
     pub fn try_remove_field_by_id(&mut self, ident: &str) -> Option<FieldDef> {
-        self.variants.try_remove_field_by_id(ident)
+        self.fields.try_remove_field_by_id(ident)
     }
 
     pub fn get_field_by_id(&self, ident: &str) -> Option<&FieldDef> {
-        self.variants.get_field_by_id(ident)
+        self.fields.get_field_by_id(ident)
     }
 
     pub fn with_generic_param(mut self, param: GenericParam) -> Self {

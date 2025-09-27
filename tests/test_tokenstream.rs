@@ -1012,18 +1012,18 @@ fn test_fielddef_to_tokenstream() {
 
 #[test]
 fn test_variantdata_to_tokenstream() {
-    let unit_variant = VariantData::Unit;
+    let unit_variant = Fields::Unit;
     let ts = TokenStream::from(unit_variant);
     assert_snapshot!(ts, @"");
 
-    let tuple_variant = VariantData::Tuple(vec![
+    let tuple_variant = Fields::Tuple(vec![
         FieldDef::anonymous(Type::i32()),
         FieldDef::anonymous(Type::i64()),
     ]);
     let ts = TokenStream::from(tuple_variant);
     assert_snapshot!(ts, @"(i32, i64)");
 
-    let struct_variant = VariantData::Struct(vec![FieldDef::inherited("x", Type::i32())]);
+    let struct_variant = Fields::Struct(vec![FieldDef::inherited("x", Type::i32())]);
     let ts = TokenStream::from(struct_variant);
     assert_snapshot!(ts, @"{ x: i32 }");
 }
@@ -1032,7 +1032,7 @@ fn test_variantdata_to_tokenstream() {
 fn test_variant_to_tokenstream() {
     let variant = Variant::inherited(
         "Some",
-        VariantData::Tuple(vec![FieldDef::anonymous(Type::i32())]),
+        Fields::Tuple(vec![FieldDef::anonymous(Type::i32())]),
     );
     let ts = TokenStream::from(variant);
     assert_snapshot!(ts, @"Some(i32)");
@@ -1044,10 +1044,10 @@ fn test_enumdef_to_tokenstream() {
         "Option",
         vec![],
         vec![
-            Variant::inherited("None", VariantData::Unit),
+            Variant::inherited("None", Fields::Unit),
             Variant::inherited(
                 "Some",
-                VariantData::Tuple(vec![FieldDef::anonymous(Type::i32())]),
+                Fields::Tuple(vec![FieldDef::anonymous(Type::i32())]),
             ),
         ],
     );
@@ -1060,7 +1060,7 @@ fn test_structdef_to_tokenstream() {
     let struct_def = StructDef::new(
         "Point",
         vec![],
-        VariantData::Struct(vec![FieldDef::inherited("x", Type::i32())]),
+        Fields::Struct(vec![FieldDef::inherited("x", Type::i32())]),
     );
     let ts = TokenStream::from(struct_def);
     assert_snapshot!(ts, @"struct Point { x: i32 }");
@@ -1071,7 +1071,7 @@ fn test_uniondef_to_tokenstream() {
     let union_def = UnionDef::new(
         "MyUnion",
         vec![],
-        VariantData::Struct(vec![FieldDef::inherited("x", Type::i32())]),
+        Fields::Struct(vec![FieldDef::inherited("x", Type::i32())]),
     );
     let ts = TokenStream::from(union_def);
     assert_snapshot!(ts, @"union MyUnion { x: i32 }");
