@@ -520,6 +520,13 @@ fn test_cast_to_tokenstream() {
     let cast = Cast::new(Lit::int("42"), Type::i32());
     let ts = TokenStream::from(cast);
     assert_snapshot!(ts, @"42 as i32");
+
+    let cast = Field::new(Path::single("x"), "y")
+        .addr_of(BorrowKind::Raw, Mutability::Mut)
+        .cast(Type::mut_ptr(Type::i8()))
+        .cast(Type::mut_ptr(Type::unit()));
+    let ts = TokenStream::from(cast);
+    assert_snapshot!(ts, @"&raw mut x.y as *mut i8 as *mut ()");
 }
 
 #[test]
