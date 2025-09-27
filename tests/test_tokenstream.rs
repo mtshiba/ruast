@@ -246,6 +246,10 @@ fn test_tuple_to_tokenstream() {
     let ts = TokenStream::from(empty_tuple);
     assert_snapshot!(ts, @"()");
 
+    let one_tuple = Tuple::new(vec![Expr::new(Lit::int("1"))]);
+    let ts = TokenStream::from(one_tuple);
+    assert_snapshot!(ts, @"(1,)");
+
     let int_tuple = Tuple::new(vec![Expr::new(Lit::int("1")), Expr::new(Lit::int("2"))]);
     let ts = TokenStream::from(int_tuple);
     assert_snapshot!(ts, @"(1, 2)");
@@ -414,6 +418,10 @@ fn test_field_to_tokenstream() {
     let field = Field::new(Path::single("obj"), "field");
     let ts = TokenStream::from(field);
     assert_snapshot!(ts, @"obj.field");
+
+    let nested_field = Field::new(Field::new(Path::single("obj"), "field"), "subfield");
+    let ts = TokenStream::from(nested_field);
+    assert_snapshot!(ts, @"obj.field.subfield");
 }
 
 #[test]
@@ -421,6 +429,13 @@ fn test_index_to_tokenstream() {
     let index = Index::new(Path::single("arr"), Lit::int("0"));
     let ts = TokenStream::from(index);
     assert_snapshot!(ts, @"arr[0]");
+
+    let nested_index = Index::new(
+        Index::new(Path::single("arr"), Lit::int("0")),
+        Lit::int("1"),
+    );
+    let ts = TokenStream::from(nested_index);
+    assert_snapshot!(ts, @"arr[0][1]");
 }
 
 #[test]
@@ -1053,6 +1068,20 @@ fn test_enumdef_to_tokenstream() {
     );
     let ts = TokenStream::from(enum_def);
     assert_snapshot!(ts, @"enum Option { None, Some(i32), }");
+
+    let enum_def_with_struct_variant = EnumDef::new(
+        "Result",
+        vec![],
+        vec![
+            Variant::inherited("Ok", Fields::Tuple(vec![FieldDef::anonymous(Type::i32())])),
+            Variant::inherited(
+                "Err",
+                Fields::Struct(vec![FieldDef::inherited("error", Type::string())]),
+            ),
+        ],
+    );
+    let ts = TokenStream::from(enum_def_with_struct_variant);
+    assert_snapshot!(ts, @"enum Result { Ok(i32), Err{ error: String }, }");
 }
 
 #[test]
@@ -1064,6 +1093,22 @@ fn test_structdef_to_tokenstream() {
     );
     let ts = TokenStream::from(struct_def);
     assert_snapshot!(ts, @"struct Point { x: i32 }");
+
+    let struct_def_tuple = StructDef::new(
+        "Color",
+        vec![],
+        Fields::Tuple(vec![
+            FieldDef::anonymous(Type::i32()),
+            FieldDef::anonymous(Type::i32()),
+            FieldDef::anonymous(Type::i32()),
+        ]),
+    );
+    let ts = TokenStream::from(struct_def_tuple);
+    assert_snapshot!(ts, @"struct Color (i32, i32, i32)");
+
+    let struct_def_unit = StructDef::new("UnitStruct", vec![], Fields::Unit);
+    let ts = TokenStream::from(struct_def_unit);
+    assert_snapshot!(ts, @"struct UnitStruct");
 }
 
 #[test]

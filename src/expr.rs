@@ -714,11 +714,13 @@ impl HasPrecedence for Tuple {
 impl fmt::Display for Tuple {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "(")?;
-        let mut iter = self.0.iter();
-        if let Some(expr) = iter.next() {
+        for (i, expr) in self.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
             write!(f, "{expr}")?;
-            for expr in iter {
-                write!(f, ", {expr}")?;
+            if self.len() == 1 {
+                write!(f, ",")?;
             }
         }
         write!(f, ")")
@@ -734,12 +736,16 @@ impl From<Vec<Expr>> for Tuple {
 impl From<Tuple> for TokenStream {
     fn from(value: Tuple) -> Self {
         let mut ts = TokenStream::new();
+        let len = value.0.len();
         ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
         for (i, expr) in value.0.into_iter().enumerate() {
             if i > 0 {
                 ts.push(Token::Comma);
             }
             ts.extend(TokenStream::from(expr).into_joint());
+            if len == 1 {
+                ts.push(Token::Comma.into_joint());
+            }
         }
         ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         ts
@@ -3105,14 +3111,14 @@ impl HasPrecedence for Struct {
 
 impl fmt::Display for Struct {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} {{", self.path)?;
+        write!(f, "{} {{ ", self.path)?;
         for (i, field) in self.fields.iter().enumerate() {
             if i > 0 {
                 write!(f, ", ")?;
             }
-            writeln!(f, "{field}")?;
+            write!(f, "{field}")?;
         }
-        write!(f, "}}")
+        write!(f, " }}")
     }
 }
 

@@ -740,6 +740,9 @@ impl Type {
     pub fn u128() -> Type {
         Self::Path(Path::single("u128"))
     }
+    pub fn string() -> Type {
+        Self::Path(Path::single("String"))
+    }
 
     pub fn into_ref(self) -> Type {
         Type::ref_(self)

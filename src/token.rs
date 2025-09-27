@@ -409,7 +409,7 @@ impl fmt::Display for Token {
 
 impl Token {
     pub fn lit(lit: impl Into<Lit>) -> Self {
-        Self::Lit(lit.into()).into_joint()
+        Self::Lit(lit.into())
     }
 
     pub fn verbatim(lit: impl Into<String>) -> Self {

@@ -167,6 +167,16 @@ fn test_field() {
 }
 
 #[test]
+fn test_cast() {
+    let cast = Field::new(Path::single("x"), "y")
+        .addr_of(BorrowKind::Raw, Mutability::Mut)
+        .cast(Type::mut_ptr(Type::i8()))
+        .cast(Type::mut_ptr(Type::unit()));
+
+    assert_snapshot!(cast, @"&raw mut x.y as *mut i8 as *mut ()");
+}
+
+#[test]
 fn test_closure() {
     let x = Path::single("x");
     let decl = FnDecl::regular(vec![Param::ident("a", Type::Infer)], None);
@@ -175,6 +185,33 @@ fn test_closure() {
 
     let call = closure.call(vec![Lit::int("42").into()]);
     assert_snapshot!(call, @"(|a: _| { x })(42)");
+}
+
+#[test]
+fn test_tuple() {
+    let x = Path::single("x");
+    let tuple = Tuple::new(vec![
+        Lit::int("1").into(),
+        x.clone().into(),
+        Lit::int("3").into(),
+    ]);
+    assert_snapshot!(tuple, @"(1, x, 3)");
+
+    let single_tuple = Tuple::new(vec![x.clone().into()]);
+    assert_snapshot!(single_tuple, @"(x,)");
+
+    let empty_tuple = Tuple::new(vec![]);
+    assert_snapshot!(empty_tuple, @"()");
+}
+
+#[test]
+fn test_struct() {
+    let x = Path::single("x");
+    let field1 = ExprField::new("a", Lit::int("1"));
+    let field2 = ExprField::new("b", x.clone());
+    let field3 = ExprField::new("c", Lit::int("3"));
+    let struct_ = Struct::new("MyStruct", vec![field1, field2, field3]);
+    assert_snapshot!(struct_, @"MyStruct { a: 1, b: x, c: 3 }");
 }
 
 #[test]
