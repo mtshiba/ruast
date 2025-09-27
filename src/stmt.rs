@@ -1647,6 +1647,7 @@ impl Fields {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Variant {
+    pub attrs: Vec<Attribute>,
     pub vis: Visibility,
     pub ident: String,
     pub fields: Fields,
@@ -1655,6 +1656,9 @@ pub struct Variant {
 
 impl fmt::Display for Variant {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for attr in self.attrs.iter() {
+            writeln!(f, "{attr}")?;
+        }
         write!(f, "{}{}{}", self.vis, self.ident, self.fields)?;
         if let Some(discriminant) = &self.discriminant {
             write!(f, " = {discriminant}")?;
@@ -1666,6 +1670,9 @@ impl fmt::Display for Variant {
 impl From<Variant> for TokenStream {
     fn from(value: Variant) -> Self {
         let mut ts = TokenStream::new();
+        for attr in value.attrs.iter() {
+            ts.extend(TokenStream::from(attr.clone()));
+        }
         ts.extend(TokenStream::from(value.vis));
         ts.push(Token::ident(value.ident).into_joint());
         ts.extend(TokenStream::from(value.fields));
@@ -1693,12 +1700,14 @@ impl Ident for Variant {
 
 impl Variant {
     pub fn new(
+        attrs: Vec<Attribute>,
         vis: Visibility,
         ident: impl Into<String>,
         data: Fields,
         discriminant: Option<Expr>,
     ) -> Self {
         Self {
+            attrs,
             vis,
             ident: ident.into(),
             fields: data,
@@ -1707,23 +1716,57 @@ impl Variant {
     }
 
     pub fn empty(ident: impl Into<String>) -> Self {
-        Self::new(Visibility::Inherited, ident, Fields::Unit, None)
+        Self::new(vec![], Visibility::Inherited, ident, Fields::Unit, None)
     }
 
     pub fn inherited(ident: impl Into<String>, data: Fields) -> Self {
-        Self::new(Visibility::Inherited, ident, data, None)
+        Self::new(vec![], Visibility::Inherited, ident, data, None)
     }
 
     pub fn struct_(ident: impl Into<String>, fields: Vec<FieldDef>) -> Self {
-        Self::new(Visibility::Inherited, ident, Fields::Struct(fields), None)
+        Self::new(
+            vec![],
+            Visibility::Inherited,
+            ident,
+            Fields::Struct(fields),
+            None,
+        )
     }
 
     pub fn tuple(ident: impl Into<String>, fields: Vec<FieldDef>) -> Self {
-        Self::new(Visibility::Inherited, ident, Fields::Tuple(fields), None)
+        Self::new(
+            vec![],
+            Visibility::Inherited,
+            ident,
+            Fields::Tuple(fields),
+            None,
+        )
     }
 
     pub fn tuple1(ident: impl Into<String>, ty: impl Into<Type>) -> Self {
         Self::tuple(ident, vec![FieldDef::anonymous(ty)])
+    }
+
+    pub fn add_attr(&mut self, attr: impl Into<Attribute>) {
+        self.attrs.push(attr.into());
+    }
+
+    pub fn with_attr(mut self, attr: impl Into<Attribute>) -> Self {
+        self.add_attr(attr);
+        self
+    }
+
+    pub fn remove_attr(&mut self, index: usize) -> Attribute {
+        self.attrs.remove(index)
+    }
+
+    pub fn set_discriminant(&mut self, expr: impl Into<Expr>) {
+        self.discriminant = Some(expr.into());
+    }
+
+    pub fn with_discriminant(mut self, expr: impl Into<Expr>) -> Self {
+        self.set_discriminant(expr);
+        self
     }
 }
 
