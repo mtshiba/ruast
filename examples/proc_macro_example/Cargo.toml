@@ -5,7 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-ruast = { version = "0.0.19", features = ["tokenize"] }
+ruast = { version = "0.0.20", features = ["tokenize"] }
 syn = "1.0.109"
 
 [lib]
