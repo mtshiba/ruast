@@ -7,6 +7,9 @@ use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 use crate::ty::Type;
 use crate::{impl_display_for_enum, impl_obvious_conversion, UsePath, UseRename, UseTree};
 
+#[cfg(feature = "fuzzing")]
+use crate::token::String;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u8)]
 pub enum OperatorPrecedence {
@@ -404,6 +407,7 @@ impl<I: Into<TokenStream>> IntoTokens for I {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum AttrArgs {
     #[default]
@@ -432,6 +436,7 @@ impl From<AttrArgs> for TokenStream {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Attribute {
     pub kind: AttrKind,
@@ -484,6 +489,13 @@ pub enum AttrKind {
     DocComment(String),
 }
 
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for AttrKind {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(AttrKind::Normal(AttributeItem::arbitrary(u)?))
+    }
+}
+
 impl fmt::Display for AttrKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self {
@@ -512,6 +524,15 @@ impl From<AttrKind> for TokenStream {
 pub struct AttributeItem {
     pub path: Path,
     pub args: AttrArgs,
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for AttributeItem {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let path = Path::arbitrary(u)?.turbo_fish(false);
+        let args = AttrArgs::arbitrary(u)?;
+        Ok(Self { path, args })
+    }
 }
 
 impl fmt::Display for AttributeItem {
@@ -557,6 +578,7 @@ impl AttributeItem {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Expr {
     pub attrs: Vec<AttributeItem>,
@@ -619,6 +641,7 @@ impl Expr {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Const(pub Expr);
 
@@ -634,6 +657,7 @@ impl From<Const> for TokenStream {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Array(pub Vec<Expr>);
 
@@ -702,6 +726,7 @@ impl Array {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Tuple(pub Vec<Expr>);
 
@@ -776,6 +801,7 @@ impl Tuple {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Binary {
     pub lhs: Box<Expr>,
@@ -868,6 +894,7 @@ impl Binary {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum UnaryOpKind {
     Deref,
@@ -901,6 +928,7 @@ impl From<UnaryOpKind> for Token {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Unary {
     pub op: UnaryOpKind,
@@ -957,6 +985,7 @@ impl Unary {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Let {
     pub pat: Box<Pat>,
@@ -995,6 +1024,7 @@ impl Let {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct If {
     pub cond: Box<Expr>,
@@ -1044,6 +1074,7 @@ impl If {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct While {
     pub cond: Box<Expr>,
@@ -1081,6 +1112,7 @@ impl While {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ForLoop {
     pub pat: Box<Pat>,
@@ -1128,6 +1160,7 @@ impl ForLoop {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Loop {
     pub body: Block,
@@ -1168,6 +1201,7 @@ impl Loop {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ConstBlock {
     pub block: Block,
@@ -1208,6 +1242,7 @@ impl ConstBlock {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UnsafeBlock {
     pub block: Block,
@@ -1248,6 +1283,7 @@ impl UnsafeBlock {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Arm {
     pub attrs: Vec<AttributeItem>,
@@ -1297,6 +1333,7 @@ impl Arm {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Match {
     pub expr: Box<Expr>,
@@ -1344,6 +1381,7 @@ impl Match {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Closure {
     pub is_const: bool,
@@ -1464,6 +1502,7 @@ impl Closure {
 }
 
 /// `async { ... }`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Async {
     pub block: Block,
@@ -1505,6 +1544,7 @@ impl Async {
 }
 
 /// `expr.await`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Await {
     pub expr: Box<Expr>,
@@ -1553,6 +1593,7 @@ impl Await {
 }
 
 /// `try { ... }`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TryBlock {
     pub block: Block,
@@ -1594,6 +1635,7 @@ impl TryBlock {
 }
 
 /// `expr.ident`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Field {
     pub expr: Box<Expr>,
@@ -1644,6 +1686,7 @@ impl Field {
 }
 
 /// `expr[index]`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Index {
     pub expr: Box<Expr>,
@@ -1694,6 +1737,7 @@ impl Index {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum RangeLimits {
     HalfOpen,
@@ -1720,6 +1764,7 @@ impl RangeLimits {
 }
 
 /// `start..end` or `start..=end`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Range {
     pub start: Option<Box<Expr>>,
@@ -1798,6 +1843,7 @@ impl Range {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Underscore {}
 
@@ -1820,6 +1866,7 @@ impl From<Underscore> for TokenStream {
 }
 
 /// `return expr?`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Return {
     pub expr: Option<Box<Expr>>,
@@ -1861,6 +1908,7 @@ impl Return {
 }
 
 /// `yield expr?`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Yield {
     pub expr: Option<Box<Expr>>,
@@ -1902,6 +1950,7 @@ impl Yield {
 }
 
 /// `lhs = rhs`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Assign {
     pub lhs: Box<Expr>,
@@ -1962,6 +2011,7 @@ impl Assign {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum BinOpKind {
     /// `+`
@@ -2097,6 +2147,7 @@ impl From<BinOpKind> for TokenStream {
 }
 
 /// `lhs op= rhs`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AssignOp {
     pub lhs: Box<Expr>,
@@ -2159,6 +2210,7 @@ impl AssignOp {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum LitKind {
     Bool,
@@ -2173,6 +2225,7 @@ pub enum LitKind {
     Err,
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Lit {
     pub kind: LitKind,
@@ -2249,6 +2302,7 @@ impl Lit {
 }
 
 /// `expr as ty`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Cast {
     pub expr: Box<Expr>,
@@ -2299,6 +2353,7 @@ impl Cast {
 }
 
 /// `expr: ty`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypeAscription {
     pub expr: Box<Expr>,
@@ -2348,6 +2403,7 @@ impl TypeAscription {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Call {
     pub func: Box<Expr>,
@@ -2421,6 +2477,7 @@ impl Call {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MethodCall {
     pub receiver: Box<Expr>,
@@ -2490,6 +2547,18 @@ impl MethodCall {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Path {
     pub segments: Vec<PathSegment>,
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for Path {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let len = u.int_in_range(1..=5)?;
+        let mut segments = Vec::with_capacity(len);
+        for _ in 0..len {
+            segments.push(PathSegment::arbitrary(u)?);
+        }
+        Ok(Self { segments })
+    }
 }
 
 impl HasPrecedence for Path {
@@ -2585,11 +2654,20 @@ impl Path {
     pub fn use_(self) -> Use {
         Use::from(self)
     }
+
+    pub fn turbo_fish(mut self, val: bool) -> Self {
+        for segment in &mut self.segments {
+            segment.turbo_fish = val;
+        }
+        self
+    }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PathSegment {
     pub ident: String,
+    pub turbo_fish: bool,
     pub args: Option<Vec<GenericArg>>,
 }
 
@@ -2597,7 +2675,10 @@ impl fmt::Display for PathSegment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.ident)?;
         if let Some(args) = &self.args {
-            write!(f, "::<")?;
+            if self.turbo_fish {
+                write!(f, "::")?;
+            }
+            write!(f, "<")?;
             for (i, arg) in args.iter().enumerate() {
                 if i > 0 {
                     write!(f, ", ")?;
@@ -2614,6 +2695,7 @@ impl<S: Into<String>> From<S> for PathSegment {
     fn from(ident: S) -> Self {
         Self {
             ident: ident.into(),
+            turbo_fish: true,
             args: None,
         }
     }
@@ -2625,7 +2707,9 @@ impl From<PathSegment> for TokenStream {
 
         if let Some(args) = value.args {
             ts.push(Token::ident(value.ident).into_joint());
-            ts.push(Token::ModSep.into_joint());
+            if value.turbo_fish {
+                ts.push(Token::ModSep.into_joint());
+            }
             ts.push(Token::Lt.into_joint());
             for (i, arg) in args.iter().enumerate() {
                 if i > 0 {
@@ -2642,15 +2726,16 @@ impl From<PathSegment> for TokenStream {
 }
 
 impl PathSegment {
-    pub fn new(ident: impl Into<String>, args: Option<Vec<GenericArg>>) -> Self {
+    pub fn new(ident: impl Into<String>, turbo_fish: bool, args: Option<Vec<GenericArg>>) -> Self {
         Self {
             ident: ident.into(),
+            turbo_fish,
             args,
         }
     }
 
     pub fn simple(ident: impl Into<String>) -> Self {
-        Self::new(ident, None)
+        Self::new(ident, false, None)
     }
 
     #[cfg(feature = "checked-ident")]
@@ -2660,12 +2745,14 @@ impl PathSegment {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BorrowKind {
     Ref,
     Raw,
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Mutability {
     #[default]
@@ -2689,6 +2776,7 @@ impl fmt::Display for Mutability {
 }
 
 /// `&expr`, `&mut expr`, `&raw const expr`, `&raw mut expr`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AddrOf {
     pub kind: BorrowKind,
@@ -2774,6 +2862,7 @@ impl AddrOf {
 }
 
 /// `break ('label)? expr`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Break {
     pub label: Option<String>,
@@ -2823,6 +2912,7 @@ impl Break {
 }
 
 /// `continue ('label)?`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Continue {
     pub label: Option<String>,
@@ -2861,6 +2951,7 @@ impl Continue {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum GenericArg {
     Lifetime(String),
@@ -2888,6 +2979,7 @@ impl From<GenericArg> for TokenStream {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MacDelimiter {
     Parenthesis,
@@ -2895,6 +2987,7 @@ pub enum MacDelimiter {
     Brace,
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DelimArgs {
     pub delim: MacDelimiter,
@@ -3007,6 +3100,7 @@ impl DelimArgs {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MacCall {
     /// `!` not included
@@ -3058,6 +3152,7 @@ impl MacCall {
 }
 
 /// `ident: expr`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ExprField {
     pub ident: String,
@@ -3097,6 +3192,7 @@ impl ExprField {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Struct {
     pub path: Path,
@@ -3152,6 +3248,7 @@ impl Struct {
 }
 
 /// `[expr; len]`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Repeat {
     pub expr: Box<Expr>,
@@ -3192,6 +3289,7 @@ impl Repeat {
 }
 
 /// `expr?`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Try {
     pub expr: Box<Expr>,
@@ -3237,6 +3335,7 @@ impl Try {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ExprKind {
     Array(Array),

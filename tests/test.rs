@@ -31,7 +31,7 @@ fn test_general() {
         is_const: false,
         is_async: false,
         abi: None,
-        ident: "main".to_string(),
+        ident: "main".into(),
         generics: vec![],
         fn_decl: FnDecl::regular(vec![], None),
         body: Some(Block::from(Stmt::Semi(Semi::new(Expr::new(MacCall {

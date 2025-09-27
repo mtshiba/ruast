@@ -59,7 +59,7 @@ fn test_barefn_to_tokenstream() {
     let ts = TokenStream::from(unsafe_fn);
     assert_snapshot!(ts, @"unsafe fn() -> i32");
 
-    let extern_fn = BareFn::new(vec![], vec![], Type::i32(), Some("C".to_string()), false);
+    let extern_fn = BareFn::new(vec![], vec![], Type::i32(), Some("C".into()), false);
     let ts = TokenStream::from(extern_fn);
     assert_snapshot!(ts, @"extern \"C\" fn() -> i32");
 }
@@ -104,7 +104,7 @@ fn test_genericbound_to_tokenstream() {
     let ts = TokenStream::from(trait_bound);
     assert_snapshot!(ts, @"Clone");
 
-    let lifetime_bound = GenericBound::Outlives("static".to_string());
+    let lifetime_bound = GenericBound::Outlives("static".into());
     let ts = TokenStream::from(lifetime_bound);
     assert_snapshot!(ts, @"'static");
 }
@@ -190,7 +190,7 @@ fn test_attrkind_to_tokenstream() {
     let ts = TokenStream::from(normal_attr);
     assert_snapshot!(ts, @"#[test]");
 
-    let doc_comment = AttrKind::DocComment("This is a doc comment".to_string());
+    let doc_comment = AttrKind::DocComment("This is a doc comment".into());
     let ts = TokenStream::from(doc_comment);
     assert_snapshot!(ts, @"This is a doc comment");
 }
@@ -597,9 +597,9 @@ fn test_pathsegment_to_tokenstream() {
     let ts = TokenStream::from(simple_segment);
     assert_snapshot!(ts, @"foo");
 
-    let generic_segment = PathSegment::new("Vec", Some(vec![GenericArg::Type(Type::i32())]));
+    let generic_segment = PathSegment::new("Vec", false, Some(vec![GenericArg::Type(Type::i32())]));
     let ts = TokenStream::from(generic_segment);
-    assert_snapshot!(ts, @"Vec::<i32>");
+    assert_snapshot!(ts, @"Vec<i32>");
 }
 
 #[test]
@@ -631,7 +631,7 @@ fn test_break_to_tokenstream() {
     let ts = TokenStream::from(break_with_value);
     assert_snapshot!(ts, @"break 42");
 
-    let break_with_label = Break::new(Some("loop1".to_string()), None);
+    let break_with_label = Break::new(Some("loop1".into()), None);
     let ts = TokenStream::from(break_with_label);
     assert_snapshot!(ts, @"break 'loop1");
 }
@@ -642,14 +642,14 @@ fn test_continue_to_tokenstream() {
     let ts = TokenStream::from(continue_empty);
     assert_snapshot!(ts, @"continue");
 
-    let continue_with_label = Continue::new(Some("loop1".to_string()));
+    let continue_with_label = Continue::new(Some("loop1".into()));
     let ts = TokenStream::from(continue_with_label);
     assert_snapshot!(ts, @"continue 'loop1");
 }
 
 #[test]
 fn test_genericarg_to_tokenstream() {
-    let lifetime_arg = GenericArg::Lifetime("static".to_string());
+    let lifetime_arg = GenericArg::Lifetime("static".into());
     let ts = TokenStream::from(lifetime_arg);
     assert_snapshot!(ts, @"'static");
 
@@ -764,7 +764,7 @@ fn test_type_barefn_to_tokenstream() {
         vec![],
         vec![],
         Type::i32(),
-        Some("C".to_string()),
+        Some("C".into()),
         true,
     ));
     let ts = TokenStream::from(unsafe_fn_ty);
@@ -805,7 +805,7 @@ fn test_type_traitobject_variants_to_tokenstream() {
     assert_snapshot!(ts, @"dyn Send + Sync");
 
     let static_trait_ty = Type::TraitObject(TraitObject::static_(vec![GenericBound::Outlives(
-        "static".to_string(),
+        "static".into(),
     )]));
     let ts = TokenStream::from(static_trait_ty);
     assert_snapshot!(ts, @"'static");
@@ -835,7 +835,7 @@ fn test_complex_nested_types_to_tokenstream() {
     );
     let ref_mut_ty = Type::Ref(Ref::new(Some("static"), MutTy::mut_(array_ty)));
     let ts = TokenStream::from(ref_mut_ty);
-    assert_snapshot!(ts, @"&'static mut [Box::<dyn Send + Sync>; 10]");
+    assert_snapshot!(ts, @"&'static mut [Box<dyn Send + Sync>; 10]");
 }
 
 #[test]
@@ -865,7 +865,7 @@ fn test_typeparam_multiple_bounds_to_tokenstream() {
         vec![
             GenericBound::Trait(PolyTraitRef::simple(Path::single("Clone"))),
             GenericBound::Trait(PolyTraitRef::simple(Path::single("Debug"))),
-            GenericBound::Outlives("static".to_string()),
+            GenericBound::Outlives("static".into()),
         ],
     );
     let ts = TokenStream::from(multi_bound_param);
@@ -907,7 +907,7 @@ fn test_localkind_to_tokenstream() {
 #[test]
 fn test_patfield_to_tokenstream() {
     let pat_field = PatField {
-        ident: "name".to_string(),
+        ident: "name".into(),
         pat: Pat::ident("value"),
     };
     let ts = TokenStream::from(pat_field);
@@ -930,7 +930,7 @@ fn test_structpat_to_tokenstream() {
     let struct_pat = StructPat {
         path: Path::single("Point"),
         fields: vec![PatField {
-            ident: "x".to_string(),
+            ident: "x".into(),
             pat: Pat::ident("a"),
         }],
     };
@@ -1145,7 +1145,7 @@ fn test_predicatetype_to_tokenstream() {
 
 #[test]
 fn test_predicatelifetime_to_tokenstream() {
-    let predicate = PredicateLifetime::new("'a", vec!["'static".to_string()]);
+    let predicate = PredicateLifetime::new("'a", vec!["'static".into()]);
     let ts = TokenStream::from(predicate);
     assert_snapshot!(ts, @"''a: ''static");
 }
@@ -1220,7 +1220,7 @@ fn test_visibility_to_tokenstream() {
 
 #[test]
 fn test_usepath_to_tokenstream() {
-    let use_path = UsePath::new("std", UseTree::Name("std".to_string()));
+    let use_path = UsePath::new("std", UseTree::Name("std".into()));
     let ts = TokenStream::from(use_path);
     assert_snapshot!(ts, @"std::std");
 }
@@ -1234,7 +1234,7 @@ fn test_userename_to_tokenstream() {
 
 #[test]
 fn test_usetree_to_tokenstream() {
-    let use_tree = UseTree::Path(UsePath::new("std", UseTree::Name("std".to_string())));
+    let use_tree = UseTree::Path(UsePath::new("std", UseTree::Name("std".into())));
     let ts = TokenStream::from(use_tree);
     assert_snapshot!(ts, @"std::std");
 
@@ -1247,7 +1247,7 @@ fn test_usetree_to_tokenstream() {
 fn test_use_to_tokenstream() {
     let use_item = Use::from(UseTree::Path(UsePath::new(
         "std",
-        UseTree::Name("std".to_string()),
+        UseTree::Name("std".into()),
     )));
     let ts = TokenStream::from(use_item);
     assert_snapshot!(ts, @"use std::std");
@@ -1257,9 +1257,9 @@ fn test_use_to_tokenstream() {
     assert_snapshot!(ts, @"use std::*");
 
     let use_group = Use::from(Path::single("std").chain("sync").chain_use_group(vec![
-        UseTree::from(Path::single(PathSegment::new("Arc", None))),
-        UseTree::from(Path::single(PathSegment::new("Mutex", None))),
-        UseTree::from(Path::single(PathSegment::new("MutexGuard", None))),
+        UseTree::from(Path::single(PathSegment::simple("Arc"))),
+        UseTree::from(Path::single(PathSegment::simple("Mutex"))),
+        UseTree::from(Path::single(PathSegment::simple("MutexGuard"))),
     ]));
     let ts = TokenStream::from(use_group);
     assert_snapshot!(ts, @"use std::sync::{Arc, Mutex, MutexGuard}");
@@ -1269,7 +1269,7 @@ fn test_use_to_tokenstream() {
 fn test_staticitem_to_tokenstream() {
     let static_item = StaticItem {
         mutability: Mutability::Not,
-        ident: "MY_STATIC".to_string(),
+        ident: "MY_STATIC".into(),
         ty: Type::i32(),
         expr: Some(Expr::new(Lit::int("42"))),
     };
@@ -1287,7 +1287,7 @@ fn test_constitem_to_tokenstream() {
 #[test]
 fn test_tyalias_to_tokenstream() {
     let ty_alias = TyAlias {
-        ident: "MyType".to_string(),
+        ident: "MyType".into(),
         ty: Some(Type::i32()),
     };
     let ts = TokenStream::from(ty_alias);

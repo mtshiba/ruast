@@ -3,6 +3,122 @@ use std::ops::{Deref, DerefMut};
 
 use crate::expr::Lit;
 
+/// String for fuzzing. Generates only valid strings as identifiers.
+#[cfg(feature = "fuzzing")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct String(std::string::String);
+
+#[cfg(feature = "fuzzing")]
+impl fmt::Display for String {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[cfg(feature = "fuzzing")]
+impl Deref for String {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[cfg(feature = "fuzzing")]
+impl AsRef<str> for String {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+#[cfg(feature = "fuzzing")]
+impl AsRef<std::ffi::OsStr> for String {
+    fn as_ref(&self) -> &std::ffi::OsStr {
+        self.0.as_ref()
+    }
+}
+
+#[cfg(feature = "fuzzing")]
+impl From<std::string::String> for String {
+    fn from(s: std::string::String) -> Self {
+        Self(s)
+    }
+}
+
+#[cfg(feature = "fuzzing")]
+impl From<&String> for String {
+    fn from(s: &String) -> Self {
+        s.clone()
+    }
+}
+
+#[cfg(feature = "fuzzing")]
+impl From<&str> for String {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
+#[cfg(feature = "fuzzing")]
+impl PartialEq<str> for String {
+    fn eq(&self, other: &str) -> bool {
+        self.0 == other
+    }
+}
+
+#[cfg(feature = "fuzzing")]
+impl PartialEq<&str> for String {
+    fn eq(&self, other: &&str) -> bool {
+        self.0 == *other
+    }
+}
+
+#[cfg(feature = "fuzzing")]
+impl PartialEq<String> for &str {
+    fn eq(&self, other: &String) -> bool {
+        *self == other.0
+    }
+}
+
+#[cfg(feature = "fuzzing")]
+impl PartialEq<String> for str {
+    fn eq(&self, other: &String) -> bool {
+        self == other.0
+    }
+}
+
+#[cfg(feature = "fuzzing")]
+impl PartialEq<std::string::String> for String {
+    fn eq(&self, other: &std::string::String) -> bool {
+        &self.0 == other
+    }
+}
+
+#[cfg(feature = "fuzzing")]
+impl PartialEq<String> for std::string::String {
+    fn eq(&self, other: &String) -> bool {
+        self == &other.0
+    }
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for String {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        const HEAD: &[u8] = b"_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        const TAIL: &[u8] = b"_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        let len = u.int_in_range(1..=10)?;
+        let mut s = std::string::String::with_capacity(len);
+        s.push(*u.choose(HEAD)? as char);
+        for _ in 1..len {
+            s.push(*u.choose(TAIL)? as char);
+        }
+        if KeywordToken::try_from(s.as_str()).is_ok() || s == "_" {
+            s.insert(0, '_');
+        }
+        Ok(String(s))
+    }
+}
+
 /// A string that is confirmed at the time of construction to be a valid Rust identifier.
 #[cfg(feature = "checked-ident")]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -56,6 +172,7 @@ pub fn check_ident(maybe_ident: impl Into<String>) -> Result<String, String> {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KeywordToken {
     As,
@@ -197,6 +314,7 @@ impl TryFrom<&str> for KeywordToken {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum BinOpToken {
     /// `+`
@@ -247,6 +365,7 @@ impl fmt::Display for BinOpToken {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Delimiter {
     /// ()
@@ -290,6 +409,7 @@ impl From<Delimiter> for proc_macro2::Delimiter {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Token {
     /// `=`
@@ -464,6 +584,7 @@ impl Token {
 
 /// This structure is not related to `proc_macro2::TokenStream`.
 /// However, it can be converted to `proc_marco2::TokenStream` by enabling the `quote` feature.
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct TokenStream(Vec<Token>);
 

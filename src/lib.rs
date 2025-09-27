@@ -186,6 +186,7 @@ macro_rules! impl_hasitem_methods {
 }
 pub(crate) use impl_hasitem_methods;
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Crate {
     pub shebang: Option<String>,

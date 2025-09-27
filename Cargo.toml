@@ -13,17 +13,19 @@ homepage = "https://docs.rs/ruast"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace]
-members = ["examples/proc_macro_example"]
+members = ["examples/proc_macro_example", "fuzz"]
 
 [features]
 tokenize = ["dep:proc-macro2", "dep:quote"]
 checked-ident = ["dep:unicode-ident"]
+fuzzing = ["dep:arbitrary"]
 
 [dependencies]
 indenter = { version = "0.3.3", features = ["std"] }
 proc-macro2 = { version = "1.0", optional = true }
 quote = { version = "1.0", optional = true }
 unicode-ident = { version = "1.0", optional = true }
+arbitrary = { version = "1.4.2", features = ["derive"], optional = true }
 
 [dev-dependencies]
 insta = "1.40.0"

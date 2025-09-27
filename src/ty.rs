@@ -5,6 +5,9 @@ use crate::stmt::Param;
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 use crate::{impl_display_for_enum, impl_obvious_conversion, EmptyItem};
 
+#[cfg(feature = "fuzzing")]
+use crate::token::String;
+
 #[cfg(feature = "tokenize")]
 crate::impl_to_tokens!(
     MutTy,
@@ -18,6 +21,7 @@ crate::impl_to_tokens!(
     Type,
 );
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MutTy {
     pub mutable: bool,
@@ -61,6 +65,7 @@ impl MutTy {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Ref {
     pub lifetime: Option<String>,
@@ -98,6 +103,7 @@ impl Ref {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PtrKind {
     Const,
@@ -124,6 +130,7 @@ impl From<PtrKind> for TokenStream {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Ptr {
     pub ty: Box<Type>,
@@ -155,6 +162,7 @@ impl Ptr {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BareFn {
     pub generic_params: Vec<GenericParam>,
@@ -257,6 +265,7 @@ impl BareFn {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypeParam {
     pub ident: String,
@@ -323,6 +332,7 @@ impl TypeParam {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ConstParam {
     pub ident: String,
@@ -355,6 +365,7 @@ impl ConstParam {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum GenericParam {
     TypeParam(TypeParam),
@@ -363,6 +374,7 @@ pub enum GenericParam {
 impl_display_for_enum!(GenericParam; TypeParam, ConstParam);
 impl_obvious_conversion!(GenericParam; TypeParam, ConstParam);
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PolyTraitRef {
     pub bound_generic_params: Vec<GenericParam>,
@@ -409,6 +421,7 @@ impl PolyTraitRef {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum GenericBound {
     Trait(PolyTraitRef),
@@ -433,6 +446,7 @@ impl From<GenericBound> for TokenStream {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TraitObject {
     pub is_dyn: bool,
@@ -496,6 +510,7 @@ impl TraitObject {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ImplTrait {
     pub bounds: Vec<GenericBound>,
@@ -552,6 +567,7 @@ impl ImplTrait {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     /// `[T]`
@@ -777,7 +793,7 @@ impl Type {
     }
 
     pub fn poly_path(ident: impl Into<String>, args: Vec<GenericArg>) -> Type {
-        Type::Path(Path::single(PathSegment::new(ident, Some(args))))
+        Type::Path(Path::single(PathSegment::new(ident, false, Some(args))))
     }
 
     pub fn const_ptr(ty: impl Into<Type>) -> Type {
