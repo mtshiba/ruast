@@ -1450,7 +1450,30 @@ impl<'a> arbitrary::Arbitrary<'a> for Block {
         let i = u.int_in_range(1..=10)?;
         let mut stmts = Vec::with_capacity(i);
         for _ in 0..i {
-            stmts.push(Stmt::arbitrary_for_block(u)?);
+            stmts.push(Stmt::arbitrary_not_expr(u)?);
+        }
+        Ok(Self { stmts })
+    }
+}
+
+#[cfg(feature = "fuzzing")]
+impl Block {
+    pub fn arbitrary_item_block(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        let i = u.int_in_range(0..=10)?;
+        let mut stmts = Vec::with_capacity(i);
+        for _ in 0..i {
+            stmts.push(Stmt::arbitrary_item(u)?);
+        }
+        Ok(Self { stmts })
+    }
+
+    pub fn arbitrary_extern_item_block(
+        u: &mut arbitrary::Unstructured<'_>,
+    ) -> arbitrary::Result<Self> {
+        let i = u.int_in_range(0..=10)?;
+        let mut stmts = Vec::with_capacity(i);
+        for _ in 0..i {
+            stmts.push(Stmt::arbitrary_extern_item(u)?);
         }
         Ok(Self { stmts })
     }
@@ -2786,11 +2809,27 @@ impl Impl {
     }
 }
 
-#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MacroDef {
     pub ident: String,
     pub args: DelimArgs,
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for MacroDef {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        // ts: () => {}
+        let mut ts = TokenStream::new();
+        ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+        ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        ts.push(Token::FatArrow);
+        ts.push(Token::OpenDelim(Delimiter::Brace));
+        ts.push(Token::CloseDelim(Delimiter::Brace));
+        Ok(MacroDef {
+            ident: String::arbitrary(u)?,
+            args: DelimArgs::brace(ts),
+        })
+    }
 }
 
 impl fmt::Display for MacroDef {
@@ -2838,12 +2877,22 @@ impl MacroDef {
 }
 
 /// `extern unsafe? "abi"? { ... }`
-#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ExternBlock {
     pub is_unsafe: bool,
     pub abi: Option<String>,
     pub block: Block,
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for ExternBlock {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(ExternBlock {
+            is_unsafe: bool::arbitrary(u)?,
+            abi: Option::<String>::arbitrary(u)?,
+            block: Block::arbitrary_extern_item_block(u)?,
+        })
+    }
 }
 
 impl fmt::Display for ExternBlock {
@@ -3132,6 +3181,19 @@ impl<'a, K: arbitrary::Arbitrary<'a> + HasVisibility> arbitrary::Arbitrary<'a> f
     }
 }
 
+#[cfg(feature = "fuzzing")]
+impl Item {
+    pub fn arbitrary_extern_item(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        use arbitrary::Arbitrary;
+
+        Ok(Self {
+            attrs: Vec::<Attribute>::arbitrary(u)?,
+            vis: Visibility::arbitrary(u)?,
+            kind: ItemKind::arbitrary_extern_item(u)?,
+        })
+    }
+}
+
 impl<I: Into<ItemKind>> From<I> for Item<ItemKind> {
     fn from(item: I) -> Self {
         Self::inherited(item)
@@ -3238,7 +3300,7 @@ pub enum ItemKind {
     UnionDef(UnionDef),
     TraitDef(TraitDef),
     Impl(Impl),
-    MacCall(MacCall),
+    MacCallWithSemi(MacCallWithSemi),
     MacroDef(MacroDef),
     ExternBlock(ExternBlock),
     ExternCrate(ExternCrate),
@@ -3246,12 +3308,29 @@ pub enum ItemKind {
 
 impl HasVisibility for ItemKind {
     fn has_visibility(&self) -> bool {
-        !matches!(self, Self::Impl(_) | Self::MacCall(_) | Self::MacroDef(_))
+        !matches!(
+            self,
+            Self::Impl(_) | Self::MacCallWithSemi(_) | Self::MacroDef(_)
+        )
     }
 }
 
-impl_obvious_conversion!(ItemKind; Use, StaticItem, ConstItem, Fn, Mod, TyAlias, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCall, ExternBlock, ExternCrate);
-impl_display_for_enum!(ItemKind; Use, StaticItem, ConstItem, Fn, Mod, TyAlias, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCall, ExternBlock, ExternCrate);
+#[cfg(feature = "fuzzing")]
+impl ItemKind {
+    pub fn arbitrary_extern_item(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        use arbitrary::Arbitrary;
+
+        match u.int_in_range(0..=2)? {
+            0 => Ok(ItemKind::Fn(Fn::arbitrary(u)?)),
+            1 => Ok(ItemKind::TyAlias(TyAlias::arbitrary(u)?)),
+            2 => Ok(ItemKind::StaticItem(StaticItem::arbitrary(u)?)),
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl_obvious_conversion!(ItemKind; Use, StaticItem, ConstItem, Fn, Mod, TyAlias, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCallWithSemi, ExternBlock, ExternCrate);
+impl_display_for_enum!(ItemKind; Use, StaticItem, ConstItem, Fn, Mod, TyAlias, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCallWithSemi, ExternBlock, ExternCrate);
 
 impl MaybeIdent for ItemKind {
     fn ident(&self) -> Option<&str> {
@@ -3267,7 +3346,7 @@ impl MaybeIdent for ItemKind {
             Self::UnionDef(item) => Some(&item.ident),
             Self::TraitDef(item) => Some(&item.ident),
             Self::Impl(_) => None,
-            Self::MacCall(_) => None,
+            Self::MacCallWithSemi(_) => None,
             Self::MacroDef(item) => Some(&item.ident),
             Self::ExternBlock(_) => None,
             Self::ExternCrate(item) => Some(&item.ident),
@@ -3720,18 +3799,18 @@ impl From<Empty> for TokenStream {
 /// `expr;`
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Semi(pub Expr);
+pub struct Semi<E = Expr>(pub E);
 
-impl fmt::Display for Semi {
+impl<E: fmt::Display> fmt::Display for Semi<E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{};", self.0)
     }
 }
 
-impl From<Semi> for TokenStream {
-    fn from(value: Semi) -> Self {
+impl<E: Into<TokenStream>> From<Semi<E>> for TokenStream {
+    fn from(value: Semi<E>) -> Self {
         let mut ts = TokenStream::new();
-        ts.extend(TokenStream::from(value.0).into_joint());
+        ts.extend(value.0.into().into_joint());
         ts.push(Token::Semi);
         ts
     }
@@ -3743,6 +3822,8 @@ impl Semi {
     }
 }
 
+pub type MacCallWithSemi = Semi<MacCall>;
+
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Stmt {
@@ -3751,22 +3832,33 @@ pub enum Stmt {
     Expr(Expr),
     Semi(Semi),
     Empty(Empty),
-    MacCall(MacCall),
+    MacCallWithSemi(MacCallWithSemi),
 }
 
-impl_obvious_conversion!(Stmt; Local, Item, Expr, Semi, Empty, MacCall);
+impl_obvious_conversion!(Stmt; Local, Item, Expr, Semi, Empty, MacCallWithSemi);
 
 #[cfg(feature = "fuzzing")]
 impl Stmt {
-    pub fn arbitrary_for_block<'a>(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+    pub fn arbitrary_not_expr(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
         use arbitrary::Arbitrary;
 
-        match u.int_in_range(0..=2)? {
+        match u.int_in_range(0..=3)? {
             0 => Ok(Stmt::Local(Local::arbitrary(u)?)),
             1 => Ok(Stmt::Item(Item::arbitrary(u)?)),
             2 => Ok(Stmt::Semi(Semi::arbitrary(u)?)),
+            3 => Ok(Stmt::MacCallWithSemi(MacCallWithSemi::arbitrary(u)?)),
             _ => unreachable!(),
         }
+    }
+
+    pub fn arbitrary_item(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        use arbitrary::Arbitrary;
+
+        Ok(Stmt::Item(Item::arbitrary(u)?))
+    }
+
+    pub fn arbitrary_extern_item(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        Ok(Stmt::Item(Item::arbitrary_extern_item(u)?))
     }
 }
 
@@ -3869,7 +3961,7 @@ impl fmt::Display for Stmt {
             Self::Expr(expr) => write!(f, "{expr}"),
             Self::Semi(semi) => write!(f, "{semi}"),
             Self::Empty(_) => write!(f, ""),
-            Self::MacCall(mac_call) => write!(f, "{mac_call}"),
+            Self::MacCallWithSemi(mac_call) => write!(f, "{mac_call}"),
         }
     }
 }

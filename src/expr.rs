@@ -1116,6 +1116,9 @@ impl fmt::Display for If {
             {
                 write!(f, "({})", self.cond)?;
             }
+            ExprKind::Struct(_) => {
+                write!(f, "({})", self.cond)?;
+            }
             _ => {
                 write!(f, "{}", self.cond)?;
             }
@@ -1136,6 +1139,11 @@ impl From<If> for TokenStream {
             ExprKind::Return(Return { expr }) | ExprKind::Yield(Yield { expr })
                 if expr.is_none() =>
             {
+                ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
+                ts.extend(TokenStream::from(*value.cond).into_joint());
+                ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+            }
+            ExprKind::Struct(_) => {
                 ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
                 ts.extend(TokenStream::from(*value.cond).into_joint());
                 ts.push(Token::CloseDelim(Delimiter::Parenthesis));
@@ -2180,8 +2188,6 @@ impl BinOpKind {
             Self::Mul,
             Self::Div,
             Self::Rem,
-            Self::LazyAnd,
-            Self::LazyOr,
             Self::BitAnd,
             Self::BitOr,
             Self::BitXor,
@@ -3138,8 +3144,11 @@ impl From<GenericArg> for TokenStream {
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MacDelimiter {
+    /// `(...)`
     Parenthesis,
+    /// `[...]`
     Bracket,
+    /// `{...}`
     Brace,
 }
 

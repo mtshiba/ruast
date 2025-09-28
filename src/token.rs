@@ -588,6 +588,10 @@ impl Token {
         matches!(self, Self::Joint(_))
     }
 
+    pub const fn is_delimiter(&self) -> bool {
+        matches!(self, Self::OpenDelim(_) | Self::CloseDelim(_))
+    }
+
     pub fn into_joint(self) -> Self {
         match self {
             Self::Joint(_) => self,
@@ -605,9 +609,23 @@ impl Token {
 
 /// This structure is not related to `proc_macro2::TokenStream`.
 /// However, it can be converted to `proc_marco2::TokenStream` by enabling the `quote` feature.
-#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct TokenStream(Vec<Token>);
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for TokenStream {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let len = u.int_in_range(0..=20)?;
+        let mut tokens = vec![];
+        for _ in 0..len {
+            let token = Token::arbitrary(u)?;
+            if !token.is_delimiter() {
+                tokens.push(token);
+            }
+        }
+        Ok(Self(tokens))
+    }
+}
 
 impl fmt::Display for TokenStream {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
