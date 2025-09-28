@@ -592,6 +592,10 @@ impl Token {
         matches!(self, Self::OpenDelim(_) | Self::CloseDelim(_))
     }
 
+    pub const fn is_square_bracket(&self) -> bool {
+        matches!(self, Self::Lt | Self::Gt)
+    }
+
     pub fn into_joint(self) -> Self {
         match self {
             Self::Joint(_) => self,
@@ -619,7 +623,11 @@ impl<'a> arbitrary::Arbitrary<'a> for TokenStream {
         let mut tokens = vec![];
         for _ in 0..len {
             let token = Token::arbitrary(u)?;
-            if !token.is_delimiter() {
+            if !token.is_delimiter()
+                && !token.is_square_bracket()
+                && token != Token::Eof
+                && token != Token::SingleQuote
+            {
                 tokens.push(token);
             }
         }

@@ -666,6 +666,18 @@ impl Expr {
             ExprKind::Binary(_) | ExprKind::Unary(_) | ExprKind::Field(_) | ExprKind::Range(_)
         )
     }
+
+    pub fn should_wrap(&self) -> bool {
+        match &self.kind {
+            ExprKind::Return(Return { expr }) | ExprKind::Yield(Yield { expr })
+                if expr.is_none() =>
+            {
+                true
+            }
+            ExprKind::Struct(_) => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -1110,18 +1122,10 @@ impl HasPrecedence for If {
 impl fmt::Display for If {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "if ")?;
-        match &self.cond.kind {
-            ExprKind::Return(Return { expr }) | ExprKind::Yield(Yield { expr })
-                if expr.is_none() =>
-            {
-                write!(f, "({})", self.cond)?;
-            }
-            ExprKind::Struct(_) => {
-                write!(f, "({})", self.cond)?;
-            }
-            _ => {
-                write!(f, "{}", self.cond)?;
-            }
+        if self.cond.should_wrap() {
+            write!(f, "({})", self.cond)?;
+        } else {
+            write!(f, "{}", self.cond)?;
         }
         write!(f, " {}", self.then)?;
         if let Some(else_) = &self.else_ {
@@ -1135,22 +1139,12 @@ impl From<If> for TokenStream {
     fn from(value: If) -> Self {
         let mut ts = TokenStream::new();
         ts.push(Token::Keyword(KeywordToken::If));
-        match &value.cond.kind {
-            ExprKind::Return(Return { expr }) | ExprKind::Yield(Yield { expr })
-                if expr.is_none() =>
-            {
-                ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-                ts.extend(TokenStream::from(*value.cond).into_joint());
-                ts.push(Token::CloseDelim(Delimiter::Parenthesis));
-            }
-            ExprKind::Struct(_) => {
-                ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-                ts.extend(TokenStream::from(*value.cond).into_joint());
-                ts.push(Token::CloseDelim(Delimiter::Parenthesis));
-            }
-            _ => {
-                ts.extend(TokenStream::from(*value.cond));
-            }
+        if value.cond.should_wrap() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
+            ts.extend(TokenStream::from(*value.cond).into_joint());
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.cond));
         }
         ts.extend(TokenStream::from(value.then));
         if let Some(else_) = value.else_ {
@@ -1188,7 +1182,13 @@ impl HasPrecedence for While {
 
 impl fmt::Display for While {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "while {cond} {body}", cond = self.cond, body = self.body)
+        write!(f, "while ")?;
+        if self.cond.should_wrap() {
+            write!(f, "({})", self.cond)?;
+        } else {
+            write!(f, "{}", self.cond)?;
+        }
+        write!(f, " {}", self.body)
     }
 }
 
@@ -1196,7 +1196,13 @@ impl From<While> for TokenStream {
     fn from(value: While) -> Self {
         let mut ts = TokenStream::new();
         ts.push(Token::Keyword(KeywordToken::While));
-        ts.extend(TokenStream::from(*value.cond));
+        if value.cond.should_wrap() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
+            ts.extend(TokenStream::from(*value.cond).into_joint());
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.cond));
+        }
         ts.extend(TokenStream::from(value.body));
         ts
     }
@@ -1227,13 +1233,13 @@ impl HasPrecedence for ForLoop {
 
 impl fmt::Display for ForLoop {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "for {pat} in {expr} {body}",
-            pat = self.pat,
-            expr = self.expr,
-            body = self.body
-        )
+        write!(f, "for {pat} in ", pat = self.pat,)?;
+        if self.expr.should_wrap() {
+            write!(f, "({})", self.expr)?;
+        } else {
+            write!(f, "{}", self.expr)?;
+        }
+        write!(f, " {}", self.body)
     }
 }
 
@@ -1243,7 +1249,13 @@ impl From<ForLoop> for TokenStream {
         ts.push(Token::Keyword(KeywordToken::For));
         ts.extend(TokenStream::from(*value.pat));
         ts.push(Token::Keyword(KeywordToken::In));
-        ts.extend(TokenStream::from(*value.expr));
+        if value.expr.should_wrap() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
+            ts.extend(TokenStream::from(*value.expr).into_joint());
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.expr));
+        }
         ts.extend(TokenStream::from(value.body));
         ts
     }
@@ -1447,7 +1459,13 @@ impl HasPrecedence for Match {
 
 impl fmt::Display for Match {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "match {expr} {{", expr = self.expr)?;
+        write!(f, "match ")?;
+        if self.expr.should_wrap() {
+            write!(f, "({})", self.expr)?;
+        } else {
+            write!(f, "{}", self.expr)?;
+        }
+        writeln!(f, " {{")?;
         for arm in self.arms.iter() {
             let mut indent = indenter::indented(f).with_str("    ");
             writeln!(indent, "{arm},")?;
@@ -1460,7 +1478,13 @@ impl From<Match> for TokenStream {
     fn from(value: Match) -> Self {
         let mut ts = TokenStream::new();
         ts.push(Token::Keyword(KeywordToken::Match));
-        ts.extend(TokenStream::from(*value.expr));
+        if value.expr.should_wrap() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
+            ts.extend(TokenStream::from(*value.expr).into_joint());
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.expr));
+        }
         ts.push(Token::OpenDelim(Delimiter::Brace));
         for arm in value.arms {
             ts.extend(TokenStream::from(arm).into_joint());

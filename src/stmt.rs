@@ -814,7 +814,10 @@ impl fmt::Display for FnDecl {
             write!(f, "{param}")?;
         }
         if self.is_variadic {
-            write!(f, ", ...")?;
+            if !self.inputs.is_empty() {
+                write!(f, ", ")?;
+            }
+            write!(f, "...")?;
         }
         write!(f, ")")?;
         if let Some(output) = &self.output {
@@ -835,7 +838,9 @@ impl From<FnDecl> for TokenStream {
             ts.extend(TokenStream::from(param.clone()).into_joint());
         }
         if value.is_variadic {
-            ts.push(Token::Comma);
+            if !value.inputs.is_empty() {
+                ts.push(Token::Comma);
+            }
             ts.push(Token::DotDotDot);
         }
         ts.push(Token::CloseDelim(Delimiter::Parenthesis));

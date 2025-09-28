@@ -33,7 +33,11 @@ impl fmt::Display for MutTy {
         if self.mutable {
             write!(f, "mut ")?;
         }
-        write!(f, "{ty}", ty = self.ty)
+        if self.ty.should_wrap() {
+            write!(f, "({})", self.ty)
+        } else {
+            write!(f, "{}", self.ty)
+        }
     }
 }
 
@@ -43,7 +47,13 @@ impl From<MutTy> for TokenStream {
         if value.mutable {
             ts.push(Token::Keyword(KeywordToken::Mut));
         }
-        ts.extend(TokenStream::from(*value.ty));
+        if value.ty.should_wrap() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
+            ts.extend(TokenStream::from(*value.ty).into_joint());
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.ty));
+        }
         ts
     }
 }
@@ -139,7 +149,12 @@ pub struct Ptr {
 
 impl fmt::Display for Ptr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "*{} {}", self.kind, self.ty)
+        write!(f, "*{} ", self.kind)?;
+        if self.ty.should_wrap() {
+            write!(f, "({})", self.ty)
+        } else {
+            write!(f, "{}", self.ty)
+        }
     }
 }
 
@@ -148,7 +163,13 @@ impl From<Ptr> for TokenStream {
         let mut ts = TokenStream::new();
         ts.push(Token::BinOp(BinOpToken::Star).into_joint());
         ts.extend(TokenStream::from(value.kind));
-        ts.extend(TokenStream::from(*value.ty));
+        if value.ty.should_wrap() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
+            ts.extend(TokenStream::from(*value.ty).into_joint());
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.ty));
+        }
         ts
     }
 }
@@ -867,5 +888,9 @@ impl Type {
 
     pub fn vec(inner: impl Into<Type>) -> Type {
         Type::poly_path("Vec", vec![GenericArg::Type(inner.into())])
+    }
+
+    pub fn should_wrap(&self) -> bool {
+        matches!(self, Type::ImplTrait(_) | Type::TraitObject(_))
     }
 }
