@@ -446,11 +446,23 @@ impl From<GenericBound> for TokenStream {
     }
 }
 
-#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TraitObject {
     pub is_dyn: bool,
     pub bounds: Vec<GenericBound>,
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for TraitObject {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let is_dyn = u.arbitrary()?;
+        let len = u.int_in_range(1..=5)?;
+        let mut bounds = Vec::with_capacity(len);
+        for _ in 0..len {
+            bounds.push(GenericBound::arbitrary(u)?);
+        }
+        Ok(Self { is_dyn, bounds })
+    }
 }
 
 impl fmt::Display for TraitObject {
@@ -510,10 +522,21 @@ impl TraitObject {
     }
 }
 
-#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ImplTrait {
     pub bounds: Vec<GenericBound>,
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for ImplTrait {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let len = u.int_in_range(1..=5)?;
+        let mut bounds = Vec::with_capacity(len);
+        for _ in 0..len {
+            bounds.push(GenericBound::arbitrary(u)?);
+        }
+        Ok(Self { bounds })
+    }
 }
 
 impl fmt::Display for ImplTrait {
@@ -567,7 +590,6 @@ impl ImplTrait {
     }
 }
 
-#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     /// `[T]`
@@ -588,6 +610,36 @@ pub enum Type {
     Infer,
     ImplicitSelf,
     Err,
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for Type {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        match u.int_in_range(0..=10)? {
+            0 => Ok(Type::Slice(Box::new(Type::arbitrary(u)?))),
+            1 => Ok(Type::Array(
+                Box::new(Type::arbitrary(u)?),
+                Box::new(Const::arbitrary(u)?),
+            )),
+            2 => Ok(Type::Ptr(Ptr::arbitrary(u)?)),
+            3 => Ok(Type::Ref(Ref::arbitrary(u)?)),
+            4 => Ok(Type::BareFn(BareFn::arbitrary(u)?)),
+            5 => Ok(Type::Macro(MacCall::arbitrary(u)?)),
+            6 => Ok(Type::Never),
+            7 => {
+                let len = u.int_in_range(0..=5)?;
+                let mut types = Vec::with_capacity(len);
+                for _ in 0..len {
+                    types.push(Type::arbitrary(u)?);
+                }
+                Ok(Type::Tuple(types))
+            }
+            8 => Ok(Type::Path(Path::arbitrary(u)?)),
+            9 => Ok(Type::TraitObject(TraitObject::arbitrary(u)?)),
+            10 => Ok(Type::ImplTrait(ImplTrait::arbitrary(u)?)),
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl fmt::Display for Type {
@@ -793,7 +845,7 @@ impl Type {
     }
 
     pub fn poly_path(ident: impl Into<String>, args: Vec<GenericArg>) -> Type {
-        Type::Path(Path::single(PathSegment::new(ident, false, Some(args))))
+        Type::Path(Path::single(PathSegment::new(ident, Some(args))))
     }
 
     pub fn const_ptr(ty: impl Into<Type>) -> Type {

@@ -597,9 +597,9 @@ fn test_pathsegment_to_tokenstream() {
     let ts = TokenStream::from(simple_segment);
     assert_snapshot!(ts, @"foo");
 
-    let generic_segment = PathSegment::new("Vec", false, Some(vec![GenericArg::Type(Type::i32())]));
+    let generic_segment = PathSegment::new("Vec", Some(vec![GenericArg::Type(Type::i32())]));
     let ts = TokenStream::from(generic_segment);
-    assert_snapshot!(ts, @"Vec<i32>");
+    assert_snapshot!(ts, @"Vec::<i32>");
 }
 
 #[test]
@@ -835,7 +835,7 @@ fn test_complex_nested_types_to_tokenstream() {
     );
     let ref_mut_ty = Type::Ref(Ref::new(Some("static"), MutTy::mut_(array_ty)));
     let ts = TokenStream::from(ref_mut_ty);
-    assert_snapshot!(ts, @"&'static mut [Box<dyn Send + Sync>; 10]");
+    assert_snapshot!(ts, @"&'static mut [Box::<dyn Send + Sync>; 10]");
 }
 
 #[test]

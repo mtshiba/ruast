@@ -16,8 +16,8 @@ path = ".."
 features = ["fuzzing"]
 
 [[bin]]
-name = "fuzz_target_1"
-path = "fuzz_targets/fuzz_target_1.rs"
+name = "fuzz_expr"
+path = "fuzz_targets/fuzz_expr.rs"
 test = false
 doc = false
 bench = false

@@ -409,13 +409,19 @@ impl<I: Into<TokenStream>> IntoTokens for I {
     }
 }
 
-#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum AttrArgs {
     #[default]
     Empty,
     Delimited(DelimArgs),
     Eq(Expr),
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for AttrArgs {
+    fn arbitrary(_u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self::default())
+    }
 }
 
 impl fmt::Display for AttrArgs {
@@ -531,7 +537,7 @@ pub struct AttributeItem {
 #[cfg(feature = "fuzzing")]
 impl<'a> arbitrary::Arbitrary<'a> for AttributeItem {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        let path = Path::arbitrary(u)?.turbo_fish(false);
+        let path = Path::arbitrary_no_arg(u)?;
         let args = AttrArgs::arbitrary(u)?;
         Ok(Self { path, args })
     }
@@ -585,6 +591,13 @@ impl AttributeItem {
 pub struct Expr {
     pub attrs: Vec<AttributeItem>,
     pub kind: ExprKind,
+}
+
+#[cfg(feature = "fuzzing")]
+impl Expr {
+    pub fn arbitrary_const(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        Ok(Self::new(ExprKind::arbitrary_const(u)?))
+    }
 }
 
 impl HasPrecedence for Expr {
@@ -643,9 +656,15 @@ impl Expr {
     }
 }
 
-#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Const(pub Expr);
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for Const {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self(Expr::arbitrary_const(u)?))
+    }
+}
 
 impl fmt::Display for Const {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -811,6 +830,19 @@ pub struct Binary {
     pub rhs: Box<Expr>,
 }
 
+#[cfg(feature = "fuzzing")]
+impl Binary {
+    pub fn arbitrary_const(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        use arbitrary::Arbitrary;
+
+        Ok(Self::new(
+            Expr::arbitrary_const(u)?,
+            BinOpKind::arbitrary(u)?,
+            Expr::arbitrary_const(u)?,
+        ))
+    }
+}
+
 impl fmt::Display for Binary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.precedence() < self.lhs.precedence() {
@@ -935,6 +967,18 @@ impl From<UnaryOpKind> for Token {
 pub struct Unary {
     pub op: UnaryOpKind,
     pub expr: Box<Expr>,
+}
+
+#[cfg(feature = "fuzzing")]
+impl Unary {
+    pub fn arbitrary_const(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        use arbitrary::Arbitrary;
+
+        Ok(Self::new(
+            UnaryOpKind::arbitrary(u)?,
+            Expr::arbitrary_const(u)?,
+        ))
+    }
 }
 
 impl HasPrecedence for Unary {
@@ -1742,7 +1786,9 @@ impl Index {
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum RangeLimits {
+    /// `..`
     HalfOpen,
+    /// `..=`
     Closed,
 }
 
@@ -1766,12 +1812,35 @@ impl RangeLimits {
 }
 
 /// `start..end` or `start..=end`
-#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Range {
     pub start: Option<Box<Expr>>,
     pub end: Option<Box<Expr>>,
     pub limits: RangeLimits,
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for Range {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let limits = RangeLimits::arbitrary(u)?;
+        let (start, end) = match limits {
+            RangeLimits::HalfOpen => match u.int_in_range(0..=2)? {
+                0 => (
+                    Some(Box::new(Expr::arbitrary(u)?)),
+                    Some(Box::new(Expr::arbitrary(u)?)),
+                ),
+                1 => (Some(Box::new(Expr::arbitrary(u)?)), None),
+                2 => (None, Some(Box::new(Expr::arbitrary(u)?))),
+                _ => unreachable!(),
+            },
+            RangeLimits::Closed => {
+                let start = Option::<Box<Expr>>::arbitrary(u)?;
+                let end = Some(Box::new(Expr::arbitrary(u)?));
+                (start, end)
+            }
+        };
+        Ok(Self { start, end, limits })
+    }
 }
 
 impl HasPrecedence for Range {
@@ -1783,7 +1852,9 @@ impl HasPrecedence for Range {
 impl fmt::Display for Range {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(start) = &self.start {
-            if self.precedence() < start.precedence() {
+            if self.precedence() < start.precedence()
+                || start.precedence() == OperatorPrecedence::Range
+            {
                 write!(f, "({start})")?;
             } else {
                 write!(f, "{start}")?;
@@ -1791,7 +1862,8 @@ impl fmt::Display for Range {
         }
         write!(f, " {} ", self.limits)?;
         if let Some(end) = &self.end {
-            if self.precedence() < end.precedence() {
+            if self.precedence() < end.precedence() || end.precedence() == OperatorPrecedence::Range
+            {
                 write!(f, "({end})")?;
             } else {
                 write!(f, "{end}")?;
@@ -1806,7 +1878,7 @@ impl From<Range> for TokenStream {
         let mut ts = TokenStream::new();
         let precedence = value.precedence();
         if let Some(start) = value.start {
-            if precedence < start.precedence() {
+            if precedence < start.precedence() || start.precedence() == OperatorPrecedence::Range {
                 ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
                 ts.extend(TokenStream::from(*start).into_joint());
                 ts.push(Token::CloseDelim(Delimiter::Parenthesis));
@@ -1823,7 +1895,7 @@ impl From<Range> for TokenStream {
             }
         }
         if let Some(end) = value.end {
-            if precedence < end.precedence() {
+            if precedence < end.precedence() || end.precedence() == OperatorPrecedence::Range {
                 ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
                 ts.extend(TokenStream::from(*end));
                 ts.push(Token::CloseDelim(Delimiter::Parenthesis));
@@ -2563,6 +2635,18 @@ impl<'a> arbitrary::Arbitrary<'a> for Path {
     }
 }
 
+#[cfg(feature = "fuzzing")]
+impl Path {
+    pub fn arbitrary_no_arg<'a>(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let len = u.int_in_range(1..=5)?;
+        let mut segments = Vec::with_capacity(len);
+        for _ in 0..len {
+            segments.push(PathSegment::arbitrary_no_arg(u)?);
+        }
+        Ok(Self { segments })
+    }
+}
+
 impl HasPrecedence for Path {
     fn precedence(&self) -> OperatorPrecedence {
         OperatorPrecedence::Elemental
@@ -2656,31 +2740,29 @@ impl Path {
     pub fn use_(self) -> Use {
         Use::from(self)
     }
-
-    pub fn turbo_fish(mut self, val: bool) -> Self {
-        for segment in &mut self.segments {
-            segment.turbo_fish = val;
-        }
-        self
-    }
 }
 
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PathSegment {
     pub ident: String,
-    pub turbo_fish: bool,
     pub args: Option<Vec<GenericArg>>,
+}
+
+#[cfg(feature = "fuzzing")]
+impl PathSegment {
+    fn arbitrary_no_arg(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        use arbitrary::Arbitrary;
+
+        Ok(Self::new(String::arbitrary(u)?, None))
+    }
 }
 
 impl fmt::Display for PathSegment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.ident)?;
         if let Some(args) = &self.args {
-            if self.turbo_fish {
-                write!(f, "::")?;
-            }
-            write!(f, "<")?;
+            write!(f, "::<")?;
             for (i, arg) in args.iter().enumerate() {
                 if i > 0 {
                     write!(f, ", ")?;
@@ -2697,7 +2779,6 @@ impl<S: Into<String>> From<S> for PathSegment {
     fn from(ident: S) -> Self {
         Self {
             ident: ident.into(),
-            turbo_fish: true,
             args: None,
         }
     }
@@ -2709,9 +2790,7 @@ impl From<PathSegment> for TokenStream {
 
         if let Some(args) = value.args {
             ts.push(Token::ident(value.ident).into_joint());
-            if value.turbo_fish {
-                ts.push(Token::ModSep.into_joint());
-            }
+            ts.push(Token::ModSep.into_joint());
             ts.push(Token::Lt.into_joint());
             for (i, arg) in args.iter().enumerate() {
                 if i > 0 {
@@ -2728,16 +2807,15 @@ impl From<PathSegment> for TokenStream {
 }
 
 impl PathSegment {
-    pub fn new(ident: impl Into<String>, turbo_fish: bool, args: Option<Vec<GenericArg>>) -> Self {
+    pub fn new(ident: impl Into<String>, args: Option<Vec<GenericArg>>) -> Self {
         Self {
             ident: ident.into(),
-            turbo_fish,
             args,
         }
     }
 
     pub fn simple(ident: impl Into<String>) -> Self {
-        Self::new(ident, false, None)
+        Self::new(ident, None)
     }
 
     #[cfg(feature = "checked-ident")]
@@ -3102,12 +3180,20 @@ impl DelimArgs {
     }
 }
 
-#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MacCall {
     /// `!` not included
     pub path: Path,
     pub args: DelimArgs,
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for MacCall {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let path = Path::arbitrary_no_arg(u)?;
+        let args = DelimArgs::arbitrary(u)?;
+        Ok(Self { path, args })
+    }
 }
 
 impl HasPrecedence for MacCall {
@@ -3378,6 +3464,21 @@ pub enum ExprKind {
     Struct(Struct),
     Repeat(Repeat),
     Try(Try),
+}
+
+#[cfg(feature = "fuzzing")]
+impl ExprKind {
+    pub fn arbitrary_const(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        use arbitrary::Arbitrary;
+
+        match u.int_in_range(0..=3)? {
+            0 => Ok(Self::Lit(Lit::arbitrary(u)?)),
+            1 => Ok(Self::Path(Path::arbitrary_no_arg(u)?)),
+            2 => Ok(Self::Binary(Binary::arbitrary_const(u)?)),
+            3 => Ok(Self::Unary(Unary::arbitrary_const(u)?)),
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl_display_for_enum!(ExprKind;

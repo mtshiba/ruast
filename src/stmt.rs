@@ -503,7 +503,6 @@ impl RefPat {
     }
 }
 
-#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Pat {
     Wild,
@@ -520,6 +519,46 @@ pub enum Pat {
     Rest,
     Paren(Box<Pat>),
     MacCall(MacCall),
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for Pat {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        // Generates only irrefutable patterns.
+        match u.int_in_range(0..=8)? {
+            0 => Ok(Self::Wild),
+            1 => Ok(Self::Ident(IdentPat::arbitrary(u)?)),
+            2 => Ok(Self::Struct(StructPat::arbitrary(u)?)),
+            3 => Ok(Self::TupleStruct(TupleStructPat::arbitrary(u)?)),
+            4 => {
+                let len = u.int_in_range(1..=5)?;
+                let mut pats = Vec::with_capacity(len);
+                for _ in 0..len {
+                    pats.push(Pat::arbitrary(u)?);
+                }
+                Ok(Self::Or(pats))
+            }
+            5 => {
+                let len = u.int_in_range(1..=5)?;
+                let mut pats = Vec::with_capacity(len);
+                for _ in 0..len {
+                    pats.push(Pat::arbitrary(u)?);
+                }
+                Ok(Self::Tuple(pats))
+            }
+            6 => Ok(Self::Box(Box::new(Pat::arbitrary(u)?))),
+            7 => Ok(Self::Ref(RefPat::arbitrary(u)?)),
+            8 => {
+                let len = u.int_in_range(1..=5)?;
+                let mut pats = Vec::with_capacity(len);
+                for _ in 0..len {
+                    pats.push(Pat::arbitrary(u)?);
+                }
+                Ok(Self::Slice(pats))
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl fmt::Display for Pat {
@@ -1385,7 +1424,7 @@ impl<'a> arbitrary::Arbitrary<'a> for Block {
         let i = u.int_in_range(1..=10)?;
         let mut stmts = Vec::with_capacity(i);
         for _ in 0..i {
-            stmts.push(Stmt::arbitrary(u)?);
+            stmts.push(Stmt::arbitrary_for_block(u)?);
         }
         Ok(Self { stmts })
     }
@@ -2929,7 +2968,6 @@ impl ExternCrate {
     }
 }
 
-#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum VisibilityScope {
     /// pub(crate)
@@ -2940,6 +2978,19 @@ pub enum VisibilityScope {
     Self_,
     /// pub(in path)
     Path(Path),
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for VisibilityScope {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        match u.int_in_range(0..=3)? {
+            0 => Ok(VisibilityScope::Crate),
+            1 => Ok(VisibilityScope::Super),
+            2 => Ok(VisibilityScope::Self_),
+            3 => Ok(VisibilityScope::Path(Path::arbitrary_no_arg(u)?)),
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl fmt::Display for VisibilityScope {
@@ -3646,6 +3697,20 @@ pub enum Stmt {
 }
 
 impl_obvious_conversion!(Stmt; Local, Item, Expr, Semi, Empty, MacCall);
+
+#[cfg(feature = "fuzzing")]
+impl Stmt {
+    pub fn arbitrary_for_block<'a>(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        use arbitrary::Arbitrary;
+
+        match u.int_in_range(0..=2)? {
+            0 => Ok(Stmt::Local(Local::arbitrary(u)?)),
+            1 => Ok(Stmt::Item(Item::arbitrary(u)?)),
+            2 => Ok(Stmt::Semi(Semi::arbitrary(u)?)),
+            _ => unreachable!(),
+        }
+    }
+}
 
 impl From<Use> for Stmt {
     fn from(item: Use) -> Self {
