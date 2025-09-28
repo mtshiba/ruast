@@ -456,8 +456,9 @@ pub struct TraitObject {
 impl<'a> arbitrary::Arbitrary<'a> for TraitObject {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let is_dyn = u.arbitrary()?;
-        let len = u.int_in_range(1..=5)?;
+        let len = u.int_in_range(0..=5)?;
         let mut bounds = Vec::with_capacity(len);
+        bounds.push(GenericBound::Trait(PolyTraitRef::arbitrary(u)?));
         for _ in 0..len {
             bounds.push(GenericBound::arbitrary(u)?);
         }
@@ -530,8 +531,9 @@ pub struct ImplTrait {
 #[cfg(feature = "fuzzing")]
 impl<'a> arbitrary::Arbitrary<'a> for ImplTrait {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        let len = u.int_in_range(1..=5)?;
+        let len = u.int_in_range(0..=5)?;
         let mut bounds = Vec::with_capacity(len);
+        bounds.push(GenericBound::Trait(PolyTraitRef::arbitrary(u)?));
         for _ in 0..len {
             bounds.push(GenericBound::arbitrary(u)?);
         }

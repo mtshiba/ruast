@@ -48,7 +48,8 @@ pub enum OperatorPrecedence {
     Assign = 17,
     /// `..`, `..=`
     Range = 18,
-    ReturnBreakClosure = 19,
+    /// return, break, yield, closure, blocks, etc.
+    AlwaysWrapped = 19,
 }
 
 pub trait HasPrecedence {
@@ -586,11 +587,22 @@ impl AttributeItem {
     }
 }
 
-#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Expr {
     pub attrs: Vec<AttributeItem>,
     pub kind: ExprKind,
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for Expr {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let kind = ExprKind::arbitrary(u)?;
+        let attrs = match kind {
+            ExprKind::Range(Range { start: None, .. }) => vec![],
+            _ => Vec::<AttributeItem>::arbitrary(u)?,
+        };
+        Ok(Self { attrs, kind })
+    }
 }
 
 #[cfg(feature = "fuzzing")]
@@ -1040,7 +1052,7 @@ pub struct Let {
 
 impl HasPrecedence for Let {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::Elemental
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
@@ -1091,7 +1103,7 @@ impl<'a> arbitrary::Arbitrary<'a> for If {
 
 impl HasPrecedence for If {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::Elemental
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
@@ -1162,7 +1174,7 @@ pub struct While {
 
 impl HasPrecedence for While {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::Elemental
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
@@ -1201,7 +1213,7 @@ pub struct ForLoop {
 
 impl HasPrecedence for ForLoop {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::Elemental
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
@@ -1247,7 +1259,7 @@ pub struct Loop {
 
 impl HasPrecedence for Loop {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::Elemental
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
@@ -1288,7 +1300,7 @@ pub struct ConstBlock {
 
 impl HasPrecedence for ConstBlock {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::Elemental
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
@@ -1329,7 +1341,7 @@ pub struct UnsafeBlock {
 
 impl HasPrecedence for UnsafeBlock {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::Elemental
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
@@ -1421,7 +1433,7 @@ pub struct Match {
 
 impl HasPrecedence for Match {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::Elemental
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
@@ -1473,7 +1485,7 @@ pub struct Closure {
 
 impl HasPrecedence for Closure {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::ReturnBreakClosure
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
@@ -1589,7 +1601,7 @@ pub struct Async {
 
 impl HasPrecedence for Async {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::Elemental
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
@@ -1680,7 +1692,7 @@ pub struct TryBlock {
 
 impl HasPrecedence for TryBlock {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::Elemental
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
@@ -1981,7 +1993,7 @@ pub struct Return {
 
 impl HasPrecedence for Return {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::ReturnBreakClosure
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
@@ -2023,7 +2035,7 @@ pub struct Yield {
 
 impl HasPrecedence for Yield {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::ReturnBreakClosure
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
@@ -3015,7 +3027,7 @@ pub struct Break {
 
 impl HasPrecedence for Break {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::ReturnBreakClosure
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
@@ -3545,7 +3557,7 @@ impl<'a> arbitrary::Arbitrary<'a> for ExprKind {
             6 => Ok(Self::Lit(Lit::arbitrary(u)?)),
             7 => Ok(Self::Cast(Cast::arbitrary(u)?)),
             // 8 => Ok(Self::TypeAscription(TypeAscription::arbitrary(u)?)),
-            9 => Ok(Self::Let(Let::arbitrary(u)?)),
+            // 9 => Ok(Self::Let(Let::arbitrary(u)?)),
             10 => Ok(Self::If(If::arbitrary(u)?)),
             11 => Ok(Self::While(While::arbitrary(u)?)),
             12 => Ok(Self::ForLoop(ForLoop::arbitrary(u)?)),
@@ -3588,11 +3600,11 @@ impl ExprKind {
             return Ok(Self::Lit(Lit::arbitrary(u)?));
         }
 
-        match u.int_in_range(0..=3)? {
+        match u.int_in_range(0..=1)? {
             0 => Ok(Self::Lit(Lit::arbitrary(u)?)),
             1 => Ok(Self::Path(Path::arbitrary_no_arg(u)?)),
-            2 => Ok(Self::Binary(Binary::arbitrary_const(u)?)),
-            3 => Ok(Self::Unary(Unary::arbitrary_const(u)?)),
+            // 2 => Ok(Self::Binary(Binary::arbitrary_const(u)?)),
+            // 3 => Ok(Self::Unary(Unary::arbitrary_const(u)?)),
             _ => unreachable!(),
         }
     }

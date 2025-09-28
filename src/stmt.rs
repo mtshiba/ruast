@@ -224,7 +224,13 @@ impl fmt::Display for LocalKind {
         match self {
             Self::Decl => write!(f, ""),
             Self::Init(expr) => write!(f, " = {expr}"),
-            Self::InitElse(expr, block) => write!(f, " = {expr} else {block}"),
+            Self::InitElse(expr, block) => {
+                if OperatorPrecedence::Assign < expr.precedence() {
+                    write!(f, " = ({expr}) else {block}")
+                } else {
+                    write!(f, " = {expr} else {block}")
+                }
+            }
         }
     }
 }
@@ -248,7 +254,13 @@ impl From<LocalKind> for TokenStream {
             LocalKind::InitElse(expr, block) => {
                 let mut ts = TokenStream::new();
                 ts.push(Token::Eq);
-                ts.extend(TokenStream::from(expr));
+                if OperatorPrecedence::Assign < expr.precedence() {
+                    ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
+                    ts.extend(TokenStream::from(expr));
+                    ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+                } else {
+                    ts.extend(TokenStream::from(expr));
+                }
                 ts.push(Token::Keyword(KeywordToken::Else));
                 ts.extend(TokenStream::from(block));
                 ts
@@ -1321,7 +1333,7 @@ impl LabelledBlock {
 
 impl HasPrecedence for LabelledBlock {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::Elemental
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
@@ -1685,7 +1697,7 @@ pub enum Fields {
 impl fmt::Display for Fields {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Unit => write!(f, ""),
+            Self::Unit => write!(f, "{{}}"),
             Self::Tuple(fields) => {
                 write!(f, "(")?;
                 for (i, field) in fields.iter().enumerate() {
@@ -3092,12 +3104,32 @@ impl From<Visibility> for TokenStream {
     }
 }
 
-#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
+pub trait HasVisibility {
+    fn has_visibility(&self) -> bool;
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Item<K = ItemKind> {
     pub attrs: Vec<Attribute>,
     pub vis: Visibility,
     pub kind: K,
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a, K: arbitrary::Arbitrary<'a> + HasVisibility> arbitrary::Arbitrary<'a> for Item<K> {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let kind = K::arbitrary(u)?;
+        let vis = if kind.has_visibility() {
+            Visibility::arbitrary(u)?
+        } else {
+            Visibility::Inherited
+        };
+        Ok(Self {
+            attrs: Vec::<Attribute>::arbitrary(u)?,
+            vis,
+            kind,
+        })
+    }
 }
 
 impl<I: Into<ItemKind>> From<I> for Item<ItemKind> {
@@ -3210,6 +3242,12 @@ pub enum ItemKind {
     MacroDef(MacroDef),
     ExternBlock(ExternBlock),
     ExternCrate(ExternCrate),
+}
+
+impl HasVisibility for ItemKind {
+    fn has_visibility(&self) -> bool {
+        !matches!(self, Self::Impl(_) | Self::MacCall(_) | Self::MacroDef(_))
+    }
 }
 
 impl_obvious_conversion!(ItemKind; Use, StaticItem, ConstItem, Fn, Mod, TyAlias, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCall, ExternBlock, ExternCrate);
@@ -3633,6 +3671,12 @@ pub enum AssocItemKind {
     Fn(Fn),
     TyAlias(TyAlias),
     MacCall(MacCall),
+}
+
+impl HasVisibility for AssocItemKind {
+    fn has_visibility(&self) -> bool {
+        !matches!(self, Self::MacCall(_))
+    }
 }
 
 impl_display_for_enum!(AssocItemKind; ConstItem, Fn, TyAlias, MacCall);
