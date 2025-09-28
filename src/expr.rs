@@ -410,6 +410,16 @@ impl<I: Into<TokenStream>> IntoTokens for I {
     }
 }
 
+pub trait Parenthesize {
+    fn paren(self) -> Paren;
+}
+
+impl<E: Into<Expr>> Parenthesize for E {
+    fn paren(self) -> Paren {
+        Paren(Box::new(self.into()))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum AttrArgs {
     #[default]
@@ -3538,6 +3548,32 @@ impl Try {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Paren(pub Box<Expr>);
+
+impl HasPrecedence for Paren {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Elemental
+    }
+}
+
+impl fmt::Display for Paren {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "({})", self.0)
+    }
+}
+
+impl From<Paren> for TokenStream {
+    fn from(value: Paren) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
+        ts.extend(TokenStream::from(*value.0).into_joint());
+        ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        ts
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ExprKind {
     Array(Array),
@@ -3578,6 +3614,7 @@ pub enum ExprKind {
     Struct(Struct),
     Repeat(Repeat),
     Try(Try),
+    Paren(Paren),
 }
 
 #[cfg(feature = "fuzzing")]
@@ -3688,6 +3725,7 @@ impl_display_for_enum!(ExprKind;
     Struct,
     Repeat,
     Try,
+    Paren,
 );
 impl_obvious_conversion!(ExprKind;
     Array,
@@ -3728,6 +3766,7 @@ impl_obvious_conversion!(ExprKind;
     Struct,
     Repeat,
     Try,
+    Paren,
 );
 impl_has_precedence_for_enum!(ExprKind;
     Array,
@@ -3768,6 +3807,7 @@ impl_has_precedence_for_enum!(ExprKind;
     Struct,
     Repeat,
     Try,
+    Paren,
 );
 
 impl From<Block> for ExprKind {
@@ -3823,5 +3863,9 @@ impl Expr {
         Self::new(ExprKind::Try(Try {
             expr: Box::new(self),
         }))
+    }
+
+    pub fn paren(self) -> Self {
+        Self::new(ExprKind::Paren(Paren(Box::new(self))))
     }
 }

@@ -63,6 +63,21 @@ fn test_blocks() {
 }
 
 #[test]
+fn test_call() {
+    let call = Path::single("foo").call(vec![Lit::int("42").into()]);
+    assert_snapshot!(call, @"foo(42)");
+
+    let chained_call = call.clone().call(vec![Lit::int("7").into()]);
+    assert_snapshot!(chained_call, @"foo(42)(7)");
+
+    let method_call = Path::single("foo").field("bar").call(vec![]);
+    assert_snapshot!(method_call, @"foo.bar()");
+
+    let ptr_call = Path::single("foo").field("bar").paren().call(vec![]);
+    assert_snapshot!(ptr_call, @"(foo.bar)()");
+}
+
+#[test]
 fn test_if_else() {
     let if_else = If::new(
         Expr::new(Lit::bool("true")),
