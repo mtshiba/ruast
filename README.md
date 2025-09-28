@@ -6,6 +6,7 @@ This crate provides a printable & modifiable Rust AST.
 
 * [x] Indentation-aware pretty-printing
 * [x] Operator precedence-aware pretty-printing
+* [x] Fuzzable AST nodes (with `arbitrary` crate)
 
 ## Basic usage
 
@@ -161,10 +162,26 @@ println!("{tokens}");
 
 You can also find examples on how to create a proc macro using this crate in [`examples/proc_macro_example`](https://github.com/mtshiba/ruast/tree/main/examples/proc_macro_example).
 
+### Fuzzing
+
+By enabling a feature `fuzzing`, you can use [`arbitrary`](https://docs.rs/arbitrary/latest/arbitrary/) crate to generate random AST nodes for fuzz testing.
+
+Note: The generated AST nodes are entirely random and may not be compilable.
+
+```rust
+use arbitrary::Arbitrary;
+
+let mut u = arbitrary::Unstructured::new(&[0u8; 10]);
+ruast::depth_limiter::set(10);
+let expr = ruast::Expr::arbitrary(&mut u).unwrap();
+println!("{expr}");
+```
+
 ## Feature flags
 
 * `tokenize`: Enables conversion to `proc_macro2::TokenStream`.
 * `checked-ident`: Enables `check_ident`, `Identifier`, etc.
+* `fuzzing`: Enables `arbitrary` implementations for AST nodes for fuzz testing.
 
 ## Why this is needed?
 

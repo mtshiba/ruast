@@ -1,0 +1,24 @@
+[package]
+name = "ruast-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+syn = { version = "2", features = ["full"] }
+arbitrary = { version = "1.4.2" }
+
+[dependencies.ruast]
+path = ".."
+features = ["fuzzing"]
+
+[[bin]]
+name = "fuzz_expr"
+path = "fuzz_targets/fuzz_expr.rs"
+test = false
+doc = false
+bench = false

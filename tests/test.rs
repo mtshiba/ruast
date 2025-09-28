@@ -31,7 +31,7 @@ fn test_general() {
         is_const: false,
         is_async: false,
         abi: None,
-        ident: "main".to_string(),
+        ident: "main".into(),
         generics: vec![],
         fn_decl: FnDecl::regular(vec![], None),
         body: Some(Block::from(Stmt::Semi(Semi::new(Expr::new(MacCall {
@@ -60,6 +60,21 @@ fn test_blocks() {
     }");
 
     assert_snapshot!(Block::empty(), @"{}");
+}
+
+#[test]
+fn test_call() {
+    let call = Path::single("foo").call(vec![Lit::int("42").into()]);
+    assert_snapshot!(call, @"foo(42)");
+
+    let chained_call = call.clone().call(vec![Lit::int("7").into()]);
+    assert_snapshot!(chained_call, @"foo(42)(7)");
+
+    let method_call = Path::single("foo").field("bar").call(vec![]);
+    assert_snapshot!(method_call, @"foo.bar()");
+
+    let ptr_call = Path::single("foo").field("bar").paren().call(vec![]);
+    assert_snapshot!(ptr_call, @"(foo.bar)()");
 }
 
 #[test]
@@ -174,6 +189,16 @@ fn test_cast() {
         .cast(Type::mut_ptr(Type::unit()));
 
     assert_snapshot!(cast, @"&raw mut x.y as *mut i8 as *mut ()");
+
+    let cast = Path::single("foo")
+        .cast(Type::u32())
+        .bin_op(BinOpKind::Lt, Lit::int("42"));
+    assert_snapshot!(cast, @"(foo as u32) < 42");
+
+    let cast = Path::single("foo")
+        .cast(Type::u32())
+        .bin_op(BinOpKind::Gt, Lit::int("42"));
+    assert_snapshot!(cast, @"foo as u32 > 42");
 }
 
 #[test]

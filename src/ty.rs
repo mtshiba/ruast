@@ -5,6 +5,9 @@ use crate::stmt::Param;
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 use crate::{impl_display_for_enum, impl_obvious_conversion, EmptyItem};
 
+#[cfg(feature = "fuzzing")]
+use crate::token::String;
+
 #[cfg(feature = "tokenize")]
 crate::impl_to_tokens!(
     MutTy,
@@ -18,6 +21,7 @@ crate::impl_to_tokens!(
     Type,
 );
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MutTy {
     pub mutable: bool,
@@ -29,7 +33,11 @@ impl fmt::Display for MutTy {
         if self.mutable {
             write!(f, "mut ")?;
         }
-        write!(f, "{ty}", ty = self.ty)
+        if self.ty.should_wrap() {
+            write!(f, "({})", self.ty)
+        } else {
+            write!(f, "{}", self.ty)
+        }
     }
 }
 
@@ -39,7 +47,13 @@ impl From<MutTy> for TokenStream {
         if value.mutable {
             ts.push(Token::Keyword(KeywordToken::Mut));
         }
-        ts.extend(TokenStream::from(*value.ty));
+        if value.ty.should_wrap() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
+            ts.extend(TokenStream::from(*value.ty).into_joint());
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.ty));
+        }
         ts
     }
 }
@@ -61,6 +75,7 @@ impl MutTy {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Ref {
     pub lifetime: Option<String>,
@@ -98,6 +113,7 @@ impl Ref {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PtrKind {
     Const,
@@ -124,6 +140,7 @@ impl From<PtrKind> for TokenStream {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Ptr {
     pub ty: Box<Type>,
@@ -132,7 +149,12 @@ pub struct Ptr {
 
 impl fmt::Display for Ptr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "*{} {}", self.kind, self.ty)
+        write!(f, "*{} ", self.kind)?;
+        if self.ty.should_wrap() {
+            write!(f, "({})", self.ty)
+        } else {
+            write!(f, "{}", self.ty)
+        }
     }
 }
 
@@ -141,7 +163,13 @@ impl From<Ptr> for TokenStream {
         let mut ts = TokenStream::new();
         ts.push(Token::BinOp(BinOpToken::Star).into_joint());
         ts.extend(TokenStream::from(value.kind));
-        ts.extend(TokenStream::from(*value.ty));
+        if value.ty.should_wrap() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
+            ts.extend(TokenStream::from(*value.ty).into_joint());
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.ty));
+        }
         ts
     }
 }
@@ -155,6 +183,7 @@ impl Ptr {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BareFn {
     pub generic_params: Vec<GenericParam>,
@@ -257,6 +286,7 @@ impl BareFn {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypeParam {
     pub ident: String,
@@ -323,6 +353,7 @@ impl TypeParam {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ConstParam {
     pub ident: String,
@@ -355,6 +386,7 @@ impl ConstParam {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum GenericParam {
     TypeParam(TypeParam),
@@ -363,6 +395,7 @@ pub enum GenericParam {
 impl_display_for_enum!(GenericParam; TypeParam, ConstParam);
 impl_obvious_conversion!(GenericParam; TypeParam, ConstParam);
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PolyTraitRef {
     pub bound_generic_params: Vec<GenericParam>,
@@ -409,6 +442,7 @@ impl PolyTraitRef {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum GenericBound {
     Trait(PolyTraitRef),
@@ -437,6 +471,20 @@ impl From<GenericBound> for TokenStream {
 pub struct TraitObject {
     pub is_dyn: bool,
     pub bounds: Vec<GenericBound>,
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for TraitObject {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let is_dyn = u.arbitrary()?;
+        let len = u.int_in_range(0..=5)?;
+        let mut bounds = Vec::with_capacity(len);
+        bounds.push(GenericBound::Trait(PolyTraitRef::arbitrary(u)?));
+        for _ in 0..len {
+            bounds.push(GenericBound::arbitrary(u)?);
+        }
+        Ok(Self { is_dyn, bounds })
+    }
 }
 
 impl fmt::Display for TraitObject {
@@ -499,6 +547,19 @@ impl TraitObject {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ImplTrait {
     pub bounds: Vec<GenericBound>,
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for ImplTrait {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let len = u.int_in_range(0..=5)?;
+        let mut bounds = Vec::with_capacity(len);
+        bounds.push(GenericBound::Trait(PolyTraitRef::arbitrary(u)?));
+        for _ in 0..len {
+            bounds.push(GenericBound::arbitrary(u)?);
+        }
+        Ok(Self { bounds })
+    }
 }
 
 impl fmt::Display for ImplTrait {
@@ -572,6 +633,39 @@ pub enum Type {
     Infer,
     ImplicitSelf,
     Err,
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for Type {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        if crate::depth_limiter::reached() {
+            return Ok(Type::Never);
+        }
+        match u.int_in_range(0..=10)? {
+            0 => Ok(Type::Slice(Box::new(Type::arbitrary(u)?))),
+            1 => Ok(Type::Array(
+                Box::new(Type::arbitrary(u)?),
+                Box::new(Const::arbitrary(u)?),
+            )),
+            2 => Ok(Type::Ptr(Ptr::arbitrary(u)?)),
+            3 => Ok(Type::Ref(Ref::arbitrary(u)?)),
+            4 => Ok(Type::BareFn(BareFn::arbitrary(u)?)),
+            5 => Ok(Type::Macro(MacCall::arbitrary(u)?)),
+            6 => Ok(Type::Never),
+            7 => {
+                let len = u.int_in_range(0..=5)?;
+                let mut types = Vec::with_capacity(len);
+                for _ in 0..len {
+                    types.push(Type::arbitrary(u)?);
+                }
+                Ok(Type::Tuple(types))
+            }
+            8 => Ok(Type::Path(Path::arbitrary(u)?)),
+            9 => Ok(Type::TraitObject(TraitObject::arbitrary(u)?)),
+            10 => Ok(Type::ImplTrait(ImplTrait::arbitrary(u)?)),
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl fmt::Display for Type {
@@ -794,5 +888,9 @@ impl Type {
 
     pub fn vec(inner: impl Into<Type>) -> Type {
         Type::poly_path("Vec", vec![GenericArg::Type(inner.into())])
+    }
+
+    pub fn should_wrap(&self) -> bool {
+        matches!(self, Type::ImplTrait(_) | Type::TraitObject(_))
     }
 }

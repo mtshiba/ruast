@@ -9,6 +9,9 @@ use crate::{
     impl_display_for_enum, impl_obvious_conversion, LabelledBlock, UsePath, UseRename, UseTree,
 };
 
+#[cfg(feature = "fuzzing")]
+use crate::token::String;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u8)]
 pub enum OperatorPrecedence {
@@ -41,11 +44,12 @@ pub enum OperatorPrecedence {
     LazyAnd = 15,
     /// `||`
     LazyOr = 16,
-    /// `..`, `..=`
-    Range = 17,
     /// `=`, `+=`, `-=`, `*=`, `/=`, `%=` etc.
-    Assign = 18,
-    ReturnBreakClosure = 19,
+    Assign = 17,
+    /// `..`, `..=`
+    Range = 18,
+    /// return, break, yield, closure, blocks, etc.
+    AlwaysWrapped = 19,
 }
 
 pub trait HasPrecedence {
@@ -406,12 +410,29 @@ impl<I: Into<TokenStream>> IntoTokens for I {
     }
 }
 
+pub trait Parenthesize {
+    fn paren(self) -> Paren;
+}
+
+impl<E: Into<Expr>> Parenthesize for E {
+    fn paren(self) -> Paren {
+        Paren(Box::new(self.into()))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum AttrArgs {
     #[default]
     Empty,
     Delimited(DelimArgs),
     Eq(Expr),
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for AttrArgs {
+    fn arbitrary(_u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self::default())
+    }
 }
 
 impl fmt::Display for AttrArgs {
@@ -434,6 +455,7 @@ impl From<AttrArgs> for TokenStream {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Attribute {
     pub kind: AttrKind,
@@ -486,6 +508,13 @@ pub enum AttrKind {
     DocComment(String),
 }
 
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for AttrKind {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(AttrKind::Normal(AttributeItem::arbitrary(u)?))
+    }
+}
+
 impl fmt::Display for AttrKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self {
@@ -514,6 +543,15 @@ impl From<AttrKind> for TokenStream {
 pub struct AttributeItem {
     pub path: Path,
     pub args: AttrArgs,
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for AttributeItem {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let path = Path::arbitrary_no_arg(u)?;
+        let args = AttrArgs::arbitrary(u)?;
+        Ok(Self { path, args })
+    }
 }
 
 impl fmt::Display for AttributeItem {
@@ -563,6 +601,25 @@ impl AttributeItem {
 pub struct Expr {
     pub attrs: Vec<AttributeItem>,
     pub kind: ExprKind,
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for Expr {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let kind = ExprKind::arbitrary(u)?;
+        let attrs = match kind {
+            ExprKind::Range(Range { start: None, .. }) => vec![],
+            _ => Vec::<AttributeItem>::arbitrary(u)?,
+        };
+        Ok(Self { attrs, kind })
+    }
+}
+
+#[cfg(feature = "fuzzing")]
+impl Expr {
+    pub fn arbitrary_const(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        Ok(Self::new(ExprKind::arbitrary_const(u)?))
+    }
 }
 
 impl HasPrecedence for Expr {
@@ -619,10 +676,29 @@ impl Expr {
             ExprKind::Binary(_) | ExprKind::Unary(_) | ExprKind::Field(_) | ExprKind::Range(_)
         )
     }
+
+    pub fn should_wrap(&self) -> bool {
+        match &self.kind {
+            ExprKind::Return(Return { expr }) | ExprKind::Yield(Yield { expr })
+                if expr.is_none() =>
+            {
+                true
+            }
+            ExprKind::Struct(_) => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Const(pub Expr);
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for Const {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self(Expr::arbitrary_const(u)?))
+    }
+}
 
 impl fmt::Display for Const {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -636,6 +712,7 @@ impl From<Const> for TokenStream {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Array(pub Vec<Expr>);
 
@@ -704,6 +781,7 @@ impl Array {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Tuple(pub Vec<Expr>);
 
@@ -778,6 +856,7 @@ impl Tuple {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Binary {
     pub lhs: Box<Expr>,
@@ -785,9 +864,25 @@ pub struct Binary {
     pub rhs: Box<Expr>,
 }
 
+#[cfg(feature = "fuzzing")]
+impl Binary {
+    pub fn arbitrary_const(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        use arbitrary::Arbitrary;
+
+        Ok(Self::new(
+            Expr::arbitrary_const(u)?,
+            BinOpKind::arbitrary(u)?,
+            Expr::arbitrary_const(u)?,
+        ))
+    }
+}
+
 impl fmt::Display for Binary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.precedence() < self.lhs.precedence() {
+        if self.precedence() < self.lhs.precedence()
+        // foo as T < y ==> (foo as T) < y
+        || (self.op == BinOpKind::Lt && self.lhs.precedence() == OperatorPrecedence::Cast)
+        {
             write!(f, "({})", self.lhs)?;
         } else {
             write!(f, "{}", self.lhs)?;
@@ -806,7 +901,10 @@ impl From<Binary> for TokenStream {
     fn from(value: Binary) -> Self {
         let mut ts = TokenStream::new();
         let precedence = value.precedence();
-        if precedence < value.lhs.precedence() {
+        if precedence < value.lhs.precedence()
+        // foo as T < y ==> (foo as T) < y
+        || (value.op == BinOpKind::Lt && value.lhs.precedence() == OperatorPrecedence::Cast)
+        {
             ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
             ts.extend(TokenStream::from(*value.lhs).into_joint());
             ts.push(Token::CloseDelim(Delimiter::Parenthesis));
@@ -870,6 +968,7 @@ impl Binary {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum UnaryOpKind {
     Deref,
@@ -903,10 +1002,23 @@ impl From<UnaryOpKind> for Token {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Unary {
     pub op: UnaryOpKind,
     pub expr: Box<Expr>,
+}
+
+#[cfg(feature = "fuzzing")]
+impl Unary {
+    pub fn arbitrary_const(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        use arbitrary::Arbitrary;
+
+        Ok(Self::new(
+            UnaryOpKind::arbitrary(u)?,
+            Expr::arbitrary_const(u)?,
+        ))
+    }
 }
 
 impl HasPrecedence for Unary {
@@ -959,6 +1071,7 @@ impl Unary {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Let {
     pub pat: Box<Pat>,
@@ -967,7 +1080,7 @@ pub struct Let {
 
 impl HasPrecedence for Let {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::Elemental
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
@@ -1004,15 +1117,33 @@ pub struct If {
     pub else_: Option<Box<Expr>>,
 }
 
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for If {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let else_ = if u.arbitrary()? {
+            Some(Expr::from(LabelledBlock::arbitrary_no_label(u)?))
+        } else {
+            None
+        };
+        Ok(Self::new(Expr::arbitrary(u)?, Block::arbitrary(u)?, else_))
+    }
+}
+
 impl HasPrecedence for If {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::Elemental
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
 impl fmt::Display for If {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "if {cond} {then}", cond = self.cond, then = self.then)?;
+        write!(f, "if ")?;
+        if self.cond.should_wrap() {
+            write!(f, "({})", self.cond)?;
+        } else {
+            write!(f, "{}", self.cond)?;
+        }
+        write!(f, " {}", self.then)?;
         if let Some(else_) = &self.else_ {
             write!(f, " else {else_}")?;
         }
@@ -1024,7 +1155,13 @@ impl From<If> for TokenStream {
     fn from(value: If) -> Self {
         let mut ts = TokenStream::new();
         ts.push(Token::Keyword(KeywordToken::If));
-        ts.extend(TokenStream::from(*value.cond));
+        if value.cond.should_wrap() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
+            ts.extend(TokenStream::from(*value.cond).into_joint());
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.cond));
+        }
         ts.extend(TokenStream::from(value.then));
         if let Some(else_) = value.else_ {
             ts.push(Token::Keyword(KeywordToken::Else));
@@ -1046,6 +1183,7 @@ impl If {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct While {
     pub cond: Box<Expr>,
@@ -1054,13 +1192,19 @@ pub struct While {
 
 impl HasPrecedence for While {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::Elemental
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
 impl fmt::Display for While {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "while {cond} {body}", cond = self.cond, body = self.body)
+        write!(f, "while ")?;
+        if self.cond.should_wrap() {
+            write!(f, "({})", self.cond)?;
+        } else {
+            write!(f, "{}", self.cond)?;
+        }
+        write!(f, " {}", self.body)
     }
 }
 
@@ -1068,7 +1212,13 @@ impl From<While> for TokenStream {
     fn from(value: While) -> Self {
         let mut ts = TokenStream::new();
         ts.push(Token::Keyword(KeywordToken::While));
-        ts.extend(TokenStream::from(*value.cond));
+        if value.cond.should_wrap() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
+            ts.extend(TokenStream::from(*value.cond).into_joint());
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.cond));
+        }
         ts.extend(TokenStream::from(value.body));
         ts
     }
@@ -1083,6 +1233,7 @@ impl While {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ForLoop {
     pub pat: Box<Pat>,
@@ -1092,19 +1243,19 @@ pub struct ForLoop {
 
 impl HasPrecedence for ForLoop {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::Elemental
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
 impl fmt::Display for ForLoop {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "for {pat} in {expr} {body}",
-            pat = self.pat,
-            expr = self.expr,
-            body = self.body
-        )
+        write!(f, "for {pat} in ", pat = self.pat,)?;
+        if self.expr.should_wrap() {
+            write!(f, "({})", self.expr)?;
+        } else {
+            write!(f, "{}", self.expr)?;
+        }
+        write!(f, " {}", self.body)
     }
 }
 
@@ -1114,7 +1265,13 @@ impl From<ForLoop> for TokenStream {
         ts.push(Token::Keyword(KeywordToken::For));
         ts.extend(TokenStream::from(*value.pat));
         ts.push(Token::Keyword(KeywordToken::In));
-        ts.extend(TokenStream::from(*value.expr));
+        if value.expr.should_wrap() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
+            ts.extend(TokenStream::from(*value.expr).into_joint());
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.expr));
+        }
         ts.extend(TokenStream::from(value.body));
         ts
     }
@@ -1130,6 +1287,7 @@ impl ForLoop {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Loop {
     pub body: Block,
@@ -1137,7 +1295,7 @@ pub struct Loop {
 
 impl HasPrecedence for Loop {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::Elemental
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
@@ -1170,6 +1328,7 @@ impl Loop {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ConstBlock {
     pub block: Block,
@@ -1177,7 +1336,7 @@ pub struct ConstBlock {
 
 impl HasPrecedence for ConstBlock {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::Elemental
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
@@ -1210,6 +1369,7 @@ impl ConstBlock {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UnsafeBlock {
     pub block: Block,
@@ -1217,7 +1377,7 @@ pub struct UnsafeBlock {
 
 impl HasPrecedence for UnsafeBlock {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::Elemental
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
@@ -1250,6 +1410,7 @@ impl UnsafeBlock {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Arm {
     pub attrs: Vec<AttributeItem>,
@@ -1299,6 +1460,7 @@ impl Arm {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Match {
     pub expr: Box<Expr>,
@@ -1307,13 +1469,19 @@ pub struct Match {
 
 impl HasPrecedence for Match {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::Elemental
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
 impl fmt::Display for Match {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "match {expr} {{", expr = self.expr)?;
+        write!(f, "match ")?;
+        if self.expr.should_wrap() {
+            write!(f, "({})", self.expr)?;
+        } else {
+            write!(f, "{}", self.expr)?;
+        }
+        writeln!(f, " {{")?;
         for arm in self.arms.iter() {
             let mut indent = indenter::indented(f).with_str("    ");
             writeln!(indent, "{arm},")?;
@@ -1326,7 +1494,13 @@ impl From<Match> for TokenStream {
     fn from(value: Match) -> Self {
         let mut ts = TokenStream::new();
         ts.push(Token::Keyword(KeywordToken::Match));
-        ts.extend(TokenStream::from(*value.expr));
+        if value.expr.should_wrap() {
+            ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
+            ts.extend(TokenStream::from(*value.expr).into_joint());
+            ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        } else {
+            ts.extend(TokenStream::from(*value.expr));
+        }
         ts.push(Token::OpenDelim(Delimiter::Brace));
         for arm in value.arms {
             ts.extend(TokenStream::from(arm).into_joint());
@@ -1346,6 +1520,7 @@ impl Match {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Closure {
     pub is_const: bool,
@@ -1358,7 +1533,7 @@ pub struct Closure {
 
 impl HasPrecedence for Closure {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::ReturnBreakClosure
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
@@ -1466,6 +1641,7 @@ impl Closure {
 }
 
 /// `async { ... }`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Async {
     pub block: Block,
@@ -1473,7 +1649,7 @@ pub struct Async {
 
 impl HasPrecedence for Async {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::Elemental
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
@@ -1507,6 +1683,7 @@ impl Async {
 }
 
 /// `expr.await`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Await {
     pub expr: Box<Expr>,
@@ -1555,6 +1732,7 @@ impl Await {
 }
 
 /// `try { ... }`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TryBlock {
     pub block: Block,
@@ -1562,7 +1740,7 @@ pub struct TryBlock {
 
 impl HasPrecedence for TryBlock {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::Elemental
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
@@ -1596,6 +1774,7 @@ impl TryBlock {
 }
 
 /// `expr.ident`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Field {
     pub expr: Box<Expr>,
@@ -1646,6 +1825,7 @@ impl Field {
 }
 
 /// `expr[index]`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Index {
     pub expr: Box<Expr>,
@@ -1696,9 +1876,12 @@ impl Index {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum RangeLimits {
+    /// `..`
     HalfOpen,
+    /// `..=`
     Closed,
 }
 
@@ -1729,6 +1912,30 @@ pub struct Range {
     pub limits: RangeLimits,
 }
 
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for Range {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let limits = RangeLimits::arbitrary(u)?;
+        let (start, end) = match limits {
+            RangeLimits::HalfOpen => match u.int_in_range(0..=2)? {
+                0 => (
+                    Some(Box::new(Expr::arbitrary(u)?)),
+                    Some(Box::new(Expr::arbitrary(u)?)),
+                ),
+                1 => (Some(Box::new(Expr::arbitrary(u)?)), None),
+                2 => (None, Some(Box::new(Expr::arbitrary(u)?))),
+                _ => unreachable!(),
+            },
+            RangeLimits::Closed => {
+                let start = Option::<Box<Expr>>::arbitrary(u)?;
+                let end = Some(Box::new(Expr::arbitrary(u)?));
+                (start, end)
+            }
+        };
+        Ok(Self { start, end, limits })
+    }
+}
+
 impl HasPrecedence for Range {
     fn precedence(&self) -> OperatorPrecedence {
         OperatorPrecedence::Range
@@ -1738,7 +1945,9 @@ impl HasPrecedence for Range {
 impl fmt::Display for Range {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(start) = &self.start {
-            if self.precedence() < start.precedence() {
+            if self.precedence() < start.precedence()
+                || start.precedence() == OperatorPrecedence::Range
+            {
                 write!(f, "({start})")?;
             } else {
                 write!(f, "{start}")?;
@@ -1746,7 +1955,8 @@ impl fmt::Display for Range {
         }
         write!(f, " {} ", self.limits)?;
         if let Some(end) = &self.end {
-            if self.precedence() < end.precedence() {
+            if self.precedence() < end.precedence() || end.precedence() == OperatorPrecedence::Range
+            {
                 write!(f, "({end})")?;
             } else {
                 write!(f, "{end}")?;
@@ -1761,7 +1971,7 @@ impl From<Range> for TokenStream {
         let mut ts = TokenStream::new();
         let precedence = value.precedence();
         if let Some(start) = value.start {
-            if precedence < start.precedence() {
+            if precedence < start.precedence() || start.precedence() == OperatorPrecedence::Range {
                 ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
                 ts.extend(TokenStream::from(*start).into_joint());
                 ts.push(Token::CloseDelim(Delimiter::Parenthesis));
@@ -1778,7 +1988,7 @@ impl From<Range> for TokenStream {
             }
         }
         if let Some(end) = value.end {
-            if precedence < end.precedence() {
+            if precedence < end.precedence() || end.precedence() == OperatorPrecedence::Range {
                 ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
                 ts.extend(TokenStream::from(*end));
                 ts.push(Token::CloseDelim(Delimiter::Parenthesis));
@@ -1800,6 +2010,7 @@ impl Range {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Underscore {}
 
@@ -1822,6 +2033,7 @@ impl From<Underscore> for TokenStream {
 }
 
 /// `return expr?`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Return {
     pub expr: Option<Box<Expr>>,
@@ -1829,7 +2041,7 @@ pub struct Return {
 
 impl HasPrecedence for Return {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::ReturnBreakClosure
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
@@ -1863,6 +2075,7 @@ impl Return {
 }
 
 /// `yield expr?`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Yield {
     pub expr: Option<Box<Expr>>,
@@ -1870,7 +2083,7 @@ pub struct Yield {
 
 impl HasPrecedence for Yield {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::ReturnBreakClosure
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
@@ -1904,6 +2117,7 @@ impl Yield {
 }
 
 /// `lhs = rhs`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Assign {
     pub lhs: Box<Expr>,
@@ -1964,7 +2178,8 @@ impl Assign {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BinOpKind {
     /// `+`
     Add,
@@ -2002,6 +2217,25 @@ pub enum BinOpKind {
     Ge,
     /// `>`
     Gt,
+}
+
+#[cfg(feature = "fuzzing")]
+impl BinOpKind {
+    pub fn arbitrary_assign_op(u: &mut arbitrary::Unstructured) -> arbitrary::Result<Self> {
+        let ops = [
+            Self::Add,
+            Self::Sub,
+            Self::Mul,
+            Self::Div,
+            Self::Rem,
+            Self::BitAnd,
+            Self::BitOr,
+            Self::BitXor,
+            Self::Shl,
+            Self::Shr,
+        ];
+        u.choose(&ops).copied()
+    }
 }
 
 impl fmt::Display for BinOpKind {
@@ -2106,6 +2340,17 @@ pub struct AssignOp {
     pub rhs: Box<Expr>,
 }
 
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for AssignOp {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self {
+            lhs: Box::new(Expr::arbitrary(u)?),
+            op: BinOpKind::arbitrary_assign_op(u)?,
+            rhs: Box::new(Expr::arbitrary(u)?),
+        })
+    }
+}
+
 impl HasPrecedence for AssignOp {
     fn precedence(&self) -> OperatorPrecedence {
         OperatorPrecedence::Assign
@@ -2161,6 +2406,7 @@ impl AssignOp {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum LitKind {
     Bool,
@@ -2175,6 +2421,7 @@ pub enum LitKind {
     Err,
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Lit {
     pub kind: LitKind,
@@ -2251,6 +2498,7 @@ impl Lit {
 }
 
 /// `expr as ty`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Cast {
     pub expr: Box<Expr>,
@@ -2301,6 +2549,7 @@ impl Cast {
 }
 
 /// `expr: ty`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypeAscription {
     pub expr: Box<Expr>,
@@ -2350,6 +2599,7 @@ impl TypeAscription {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Call {
     pub func: Box<Expr>,
@@ -2423,6 +2673,7 @@ impl Call {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MethodCall {
     pub receiver: Box<Expr>,
@@ -2492,6 +2743,30 @@ impl MethodCall {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Path {
     pub segments: Vec<PathSegment>,
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for Path {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let len = u.int_in_range(1..=5)?;
+        let mut segments = Vec::with_capacity(len);
+        for _ in 0..len {
+            segments.push(PathSegment::arbitrary(u)?);
+        }
+        Ok(Self { segments })
+    }
+}
+
+#[cfg(feature = "fuzzing")]
+impl Path {
+    pub fn arbitrary_no_arg<'a>(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let len = u.int_in_range(1..=5)?;
+        let mut segments = Vec::with_capacity(len);
+        for _ in 0..len {
+            segments.push(PathSegment::arbitrary_no_arg(u)?);
+        }
+        Ok(Self { segments })
+    }
 }
 
 impl HasPrecedence for Path {
@@ -2589,10 +2864,20 @@ impl Path {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PathSegment {
     pub ident: String,
     pub args: Option<Vec<GenericArg>>,
+}
+
+#[cfg(feature = "fuzzing")]
+impl PathSegment {
+    fn arbitrary_no_arg(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        use arbitrary::Arbitrary;
+
+        Ok(Self::new(String::arbitrary(u)?, None))
+    }
 }
 
 impl fmt::Display for PathSegment {
@@ -2662,12 +2947,14 @@ impl PathSegment {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BorrowKind {
     Ref,
     Raw,
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Mutability {
     #[default]
@@ -2691,6 +2978,7 @@ impl fmt::Display for Mutability {
 }
 
 /// `&expr`, `&mut expr`, `&raw const expr`, `&raw mut expr`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AddrOf {
     pub kind: BorrowKind,
@@ -2776,6 +3064,7 @@ impl AddrOf {
 }
 
 /// `break ('label)? expr`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Break {
     pub label: Option<String>,
@@ -2784,7 +3073,7 @@ pub struct Break {
 
 impl HasPrecedence for Break {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::ReturnBreakClosure
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
@@ -2825,6 +3114,7 @@ impl Break {
 }
 
 /// `continue ('label)?`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Continue {
     pub label: Option<String>,
@@ -2863,6 +3153,7 @@ impl Continue {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum GenericArg {
     Lifetime(String),
@@ -2890,13 +3181,18 @@ impl From<GenericArg> for TokenStream {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MacDelimiter {
+    /// `(...)`
     Parenthesis,
+    /// `[...]`
     Bracket,
+    /// `{...}`
     Brace,
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DelimArgs {
     pub delim: MacDelimiter,
@@ -3016,6 +3312,15 @@ pub struct MacCall {
     pub args: DelimArgs,
 }
 
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for MacCall {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let path = Path::arbitrary_no_arg(u)?;
+        let args = DelimArgs::arbitrary(u)?;
+        Ok(Self { path, args })
+    }
+}
+
 impl HasPrecedence for MacCall {
     fn precedence(&self) -> OperatorPrecedence {
         OperatorPrecedence::Call
@@ -3060,6 +3365,7 @@ impl MacCall {
 }
 
 /// `ident: expr`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ExprField {
     pub ident: String,
@@ -3099,6 +3405,7 @@ impl ExprField {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Struct {
     pub path: Path,
@@ -3154,6 +3461,7 @@ impl Struct {
 }
 
 /// `[expr; len]`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Repeat {
     pub expr: Box<Expr>,
@@ -3194,6 +3502,7 @@ impl Repeat {
 }
 
 /// `expr?`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Try {
     pub expr: Box<Expr>,
@@ -3239,6 +3548,32 @@ impl Try {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Paren(pub Box<Expr>);
+
+impl HasPrecedence for Paren {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Elemental
+    }
+}
+
+impl fmt::Display for Paren {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "({})", self.0)
+    }
+}
+
+impl From<Paren> for TokenStream {
+    fn from(value: Paren) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
+        ts.extend(TokenStream::from(*value.0).into_joint());
+        ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        ts
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ExprKind {
     Array(Array),
@@ -3279,6 +3614,76 @@ pub enum ExprKind {
     Struct(Struct),
     Repeat(Repeat),
     Try(Try),
+    Paren(Paren),
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for ExprKind {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        if crate::depth_limiter::reached() {
+            return Ok(Self::Tuple(Tuple::unit()));
+        }
+        match u.int_in_range(0..=37)? {
+            0 => Ok(Self::Array(Array::arbitrary(u)?)),
+            1 => Ok(Self::Call(Call::arbitrary(u)?)),
+            2 => Ok(Self::MethodCall(MethodCall::arbitrary(u)?)),
+            3 => Ok(Self::Tuple(Tuple::arbitrary(u)?)),
+            4 => Ok(Self::Binary(Binary::arbitrary(u)?)),
+            5 => Ok(Self::Unary(Unary::arbitrary(u)?)),
+            6 => Ok(Self::Lit(Lit::arbitrary(u)?)),
+            7 => Ok(Self::Cast(Cast::arbitrary(u)?)),
+            // 8 => Ok(Self::TypeAscription(TypeAscription::arbitrary(u)?)),
+            // 9 => Ok(Self::Let(Let::arbitrary(u)?)),
+            10 => Ok(Self::If(If::arbitrary(u)?)),
+            11 => Ok(Self::While(While::arbitrary(u)?)),
+            12 => Ok(Self::ForLoop(ForLoop::arbitrary(u)?)),
+            13 => Ok(Self::Loop(Loop::arbitrary(u)?)),
+            14 => Ok(Self::ConstBlock(ConstBlock::arbitrary(u)?)),
+            15 => Ok(Self::UnsafeBlock(UnsafeBlock::arbitrary(u)?)),
+            16 => Ok(Self::Match(Match::arbitrary(u)?)),
+            17 => Ok(Self::Closure(Closure::arbitrary(u)?)),
+            18 => Ok(Self::LabelledBlock(LabelledBlock::arbitrary(u)?)),
+            19 => Ok(Self::Async(Async::arbitrary(u)?)),
+            20 => Ok(Self::Await(Await::arbitrary(u)?)),
+            21 => Ok(Self::TryBlock(TryBlock::arbitrary(u)?)),
+            22 => Ok(Self::Assign(Assign::arbitrary(u)?)),
+            23 => Ok(Self::AssignOp(AssignOp::arbitrary(u)?)),
+            24 => Ok(Self::Field(Field::arbitrary(u)?)),
+            25 => Ok(Self::Index(Index::arbitrary(u)?)),
+            26 => Ok(Self::Range(Range::arbitrary(u)?)),
+            // 27 => Ok(Self::Underscore(Underscore::arbitrary(u)?)),
+            28 => Ok(Self::Path(Path::arbitrary_no_arg(u)?)),
+            29 => Ok(Self::AddrOf(AddrOf::arbitrary(u)?)),
+            30 => Ok(Self::Break(Break::arbitrary(u)?)),
+            31 => Ok(Self::Continue(Continue::arbitrary(u)?)),
+            32 => Ok(Self::Return(Return::arbitrary(u)?)),
+            33 => Ok(Self::Yield(Yield::arbitrary(u)?)),
+            34 => Ok(Self::MacCall(MacCall::arbitrary(u)?)),
+            35 => Ok(Self::Struct(Struct::arbitrary(u)?)),
+            36 => Ok(Self::Repeat(Repeat::arbitrary(u)?)),
+            37 => Ok(Self::Try(Try::arbitrary(u)?)),
+            _ => Ok(Self::Tuple(Tuple::unit())),
+        }
+    }
+}
+
+#[cfg(feature = "fuzzing")]
+impl ExprKind {
+    pub fn arbitrary_const(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        use arbitrary::Arbitrary;
+
+        if crate::depth_limiter::reached() {
+            return Ok(Self::Lit(Lit::arbitrary(u)?));
+        }
+
+        match u.int_in_range(0..=1)? {
+            0 => Ok(Self::Lit(Lit::arbitrary(u)?)),
+            1 => Ok(Self::Path(Path::arbitrary_no_arg(u)?)),
+            // 2 => Ok(Self::Binary(Binary::arbitrary_const(u)?)),
+            // 3 => Ok(Self::Unary(Unary::arbitrary_const(u)?)),
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl_display_for_enum!(ExprKind;
@@ -3320,6 +3725,7 @@ impl_display_for_enum!(ExprKind;
     Struct,
     Repeat,
     Try,
+    Paren,
 );
 impl_obvious_conversion!(ExprKind;
     Array,
@@ -3360,6 +3766,7 @@ impl_obvious_conversion!(ExprKind;
     Struct,
     Repeat,
     Try,
+    Paren,
 );
 impl_has_precedence_for_enum!(ExprKind;
     Array,
@@ -3400,6 +3807,7 @@ impl_has_precedence_for_enum!(ExprKind;
     Struct,
     Repeat,
     Try,
+    Paren,
 );
 
 impl From<Block> for ExprKind {
@@ -3455,5 +3863,9 @@ impl Expr {
         Self::new(ExprKind::Try(Try {
             expr: Box::new(self),
         }))
+    }
+
+    pub fn paren(self) -> Self {
+        Self::new(ExprKind::Paren(Paren(Box::new(self))))
     }
 }

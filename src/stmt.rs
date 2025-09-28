@@ -14,6 +14,9 @@ use crate::{
     HasPrecedence, Lit, Mutability, OperatorPrecedence,
 };
 
+#[cfg(feature = "fuzzing")]
+use crate::token::String;
+
 #[cfg(feature = "tokenize")]
 crate::impl_to_tokens!(
     Local,
@@ -146,6 +149,7 @@ impl<E: Into<Expr>> Semicolon for E {
 }
 
 /// `let pat (:ty)? (= expr)?;`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Local {
     pub pat: Pat,
@@ -207,6 +211,7 @@ impl Local {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum LocalKind {
     Decl,
@@ -219,7 +224,13 @@ impl fmt::Display for LocalKind {
         match self {
             Self::Decl => write!(f, ""),
             Self::Init(expr) => write!(f, " = {expr}"),
-            Self::InitElse(expr, block) => write!(f, " = {expr} else {block}"),
+            Self::InitElse(expr, block) => {
+                if OperatorPrecedence::Assign < expr.precedence() {
+                    write!(f, " = ({expr}) else {block}")
+                } else {
+                    write!(f, " = {expr} else {block}")
+                }
+            }
         }
     }
 }
@@ -243,7 +254,13 @@ impl From<LocalKind> for TokenStream {
             LocalKind::InitElse(expr, block) => {
                 let mut ts = TokenStream::new();
                 ts.push(Token::Eq);
-                ts.extend(TokenStream::from(expr));
+                if OperatorPrecedence::Assign < expr.precedence() {
+                    ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
+                    ts.extend(TokenStream::from(expr));
+                    ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+                } else {
+                    ts.extend(TokenStream::from(expr));
+                }
                 ts.push(Token::Keyword(KeywordToken::Else));
                 ts.extend(TokenStream::from(block));
                 ts
@@ -252,6 +269,7 @@ impl From<LocalKind> for TokenStream {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PatField {
     pub ident: String,
@@ -280,6 +298,7 @@ impl From<PatField> for TokenStream {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct IdentPat {
     pub is_mut: bool,
@@ -356,6 +375,7 @@ impl IdentPat {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StructPat {
     pub path: Path,
@@ -395,6 +415,7 @@ impl From<StructPat> for TokenStream {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TupleStructPat {
     pub path: Path,
@@ -446,6 +467,7 @@ impl TupleStructPat {
 }
 
 /// `('&mut' | '&') pat`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RefPat {
     pub is_mut: bool,
@@ -509,6 +531,49 @@ pub enum Pat {
     Rest,
     Paren(Box<Pat>),
     MacCall(MacCall),
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for Pat {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        if crate::depth_limiter::reached() {
+            return Ok(Pat::Wild);
+        }
+        // Generates only irrefutable patterns.
+        match u.int_in_range(0..=7)? {
+            0 => Ok(Self::Wild),
+            1 => Ok(Self::Ident(IdentPat::arbitrary(u)?)),
+            2 => Ok(Self::Struct(StructPat::arbitrary(u)?)),
+            3 => Ok(Self::TupleStruct(TupleStructPat::arbitrary(u)?)),
+            4 => {
+                let len = u.int_in_range(1..=5)?;
+                let mut pats = Vec::with_capacity(len);
+                for _ in 0..len {
+                    pats.push(Pat::arbitrary(u)?);
+                }
+                Ok(Self::Or(pats))
+            }
+            5 => {
+                let len = u.int_in_range(1..=5)?;
+                let mut pats = Vec::with_capacity(len);
+                for _ in 0..len {
+                    pats.push(Pat::arbitrary(u)?);
+                }
+                Ok(Self::Tuple(pats))
+            }
+            // 6 => Ok(Self::Box(Box::new(Pat::arbitrary(u)?))),
+            6 => Ok(Self::Ref(RefPat::arbitrary(u)?)),
+            7 => {
+                let len = u.int_in_range(1..=5)?;
+                let mut pats = Vec::with_capacity(len);
+                for _ in 0..len {
+                    pats.push(Pat::arbitrary(u)?);
+                }
+                Ok(Self::Slice(pats))
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl fmt::Display for Pat {
@@ -675,6 +740,7 @@ impl Pat {
 }
 
 /// `pat ':' ty`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Param {
     pub pat: Pat,
@@ -730,6 +796,7 @@ impl Param {
 }
 
 /// `'(' params (, ...)? ')' ('->' output)?`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FnDecl {
     pub inputs: Vec<Param>,
@@ -747,7 +814,10 @@ impl fmt::Display for FnDecl {
             write!(f, "{param}")?;
         }
         if self.is_variadic {
-            write!(f, ", ...")?;
+            if !self.inputs.is_empty() {
+                write!(f, ", ")?;
+            }
+            write!(f, "...")?;
         }
         write!(f, ")")?;
         if let Some(output) = &self.output {
@@ -768,7 +838,9 @@ impl From<FnDecl> for TokenStream {
             ts.extend(TokenStream::from(param.clone()).into_joint());
         }
         if value.is_variadic {
-            ts.push(Token::Comma);
+            if !value.inputs.is_empty() {
+                ts.push(Token::Comma);
+            }
             ts.push(Token::DotDotDot);
         }
         ts.push(Token::CloseDelim(Delimiter::Parenthesis));
@@ -822,6 +894,7 @@ impl FnDecl {
 }
 
 /// `'fn' 'unsafe'? 'const'? 'async'? ('extern' "abi")? ident (<...>)? decl { ... }`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Fn {
     pub is_unsafe: bool,
@@ -1017,7 +1090,7 @@ impl Fn {
             is_unsafe: false,
             is_const: false,
             is_async: false,
-            abi: Some("C".to_string()),
+            abi: Some("C".into()),
             ident: ident.into(),
             generics,
             fn_decl,
@@ -1031,7 +1104,7 @@ impl Fn {
             is_const: false,
             is_async: false,
             abi: None,
-            ident: "main".to_string(),
+            ident: "main".into(),
             generics: Vec::new(),
             fn_decl: FnDecl::regular(Vec::new(), output),
             body: Some(body),
@@ -1103,6 +1176,7 @@ impl Fn {
 }
 
 /// `mod ident { ... }`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LoadedMod {
     pub ident: String,
@@ -1177,6 +1251,7 @@ impl LoadedMod {
 }
 
 /// `mod ident { ... }` or `mod ident;`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Mod {
     Loaded(LoadedMod),
@@ -1243,15 +1318,27 @@ impl Mod {
 pub struct StmtIndex(usize);
 
 /// `('label:)? { ... }`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct LabelledBlock {
     pub label: Option<String>,
     pub block: Block,
 }
 
+#[cfg(feature = "fuzzing")]
+impl LabelledBlock {
+    pub fn arbitrary_no_label(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        use arbitrary::Arbitrary;
+        Ok(Self {
+            label: None,
+            block: Block::arbitrary(u)?,
+        })
+    }
+}
+
 impl HasPrecedence for LabelledBlock {
     fn precedence(&self) -> OperatorPrecedence {
-        OperatorPrecedence::Elemental
+        OperatorPrecedence::AlwaysWrapped
     }
 }
 
@@ -1360,6 +1447,41 @@ impl LabelledBlock {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Block {
     pub stmts: Vec<Stmt>,
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for Block {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let i = u.int_in_range(1..=10)?;
+        let mut stmts = Vec::with_capacity(i);
+        for _ in 0..i {
+            stmts.push(Stmt::arbitrary_not_expr(u)?);
+        }
+        Ok(Self { stmts })
+    }
+}
+
+#[cfg(feature = "fuzzing")]
+impl Block {
+    pub fn arbitrary_item_block(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        let i = u.int_in_range(0..=10)?;
+        let mut stmts = Vec::with_capacity(i);
+        for _ in 0..i {
+            stmts.push(Stmt::arbitrary_item(u)?);
+        }
+        Ok(Self { stmts })
+    }
+
+    pub fn arbitrary_extern_item_block(
+        u: &mut arbitrary::Unstructured<'_>,
+    ) -> arbitrary::Result<Self> {
+        let i = u.int_in_range(0..=10)?;
+        let mut stmts = Vec::with_capacity(i);
+        for _ in 0..i {
+            stmts.push(Stmt::arbitrary_extern_item(u)?);
+        }
+        Ok(Self { stmts })
+    }
 }
 
 impl HasPrecedence for Block {
@@ -1512,6 +1634,7 @@ impl Block {
 }
 
 /// `vis (ident ':')? ty`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FieldDef {
     pub attrs: Vec<Attribute>,
@@ -1591,6 +1714,7 @@ impl FieldDef {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Fields {
     Unit,
@@ -1601,7 +1725,7 @@ pub enum Fields {
 impl fmt::Display for Fields {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Unit => write!(f, ""),
+            Self::Unit => write!(f, "{{}}"),
             Self::Tuple(fields) => {
                 write!(f, "(")?;
                 for (i, field) in fields.iter().enumerate() {
@@ -1748,6 +1872,7 @@ impl Fields {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Variant {
     pub attrs: Vec<Attribute>,
@@ -1873,6 +1998,7 @@ impl Variant {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EnumDef {
     pub ident: String,
@@ -2011,6 +2137,7 @@ impl EnumDef {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StructDef {
     pub ident: String,
@@ -2127,6 +2254,7 @@ impl StructDef {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UnionDef {
     pub ident: String,
@@ -2245,6 +2373,7 @@ impl UnionDef {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TraitDef {
     pub ident: String,
@@ -2385,6 +2514,7 @@ impl TraitDef {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PredicateType {
     pub bounded_ty: Type,
@@ -2437,6 +2567,7 @@ impl PredicateType {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PredicateLifetime {
     pub lifetime: String,
@@ -2489,6 +2620,7 @@ impl PredicateLifetime {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum WherePredicate {
     Type(PredicateType),
@@ -2513,6 +2645,7 @@ impl From<WherePredicate> for TokenStream {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Impl {
     pub generics: Vec<GenericParam>,
@@ -2687,6 +2820,23 @@ pub struct MacroDef {
     pub args: DelimArgs,
 }
 
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for MacroDef {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        // ts: () => {}
+        let mut ts = TokenStream::new();
+        ts.push(Token::OpenDelim(Delimiter::Parenthesis));
+        ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+        ts.push(Token::FatArrow);
+        ts.push(Token::OpenDelim(Delimiter::Brace));
+        ts.push(Token::CloseDelim(Delimiter::Brace));
+        Ok(MacroDef {
+            ident: String::arbitrary(u)?,
+            args: DelimArgs::brace(ts),
+        })
+    }
+}
+
 impl fmt::Display for MacroDef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "macro_rules! {} {}", self.ident, self.args)
@@ -2737,6 +2887,17 @@ pub struct ExternBlock {
     pub is_unsafe: bool,
     pub abi: Option<String>,
     pub block: Block,
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for ExternBlock {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(ExternBlock {
+            is_unsafe: bool::arbitrary(u)?,
+            abi: Option::<String>::arbitrary(u)?,
+            block: Block::arbitrary_extern_item_block(u)?,
+        })
+    }
 }
 
 impl fmt::Display for ExternBlock {
@@ -2838,6 +2999,7 @@ impl ExternBlock {
 }
 
 /// `extern crate ident (as alias)?;`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ExternCrate {
     pub ident: String,
@@ -2898,6 +3060,19 @@ pub enum VisibilityScope {
     Path(Path),
 }
 
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for VisibilityScope {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        match u.int_in_range(0..=3)? {
+            0 => Ok(VisibilityScope::Crate),
+            1 => Ok(VisibilityScope::Super),
+            2 => Ok(VisibilityScope::Self_),
+            3 => Ok(VisibilityScope::Path(Path::arbitrary_no_arg(u)?)),
+            _ => unreachable!(),
+        }
+    }
+}
+
 impl fmt::Display for VisibilityScope {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -2925,6 +3100,7 @@ impl From<VisibilityScope> for TokenStream {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum Visibility {
     #[default]
@@ -2982,11 +3158,45 @@ impl From<Visibility> for TokenStream {
     }
 }
 
+pub trait HasVisibility {
+    fn has_visibility(&self) -> bool;
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Item<K = ItemKind> {
     pub attrs: Vec<Attribute>,
     pub vis: Visibility,
     pub kind: K,
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a, K: arbitrary::Arbitrary<'a> + HasVisibility> arbitrary::Arbitrary<'a> for Item<K> {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let kind = K::arbitrary(u)?;
+        let vis = if kind.has_visibility() {
+            Visibility::arbitrary(u)?
+        } else {
+            Visibility::Inherited
+        };
+        Ok(Self {
+            attrs: Vec::<Attribute>::arbitrary(u)?,
+            vis,
+            kind,
+        })
+    }
+}
+
+#[cfg(feature = "fuzzing")]
+impl Item {
+    pub fn arbitrary_extern_item(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        use arbitrary::Arbitrary;
+
+        Ok(Self {
+            attrs: Vec::<Attribute>::arbitrary(u)?,
+            vis: Visibility::arbitrary(u)?,
+            kind: ItemKind::arbitrary_extern_item(u)?,
+        })
+    }
 }
 
 impl<I: Into<ItemKind>> From<I> for Item<ItemKind> {
@@ -3081,6 +3291,7 @@ impl<K: MaybeIdent> Item<K> {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ItemKind {
     Use(Use),
@@ -3094,14 +3305,37 @@ pub enum ItemKind {
     UnionDef(UnionDef),
     TraitDef(TraitDef),
     Impl(Impl),
-    MacCall(MacCall),
+    MacCallWithSemi(MacCallWithSemi),
     MacroDef(MacroDef),
     ExternBlock(ExternBlock),
     ExternCrate(ExternCrate),
 }
 
-impl_obvious_conversion!(ItemKind; Use, StaticItem, ConstItem, Fn, Mod, TyAlias, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCall, ExternBlock, ExternCrate);
-impl_display_for_enum!(ItemKind; Use, StaticItem, ConstItem, Fn, Mod, TyAlias, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCall, ExternBlock, ExternCrate);
+impl HasVisibility for ItemKind {
+    fn has_visibility(&self) -> bool {
+        !matches!(
+            self,
+            Self::Impl(_) | Self::MacCallWithSemi(_) | Self::MacroDef(_)
+        )
+    }
+}
+
+#[cfg(feature = "fuzzing")]
+impl ItemKind {
+    pub fn arbitrary_extern_item(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        use arbitrary::Arbitrary;
+
+        match u.int_in_range(0..=2)? {
+            0 => Ok(ItemKind::Fn(Fn::arbitrary(u)?)),
+            1 => Ok(ItemKind::TyAlias(TyAlias::arbitrary(u)?)),
+            2 => Ok(ItemKind::StaticItem(StaticItem::arbitrary(u)?)),
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl_obvious_conversion!(ItemKind; Use, StaticItem, ConstItem, Fn, Mod, TyAlias, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCallWithSemi, ExternBlock, ExternCrate);
+impl_display_for_enum!(ItemKind; Use, StaticItem, ConstItem, Fn, Mod, TyAlias, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCallWithSemi, ExternBlock, ExternCrate);
 
 impl MaybeIdent for ItemKind {
     fn ident(&self) -> Option<&str> {
@@ -3117,7 +3351,7 @@ impl MaybeIdent for ItemKind {
             Self::UnionDef(item) => Some(&item.ident),
             Self::TraitDef(item) => Some(&item.ident),
             Self::Impl(_) => None,
-            Self::MacCall(_) => None,
+            Self::MacCallWithSemi(_) => None,
             Self::MacroDef(item) => Some(&item.ident),
             Self::ExternBlock(_) => None,
             Self::ExternCrate(item) => Some(&item.ident),
@@ -3132,6 +3366,7 @@ impl ItemKind {
 }
 
 /// `ident '::' tree`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UsePath {
     ident: String,
@@ -3187,6 +3422,7 @@ impl UsePath {
 }
 
 /// `ident 'as' alias`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UseRename {
     pub ident: String,
@@ -3219,6 +3455,7 @@ impl UseRename {
 }
 
 /// `path | use_rename | '*' | '{' (use_tree ',')+ '}'`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum UseTree {
     Name(String),
@@ -3318,6 +3555,7 @@ impl UseTree {
 }
 
 /// `use use_tree;`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Use(pub UseTree);
 
@@ -3371,6 +3609,7 @@ impl Use {
 }
 
 /// `static ident: ty (= expr)?;`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StaticItem {
     pub mutability: Mutability,
@@ -3421,6 +3660,7 @@ impl Ident for StaticItem {
 }
 
 /// `const ident: ty (= expr)?;`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ConstItem {
     pub ident: String,
@@ -3471,6 +3711,7 @@ impl ConstItem {
 }
 
 /// `type ident = ty;`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TyAlias {
     pub ident: String,
@@ -3507,12 +3748,19 @@ impl Ident for TyAlias {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum AssocItemKind {
     ConstItem(ConstItem),
     Fn(Fn),
     TyAlias(TyAlias),
     MacCall(MacCall),
+}
+
+impl HasVisibility for AssocItemKind {
+    fn has_visibility(&self) -> bool {
+        !matches!(self, Self::MacCall(_))
+    }
 }
 
 impl_display_for_enum!(AssocItemKind; ConstItem, Fn, TyAlias, MacCall);
@@ -3537,6 +3785,7 @@ impl AssocItemKind {
 
 pub type AssocItem = Item<AssocItemKind>;
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Empty {}
 
@@ -3553,19 +3802,20 @@ impl From<Empty> for TokenStream {
 }
 
 /// `expr;`
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Semi(pub Expr);
+pub struct Semi<E = Expr>(pub E);
 
-impl fmt::Display for Semi {
+impl<E: fmt::Display> fmt::Display for Semi<E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{};", self.0)
     }
 }
 
-impl From<Semi> for TokenStream {
-    fn from(value: Semi) -> Self {
+impl<E: Into<TokenStream>> From<Semi<E>> for TokenStream {
+    fn from(value: Semi<E>) -> Self {
         let mut ts = TokenStream::new();
-        ts.extend(TokenStream::from(value.0).into_joint());
+        ts.extend(value.0.into().into_joint());
         ts.push(Token::Semi);
         ts
     }
@@ -3577,6 +3827,9 @@ impl Semi {
     }
 }
 
+pub type MacCallWithSemi = Semi<MacCall>;
+
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Stmt {
     Local(Local),
@@ -3584,10 +3837,35 @@ pub enum Stmt {
     Expr(Expr),
     Semi(Semi),
     Empty(Empty),
-    MacCall(MacCall),
+    MacCallWithSemi(MacCallWithSemi),
 }
 
-impl_obvious_conversion!(Stmt; Local, Item, Expr, Semi, Empty, MacCall);
+impl_obvious_conversion!(Stmt; Local, Item, Expr, Semi, Empty, MacCallWithSemi);
+
+#[cfg(feature = "fuzzing")]
+impl Stmt {
+    pub fn arbitrary_not_expr(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        use arbitrary::Arbitrary;
+
+        match u.int_in_range(0..=3)? {
+            0 => Ok(Stmt::Local(Local::arbitrary(u)?)),
+            1 => Ok(Stmt::Item(Item::arbitrary(u)?)),
+            2 => Ok(Stmt::Semi(Semi::arbitrary(u)?)),
+            3 => Ok(Stmt::MacCallWithSemi(MacCallWithSemi::arbitrary(u)?)),
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn arbitrary_item(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        use arbitrary::Arbitrary;
+
+        Ok(Stmt::Item(Item::arbitrary(u)?))
+    }
+
+    pub fn arbitrary_extern_item(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        Ok(Stmt::Item(Item::arbitrary_extern_item(u)?))
+    }
+}
 
 impl From<Use> for Stmt {
     fn from(item: Use) -> Self {
@@ -3688,7 +3966,7 @@ impl fmt::Display for Stmt {
             Self::Expr(expr) => write!(f, "{expr}"),
             Self::Semi(semi) => write!(f, "{semi}"),
             Self::Empty(_) => write!(f, ""),
-            Self::MacCall(mac_call) => write!(f, "{mac_call}"),
+            Self::MacCallWithSemi(mac_call) => write!(f, "{mac_call}"),
         }
     }
 }
