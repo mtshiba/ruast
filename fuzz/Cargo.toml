@@ -10,6 +10,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 syn = { version = "2", features = ["full"] }
+arbitrary = { version = "1.4.2" }
 
 [dependencies.ruast]
 path = ".."

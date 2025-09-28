@@ -44,10 +44,10 @@ pub enum OperatorPrecedence {
     LazyAnd = 15,
     /// `||`
     LazyOr = 16,
-    /// `..`, `..=`
-    Range = 17,
     /// `=`, `+=`, `-=`, `*=`, `/=`, `%=` etc.
-    Assign = 18,
+    Assign = 17,
+    /// `..`, `..=`
+    Range = 18,
     ReturnBreakClosure = 19,
 }
 
@@ -1070,12 +1070,23 @@ impl Let {
     }
 }
 
-#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct If {
     pub cond: Box<Expr>,
     pub then: Block,
     pub else_: Option<Box<Expr>>,
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for If {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let else_ = if u.arbitrary()? {
+            Some(Expr::from(LabelledBlock::arbitrary_no_label(u)?))
+        } else {
+            None
+        };
+        Ok(Self::new(Expr::arbitrary(u)?, Block::arbitrary(u)?, else_))
+    }
 }
 
 impl HasPrecedence for If {
@@ -1086,7 +1097,18 @@ impl HasPrecedence for If {
 
 impl fmt::Display for If {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "if {cond} {then}", cond = self.cond, then = self.then)?;
+        write!(f, "if ")?;
+        match &self.cond.kind {
+            ExprKind::Return(Return { expr }) | ExprKind::Yield(Yield { expr })
+                if expr.is_none() =>
+            {
+                write!(f, "({})", self.cond)?;
+            }
+            _ => {
+                write!(f, "{}", self.cond)?;
+            }
+        }
+        write!(f, " {}", self.then)?;
         if let Some(else_) = &self.else_ {
             write!(f, " else {else_}")?;
         }
@@ -1098,7 +1120,18 @@ impl From<If> for TokenStream {
     fn from(value: If) -> Self {
         let mut ts = TokenStream::new();
         ts.push(Token::Keyword(KeywordToken::If));
-        ts.extend(TokenStream::from(*value.cond));
+        match &value.cond.kind {
+            ExprKind::Return(Return { expr }) | ExprKind::Yield(Yield { expr })
+                if expr.is_none() =>
+            {
+                ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
+                ts.extend(TokenStream::from(*value.cond).into_joint());
+                ts.push(Token::CloseDelim(Delimiter::Parenthesis));
+            }
+            _ => {
+                ts.extend(TokenStream::from(*value.cond));
+            }
+        }
         ts.extend(TokenStream::from(value.then));
         if let Some(else_) = value.else_ {
             ts.push(Token::Keyword(KeywordToken::Else));
@@ -2086,7 +2119,7 @@ impl Assign {
 }
 
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BinOpKind {
     /// `+`
     Add,
@@ -2124,6 +2157,27 @@ pub enum BinOpKind {
     Ge,
     /// `>`
     Gt,
+}
+
+#[cfg(feature = "fuzzing")]
+impl BinOpKind {
+    pub fn arbitrary_assign_op(u: &mut arbitrary::Unstructured) -> arbitrary::Result<Self> {
+        let ops = [
+            Self::Add,
+            Self::Sub,
+            Self::Mul,
+            Self::Div,
+            Self::Rem,
+            Self::LazyAnd,
+            Self::LazyOr,
+            Self::BitAnd,
+            Self::BitOr,
+            Self::BitXor,
+            Self::Shl,
+            Self::Shr,
+        ];
+        u.choose(&ops).copied()
+    }
 }
 
 impl fmt::Display for BinOpKind {
@@ -2221,12 +2275,22 @@ impl From<BinOpKind> for TokenStream {
 }
 
 /// `lhs op= rhs`
-#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AssignOp {
     pub lhs: Box<Expr>,
     pub op: BinOpKind,
     pub rhs: Box<Expr>,
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for AssignOp {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self {
+            lhs: Box::new(Expr::arbitrary(u)?),
+            op: BinOpKind::arbitrary_assign_op(u)?,
+            rhs: Box::new(Expr::arbitrary(u)?),
+        })
+    }
 }
 
 impl HasPrecedence for AssignOp {
@@ -3423,7 +3487,6 @@ impl Try {
     }
 }
 
-#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ExprKind {
     Array(Array),
@@ -3467,9 +3530,63 @@ pub enum ExprKind {
 }
 
 #[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for ExprKind {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        if crate::depth_limiter::reached() {
+            return Ok(Self::Tuple(Tuple::unit()));
+        }
+        match u.int_in_range(0..=37)? {
+            0 => Ok(Self::Array(Array::arbitrary(u)?)),
+            1 => Ok(Self::Call(Call::arbitrary(u)?)),
+            2 => Ok(Self::MethodCall(MethodCall::arbitrary(u)?)),
+            3 => Ok(Self::Tuple(Tuple::arbitrary(u)?)),
+            4 => Ok(Self::Binary(Binary::arbitrary(u)?)),
+            5 => Ok(Self::Unary(Unary::arbitrary(u)?)),
+            6 => Ok(Self::Lit(Lit::arbitrary(u)?)),
+            7 => Ok(Self::Cast(Cast::arbitrary(u)?)),
+            // 8 => Ok(Self::TypeAscription(TypeAscription::arbitrary(u)?)),
+            9 => Ok(Self::Let(Let::arbitrary(u)?)),
+            10 => Ok(Self::If(If::arbitrary(u)?)),
+            11 => Ok(Self::While(While::arbitrary(u)?)),
+            12 => Ok(Self::ForLoop(ForLoop::arbitrary(u)?)),
+            13 => Ok(Self::Loop(Loop::arbitrary(u)?)),
+            14 => Ok(Self::ConstBlock(ConstBlock::arbitrary(u)?)),
+            15 => Ok(Self::UnsafeBlock(UnsafeBlock::arbitrary(u)?)),
+            16 => Ok(Self::Match(Match::arbitrary(u)?)),
+            17 => Ok(Self::Closure(Closure::arbitrary(u)?)),
+            18 => Ok(Self::LabelledBlock(LabelledBlock::arbitrary(u)?)),
+            19 => Ok(Self::Async(Async::arbitrary(u)?)),
+            20 => Ok(Self::Await(Await::arbitrary(u)?)),
+            21 => Ok(Self::TryBlock(TryBlock::arbitrary(u)?)),
+            22 => Ok(Self::Assign(Assign::arbitrary(u)?)),
+            23 => Ok(Self::AssignOp(AssignOp::arbitrary(u)?)),
+            24 => Ok(Self::Field(Field::arbitrary(u)?)),
+            25 => Ok(Self::Index(Index::arbitrary(u)?)),
+            26 => Ok(Self::Range(Range::arbitrary(u)?)),
+            // 27 => Ok(Self::Underscore(Underscore::arbitrary(u)?)),
+            28 => Ok(Self::Path(Path::arbitrary_no_arg(u)?)),
+            29 => Ok(Self::AddrOf(AddrOf::arbitrary(u)?)),
+            30 => Ok(Self::Break(Break::arbitrary(u)?)),
+            31 => Ok(Self::Continue(Continue::arbitrary(u)?)),
+            32 => Ok(Self::Return(Return::arbitrary(u)?)),
+            33 => Ok(Self::Yield(Yield::arbitrary(u)?)),
+            34 => Ok(Self::MacCall(MacCall::arbitrary(u)?)),
+            35 => Ok(Self::Struct(Struct::arbitrary(u)?)),
+            36 => Ok(Self::Repeat(Repeat::arbitrary(u)?)),
+            37 => Ok(Self::Try(Try::arbitrary(u)?)),
+            _ => Ok(Self::Tuple(Tuple::unit())),
+        }
+    }
+}
+
+#[cfg(feature = "fuzzing")]
 impl ExprKind {
     pub fn arbitrary_const(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
         use arbitrary::Arbitrary;
+
+        if crate::depth_limiter::reached() {
+            return Ok(Self::Lit(Lit::arbitrary(u)?));
+        }
 
         match u.int_in_range(0..=3)? {
             0 => Ok(Self::Lit(Lit::arbitrary(u)?)),

@@ -524,8 +524,11 @@ pub enum Pat {
 #[cfg(feature = "fuzzing")]
 impl<'a> arbitrary::Arbitrary<'a> for Pat {
     fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        if crate::depth_limiter::reached() {
+            return Ok(Pat::Wild);
+        }
         // Generates only irrefutable patterns.
-        match u.int_in_range(0..=8)? {
+        match u.int_in_range(0..=7)? {
             0 => Ok(Self::Wild),
             1 => Ok(Self::Ident(IdentPat::arbitrary(u)?)),
             2 => Ok(Self::Struct(StructPat::arbitrary(u)?)),
@@ -546,9 +549,9 @@ impl<'a> arbitrary::Arbitrary<'a> for Pat {
                 }
                 Ok(Self::Tuple(pats))
             }
-            6 => Ok(Self::Box(Box::new(Pat::arbitrary(u)?))),
-            7 => Ok(Self::Ref(RefPat::arbitrary(u)?)),
-            8 => {
+            // 6 => Ok(Self::Box(Box::new(Pat::arbitrary(u)?))),
+            6 => Ok(Self::Ref(RefPat::arbitrary(u)?)),
+            7 => {
                 let len = u.int_in_range(1..=5)?;
                 let mut pats = Vec::with_capacity(len);
                 for _ in 0..len {
@@ -1303,6 +1306,17 @@ pub struct StmtIndex(usize);
 pub struct LabelledBlock {
     pub label: Option<String>,
     pub block: Block,
+}
+
+#[cfg(feature = "fuzzing")]
+impl LabelledBlock {
+    pub fn arbitrary_no_label(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        use arbitrary::Arbitrary;
+        Ok(Self {
+            label: None,
+            block: Block::arbitrary(u)?,
+        })
+    }
 }
 
 impl HasPrecedence for LabelledBlock {

@@ -3,6 +3,27 @@ use std::ops::{Deref, DerefMut};
 
 use crate::expr::Lit;
 
+#[cfg(feature = "fuzzing")]
+pub mod depth_limiter {
+    use std::cell::Cell;
+    thread_local! { static DEPTH: Cell<u32> = const { Cell::new(0) }; }
+
+    pub fn set(max_depth: u32) {
+        DEPTH.with(|f| f.set(max_depth));
+    }
+    pub fn reached() -> bool {
+        DEPTH.with(|f| {
+            let n = f.get();
+            if n == 0 {
+                true
+            } else {
+                f.set(n - 1);
+                false
+            }
+        })
+    }
+}
+
 /// String for fuzzing. Generates only valid strings as identifiers.
 #[cfg(feature = "fuzzing")]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

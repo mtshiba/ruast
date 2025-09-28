@@ -615,6 +615,9 @@ pub enum Type {
 #[cfg(feature = "fuzzing")]
 impl<'a> arbitrary::Arbitrary<'a> for Type {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        if crate::depth_limiter::reached() {
+            return Ok(Type::Never);
+        }
         match u.int_in_range(0..=10)? {
             0 => Ok(Type::Slice(Box::new(Type::arbitrary(u)?))),
             1 => Ok(Type::Array(
