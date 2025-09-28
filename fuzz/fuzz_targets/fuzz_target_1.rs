@@ -1,7 +1,6 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use syn;
 
 fuzz_target!(|expr: ruast::Expr| {
     let src = expr.to_string();

@@ -1379,6 +1379,18 @@ pub struct Block {
     pub stmts: Vec<Stmt>,
 }
 
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for Block {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let i = u.int_in_range(1..=10)?;
+        let mut stmts = Vec::with_capacity(i);
+        for _ in 0..i {
+            stmts.push(Stmt::arbitrary(u)?);
+        }
+        Ok(Self { stmts })
+    }
+}
+
 impl HasPrecedence for Block {
     fn precedence(&self) -> OperatorPrecedence {
         OperatorPrecedence::Elemental
