@@ -174,6 +174,16 @@ fn test_cast() {
         .cast(Type::mut_ptr(Type::unit()));
 
     assert_snapshot!(cast, @"&raw mut x.y as *mut i8 as *mut ()");
+
+    let cast = Path::single("foo")
+        .cast(Type::u32())
+        .bin_op(BinOpKind::Lt, Lit::int("42"));
+    assert_snapshot!(cast, @"(foo as u32) < 42");
+
+    let cast = Path::single("foo")
+        .cast(Type::u32())
+        .bin_op(BinOpKind::Gt, Lit::int("42"));
+    assert_snapshot!(cast, @"foo as u32 > 42");
 }
 
 #[test]

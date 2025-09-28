@@ -869,7 +869,10 @@ impl Binary {
 
 impl fmt::Display for Binary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.precedence() < self.lhs.precedence() {
+        if self.precedence() < self.lhs.precedence()
+        // foo as T < y ==> (foo as T) < y
+        || (self.op == BinOpKind::Lt && self.lhs.precedence() == OperatorPrecedence::Cast)
+        {
             write!(f, "({})", self.lhs)?;
         } else {
             write!(f, "{}", self.lhs)?;
@@ -888,7 +891,10 @@ impl From<Binary> for TokenStream {
     fn from(value: Binary) -> Self {
         let mut ts = TokenStream::new();
         let precedence = value.precedence();
-        if precedence < value.lhs.precedence() {
+        if precedence < value.lhs.precedence()
+        // foo as T < y ==> (foo as T) < y
+        || (value.op == BinOpKind::Lt && value.lhs.precedence() == OperatorPrecedence::Cast)
+        {
             ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
             ts.extend(TokenStream::from(*value.lhs).into_joint());
             ts.push(Token::CloseDelim(Delimiter::Parenthesis));
