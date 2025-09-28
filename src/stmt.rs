@@ -1244,8 +1244,121 @@ pub struct StmtIndex(usize);
 
 /// `('label:)? { ... }`
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
-pub struct Block {
+pub struct LabelledBlock {
     pub label: Option<String>,
+    pub block: Block,
+}
+
+impl HasPrecedence for LabelledBlock {
+    fn precedence(&self) -> OperatorPrecedence {
+        OperatorPrecedence::Elemental
+    }
+}
+
+impl fmt::Display for LabelledBlock {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(label) = &self.label {
+            write!(f, "'{label}: ")?;
+        }
+        write!(f, "{}", self.block)?;
+        Ok(())
+    }
+}
+
+impl<S: Into<Stmt>> From<S> for LabelledBlock {
+    fn from(stmt: S) -> Self {
+        let mut block = LabelledBlock::empty();
+        block.add_stmt(stmt);
+        block
+    }
+}
+
+impl From<LabelledBlock> for TokenStream {
+    fn from(value: LabelledBlock) -> Self {
+        let mut ts = TokenStream::new();
+        if let Some(label) = value.label {
+            ts.push(Token::lifetime(label));
+            ts.push(Token::Colon);
+        }
+        ts.extend(TokenStream::from(value.block));
+        ts
+    }
+}
+
+impl Index<StmtIndex> for LabelledBlock {
+    type Output = Stmt;
+
+    fn index(&self, index: StmtIndex) -> &Self::Output {
+        self.block.index(index)
+    }
+}
+
+impl IndexMut<StmtIndex> for LabelledBlock {
+    fn index_mut(&mut self, index: StmtIndex) -> &mut Self::Output {
+        self.block.index_mut(index)
+    }
+}
+
+impl HasItem<Stmt> for LabelledBlock {
+    fn items(&self) -> &[Stmt] {
+        self.block.items()
+    }
+    fn items_mut(&mut self) -> &mut Vec<Stmt> {
+        self.block.items_mut()
+    }
+}
+
+impl_hasitem_methods!(LabelledBlock, Stmt, Deref);
+
+impl LabelledBlock {
+    pub fn new(block: Block, label: Option<String>) -> Self {
+        Self { block, label }
+    }
+
+    pub fn single(expr: impl Into<Expr>) -> Self {
+        Self::new(Block::single(expr.into()), None)
+    }
+
+    pub fn empty() -> Self {
+        Self {
+            block: Block::empty(),
+            label: None,
+        }
+    }
+
+    pub fn with_stmt(mut self, stmt: impl Into<Stmt>) -> Self {
+        self.add_stmt(stmt);
+        self
+    }
+
+    pub fn add_stmt(&mut self, stmt: impl Into<Stmt>) -> StmtIndex {
+        self.block.add_stmt(stmt)
+    }
+
+    pub fn try_remove_stmt(&mut self, index: usize) -> Option<Stmt> {
+        self.block.try_remove_stmt(index)
+    }
+
+    pub fn remove_stmt(&mut self, index: StmtIndex) -> Stmt {
+        self.block.remove_stmt(index)
+    }
+
+    pub fn try_remove_item_by_id(&mut self, ident: &str) -> Option<Item> {
+        self.block.try_remove_item_by_id(ident)
+    }
+
+    pub fn get_stmt(&self, index: usize) -> Option<&Stmt> {
+        self.block.get_stmt(index)
+    }
+
+    pub fn get_item_by_id(&self, ident: &str) -> Option<&Item> {
+        self.block.get_item_by_id(ident)
+    }
+}
+
+/// { ... }`
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+pub struct Block {
     pub stmts: Vec<Stmt>,
 }
 
@@ -1257,9 +1370,6 @@ impl HasPrecedence for Block {
 
 impl fmt::Display for Block {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(label) = &self.label {
-            write!(f, "'{label}: ")?;
-        }
         if self.stmts.is_empty() {
             write!(f, "{{}}")?;
         } else {
@@ -1284,17 +1394,13 @@ impl<S: Into<Stmt>> From<S> for Block {
 
 impl From<Vec<Stmt>> for Block {
     fn from(stmts: Vec<Stmt>) -> Self {
-        Self { label: None, stmts }
+        Self { stmts }
     }
 }
 
 impl From<Block> for TokenStream {
     fn from(value: Block) -> Self {
         let mut ts = TokenStream::new();
-        if let Some(label) = value.label {
-            ts.push(Token::lifetime(label));
-            ts.push(Token::Colon);
-        }
         ts.push(Token::OpenDelim(Delimiter::Brace));
         for stmt in value.stmts.iter() {
             ts.extend(TokenStream::from(stmt.clone()));
@@ -1331,19 +1437,16 @@ impl HasItem<Stmt> for Block {
 impl_hasitem_methods!(Block, Stmt, Deref);
 
 impl Block {
-    pub fn new(stmts: Vec<Stmt>, label: Option<String>) -> Self {
-        Self { stmts, label }
+    pub fn new(stmts: Vec<Stmt>) -> Self {
+        Self { stmts }
     }
 
     pub fn single(expr: impl Into<Expr>) -> Self {
-        Self::new(vec![Stmt::Expr(expr.into())], None)
+        Self::new(vec![Stmt::Expr(expr.into())])
     }
 
     pub fn empty() -> Self {
-        Self {
-            stmts: Vec::new(),
-            label: None,
-        }
+        Self { stmts: Vec::new() }
     }
 
     pub fn async_(self) -> Async {

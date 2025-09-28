@@ -899,7 +899,7 @@ fn test_localkind_to_tokenstream() {
     let ts = TokenStream::from(init_kind);
     assert_snapshot!(ts, @"= 42");
 
-    let else_kind = LocalKind::InitElse(Expr::new(Lit::int("42")), Block::new(vec![], None));
+    let else_kind = LocalKind::InitElse(Expr::new(Lit::int("42")), Block::new(vec![]));
     let ts = TokenStream::from(else_kind);
     assert_snapshot!(ts, @"= 42 else { }");
 }
@@ -994,7 +994,7 @@ fn test_fn_to_tokenstream() {
     let fn_item = Fn::simple(
         "test_func",
         FnDecl::new(vec![], Some(Type::unit()), false),
-        Block::new(vec![], None),
+        Block::empty(),
     );
     let ts = TokenStream::from(fn_item);
     assert_snapshot!(ts, @"fn test_func() -> () { }");
@@ -1016,11 +1016,11 @@ fn test_mod_to_tokenstream() {
 
 #[test]
 fn test_block_to_tokenstream() {
-    let block = Block::new(vec![], None);
+    let block = Block::empty();
     let ts = TokenStream::from(block);
     assert_snapshot!(ts, @"{ }");
 
-    let block_with_stmt = Block::new(vec![Stmt::Expr(Expr::new(Lit::int("42")))], None);
+    let block_with_stmt = Block::single(Expr::new(Lit::int("42")));
     let ts = TokenStream::from(block_with_stmt);
     assert_snapshot!(ts, @"{ 42 }");
 }
@@ -1176,7 +1176,7 @@ fn test_macrodef_to_tokenstream() {
 
 #[test]
 fn test_externblock_to_tokenstream() {
-    let extern_block = ExternBlock::new(false, Option::<String>::None, Block::new(vec![], None));
+    let extern_block = ExternBlock::new(false, Option::<String>::None, Block::empty());
     let ts = TokenStream::from(extern_block);
     assert_snapshot!(ts, @"extern { }");
 }

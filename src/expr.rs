@@ -5,7 +5,9 @@ use std::ops::{Add, Deref, DerefMut, Div, Mul, Neg, Sub};
 use crate::stmt::{Block, EmptyItem, FnDecl, Pat, Use};
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 use crate::ty::Type;
-use crate::{impl_display_for_enum, impl_obvious_conversion, UsePath, UseRename, UseTree};
+use crate::{
+    impl_display_for_enum, impl_obvious_conversion, LabelledBlock, UsePath, UseRename, UseTree,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u8)]
@@ -3257,7 +3259,7 @@ pub enum ExprKind {
     UnsafeBlock(UnsafeBlock),
     Match(Match),
     Closure(Closure),
-    Block(Block),
+    LabelledBlock(LabelledBlock),
     Async(Async),
     Await(Await),
     TryBlock(TryBlock),
@@ -3298,7 +3300,7 @@ impl_display_for_enum!(ExprKind;
     UnsafeBlock,
     Match,
     Closure,
-    Block,
+    LabelledBlock,
     Async,
     Await,
     TryBlock,
@@ -3338,7 +3340,7 @@ impl_obvious_conversion!(ExprKind;
     UnsafeBlock,
     Match,
     Closure,
-    Block,
+    LabelledBlock,
     Async,
     Await,
     TryBlock,
@@ -3378,7 +3380,7 @@ impl_has_precedence_for_enum!(ExprKind;
     UnsafeBlock,
     Match,
     Closure,
-    Block,
+    LabelledBlock,
     Async,
     Await,
     TryBlock,
@@ -3399,6 +3401,12 @@ impl_has_precedence_for_enum!(ExprKind;
     Repeat,
     Try,
 );
+
+impl From<Block> for ExprKind {
+    fn from(value: Block) -> Self {
+        ExprKind::LabelledBlock(LabelledBlock::new(value, None))
+    }
+}
 
 impl Expr {
     pub fn call(self, args: Vec<Expr>) -> Self {
