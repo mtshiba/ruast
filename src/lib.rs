@@ -189,7 +189,6 @@ pub(crate) use impl_hasitem_methods;
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Crate {
-    pub shebang: Option<String>,
     pub attrs: Vec<Attribute>,
     pub items: Vec<Item>,
 }
@@ -265,7 +264,6 @@ pub struct CompileOptions {
 impl Crate {
     pub fn new() -> Self {
         Self {
-            shebang: None,
             attrs: Vec::new(),
             items: Vec::new(),
         }

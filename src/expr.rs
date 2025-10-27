@@ -539,10 +539,18 @@ impl From<AttrKind> for TokenStream {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum AttrStyle {
+    Outer,
+    Inner,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AttributeItem {
     pub path: Path,
     pub args: AttrArgs,
+    pub style: AttrStyle,
 }
 
 #[cfg(feature = "fuzzing")]
@@ -550,22 +558,29 @@ impl<'a> arbitrary::Arbitrary<'a> for AttributeItem {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let path = Path::arbitrary_no_arg(u)?;
         let args = AttrArgs::arbitrary(u)?;
-        Ok(Self { path, args })
+        let style = AttrStyle::arbitrary(u)?;
+        Ok(Self { path, args, style })
     }
 }
 
 impl fmt::Display for AttributeItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "#[{}{}]", self.path, self.args)
+        match self.style {
+            AttrStyle::Inner => write!(f, "#![{}{}]", self.path, self.args),
+            AttrStyle::Outer => write!(f, "#[{}{}]", self.path, self.args),
+        }
     }
 }
 
 impl From<AttributeItem> for TokenStream {
     fn from(attr: AttributeItem) -> Self {
-        let mut ts = TokenStream::from(vec![
-            Token::Pound.into_joint(),
-            Token::OpenDelim(Delimiter::Bracket).into_joint(),
-        ]);
+        let mut ts = TokenStream::from(vec![Token::Pound.into_joint()]);
+
+        if let AttrStyle::Inner = attr.style {
+            ts.push(Token::Not.into_joint());
+        }
+
+        ts.push(Token::OpenDelim(Delimiter::Bracket).into_joint());
         ts.extend(TokenStream::from(attr.path).into_joint());
         ts.extend(TokenStream::from(attr.args));
         ts.push(Token::CloseDelim(Delimiter::Bracket));
@@ -574,15 +589,24 @@ impl From<AttributeItem> for TokenStream {
 }
 
 impl AttributeItem {
-    pub fn new(path: impl Into<Path>, args: impl Into<AttrArgs>) -> Self {
+    pub fn new(path: impl Into<Path>, args: impl Into<AttrArgs>, style: AttrStyle) -> Self {
         Self {
             path: path.into(),
             args: args.into(),
+            style,
         }
     }
 
     pub fn simple(path: impl Into<Path>) -> Self {
-        Self::new(path, AttrArgs::Empty)
+        Self::outer(path, AttrArgs::Empty)
+    }
+
+    pub fn inner(path: impl Into<Path>, args: impl Into<AttrArgs>) -> Self {
+        Self::new(path, args, AttrStyle::Inner)
+    }
+
+    pub fn outer(path: impl Into<Path>, args: impl Into<AttrArgs>) -> Self {
+        Self::new(path, args, AttrStyle::Outer)
     }
 
     /// `#[cfg(feature = "...")]`
@@ -593,7 +617,11 @@ impl AttributeItem {
             Token::Lit(Lit::str(feature)).into_joint(),
         ]);
         let arg = DelimArgs::new(MacDelimiter::Parenthesis, tokens);
-        Self::new(Path::single("cfg"), AttrArgs::Delimited(arg))
+        Self::new(
+            Path::single("cfg"),
+            AttrArgs::Delimited(arg),
+            AttrStyle::Outer,
+        )
     }
 }
 
