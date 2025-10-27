@@ -455,6 +455,12 @@ impl From<AttrArgs> for TokenStream {
     }
 }
 
+impl From<DelimArgs> for AttrArgs {
+    fn from(delim: DelimArgs) -> Self {
+        Self::Delimited(delim)
+    }
+}
+
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Attribute {
@@ -492,6 +498,14 @@ impl Attribute {
 
     pub fn normal(item: AttributeItem) -> Self {
         Self::new(AttrKind::Normal(item))
+    }
+
+    pub fn inner(path: impl Into<Path>, args: impl Into<AttrArgs>) -> Self {
+        Self::new(AttrKind::Normal(AttributeItem::inner(path, args)))
+    }
+
+    pub fn outer(path: impl Into<Path>, args: impl Into<AttrArgs>) -> Self {
+        Self::new(AttrKind::Normal(AttributeItem::outer(path, args)))
     }
 
     pub fn doc_comment(comment: impl Into<String>) -> Self {
