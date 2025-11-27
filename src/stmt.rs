@@ -846,6 +846,9 @@ impl fmt::Display for FnDecl {
             }
             write!(f, "{param}")?;
         }
+        if self.inputs.len() > 0 && self.is_variadic() {
+            write!(f, ", ")?;
+        }
         write!(f, "{param_count}", param_count = self.param_count)?;
         write!(f, ")")?;
         if let Some(output) = &self.output {
@@ -865,6 +868,9 @@ impl From<FnDecl> for TokenStream {
             }
             ts.extend(TokenStream::from(param.clone()).into_joint());
         }
+        if value.inputs.len() > 0 && value.is_variadic() {
+            ts.push(Token::Comma);
+        } 
         ts.extend(TokenStream::from(value.param_count));
         ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         if let Some(output) = value.output {
@@ -913,6 +919,10 @@ impl FnDecl {
     pub fn with_output(mut self, output: Type) -> Self {
         self.set_output(output);
         self
+    }
+
+    pub fn is_variadic(&self) -> bool {
+        matches!(self.param_count, ParamCount::Variadic(_))
     }
 }
 
