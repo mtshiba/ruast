@@ -455,6 +455,12 @@ impl From<AttrArgs> for TokenStream {
     }
 }
 
+impl From<DelimArgs> for AttrArgs {
+    fn from(delim: DelimArgs) -> Self {
+        Self::Delimited(delim)
+    }
+}
+
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Attribute {
@@ -494,8 +500,26 @@ impl Attribute {
         Self::new(AttrKind::Normal(item))
     }
 
+    pub fn inner(path: impl Into<Path>, args: impl Into<AttrArgs>) -> Self {
+        Self::new(AttrKind::Normal(AttributeItem::inner(path, args)))
+    }
+
+    pub fn outer(path: impl Into<Path>, args: impl Into<AttrArgs>) -> Self {
+        Self::new(AttrKind::Normal(AttributeItem::outer(path, args)))
+    }
+
     pub fn doc_comment(comment: impl Into<String>) -> Self {
         Self::new(AttrKind::DocComment(comment.into()))
+    }
+
+    /// true if `#![attr]`
+    pub const fn is_inner(&self) -> bool {
+        self.kind.is_inner()
+    }
+
+    /// true if `#[attr]`
+    pub const fn is_outer(&self) -> bool {
+        self.kind.is_outer()
     }
 }
 
@@ -539,10 +563,58 @@ impl From<AttrKind> for TokenStream {
     }
 }
 
+impl AttrKind {
+    pub fn normal(item: AttributeItem) -> Self {
+        Self::Normal(item)
+    }
+
+    pub fn doc_comment(comment: impl Into<String>) -> Self {
+        Self::DocComment(comment.into())
+    }
+
+    /// true if `#![attr]`
+    pub const fn is_inner(&self) -> bool {
+        match self {
+            AttrKind::Normal(item) => item.is_inner(),
+            AttrKind::DocComment(_) => false,
+        }
+    }
+
+    /// true if `#[attr]`
+    pub const fn is_outer(&self) -> bool {
+        match self {
+            AttrKind::Normal(item) => item.is_outer(),
+            AttrKind::DocComment(_) => false,
+        }
+    }
+}
+
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum AttrStyle {
+    /// `#[attr]`
+    Outer,
+    /// `#![attr]`
+    Inner,
+}
+
+impl AttrStyle {
+    /// `true` if `#![attr]`
+    pub const fn is_inner(&self) -> bool {
+        matches!(self, AttrStyle::Inner)
+    }
+
+    /// `true` if `#[attr]`
+    pub const fn is_outer(&self) -> bool {
+        matches!(self, AttrStyle::Outer)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AttributeItem {
     pub path: Path,
     pub args: AttrArgs,
+    pub style: AttrStyle,
 }
 
 #[cfg(feature = "fuzzing")]
@@ -550,22 +622,29 @@ impl<'a> arbitrary::Arbitrary<'a> for AttributeItem {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let path = Path::arbitrary_no_arg(u)?;
         let args = AttrArgs::arbitrary(u)?;
-        Ok(Self { path, args })
+        let style = AttrStyle::arbitrary(u)?;
+        Ok(Self { path, args, style })
     }
 }
 
 impl fmt::Display for AttributeItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "#[{}{}]", self.path, self.args)
+        match self.style {
+            AttrStyle::Inner => write!(f, "#![{}{}]", self.path, self.args),
+            AttrStyle::Outer => write!(f, "#[{}{}]", self.path, self.args),
+        }
     }
 }
 
 impl From<AttributeItem> for TokenStream {
     fn from(attr: AttributeItem) -> Self {
-        let mut ts = TokenStream::from(vec![
-            Token::Pound.into_joint(),
-            Token::OpenDelim(Delimiter::Bracket).into_joint(),
-        ]);
+        let mut ts = TokenStream::from(vec![Token::Pound.into_joint()]);
+
+        if let AttrStyle::Inner = attr.style {
+            ts.push(Token::Not.into_joint());
+        }
+
+        ts.push(Token::OpenDelim(Delimiter::Bracket).into_joint());
         ts.extend(TokenStream::from(attr.path).into_joint());
         ts.extend(TokenStream::from(attr.args));
         ts.push(Token::CloseDelim(Delimiter::Bracket));
@@ -574,15 +653,24 @@ impl From<AttributeItem> for TokenStream {
 }
 
 impl AttributeItem {
-    pub fn new(path: impl Into<Path>, args: impl Into<AttrArgs>) -> Self {
+    pub fn new(path: impl Into<Path>, args: impl Into<AttrArgs>, style: AttrStyle) -> Self {
         Self {
             path: path.into(),
             args: args.into(),
+            style,
         }
     }
 
     pub fn simple(path: impl Into<Path>) -> Self {
-        Self::new(path, AttrArgs::Empty)
+        Self::outer(path, AttrArgs::Empty)
+    }
+
+    pub fn inner(path: impl Into<Path>, args: impl Into<AttrArgs>) -> Self {
+        Self::new(path, args, AttrStyle::Inner)
+    }
+
+    pub fn outer(path: impl Into<Path>, args: impl Into<AttrArgs>) -> Self {
+        Self::new(path, args, AttrStyle::Outer)
     }
 
     /// `#[cfg(feature = "...")]`
@@ -593,7 +681,19 @@ impl AttributeItem {
             Token::Lit(Lit::str(feature)).into_joint(),
         ]);
         let arg = DelimArgs::new(MacDelimiter::Parenthesis, tokens);
-        Self::new(Path::single("cfg"), AttrArgs::Delimited(arg))
+        Self::new(
+            Path::single("cfg"),
+            AttrArgs::Delimited(arg),
+            AttrStyle::Outer,
+        )
+    }
+
+    pub const fn is_inner(&self) -> bool {
+        self.style.is_inner()
+    }
+
+    pub const fn is_outer(&self) -> bool {
+        self.style.is_outer()
     }
 }
 

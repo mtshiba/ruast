@@ -1,7 +1,7 @@
 use core::fmt::Write;
 use std::fmt;
 use std::hash::Hash;
-use std::ops::{Index, IndexMut};
+use std::ops::{Deref, Index, IndexMut};
 
 use crate::expr::{
     Async, Attribute, Call, ConstBlock, DelimArgs, Expr, MacCall, MethodCall, Path, Range,
@@ -181,6 +181,34 @@ pub trait Semicolon {
 impl<E: Into<Expr>> Semicolon for E {
     fn semi(self) -> Semi {
         Semi::new(self)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RefWithInnerAttrs<'i, 'a, I> {
+    pub inner: Vec<&'a Attribute>,
+    pub item: &'i I,
+}
+
+impl<I> Deref for RefWithInnerAttrs<'_, '_, I> {
+    type Target = I;
+
+    fn deref(&self) -> &Self::Target {
+        self.item
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct WithInnerAttrs<I> {
+    pub inner: Vec<Attribute>,
+    pub item: I,
+}
+
+impl<I> Deref for WithInnerAttrs<I> {
+    type Target = I;
+
+    fn deref(&self) -> &Self::Target {
+        &self.item
     }
 }
 
@@ -945,7 +973,7 @@ pub struct Fn {
 
 impl_into_item!(Fn);
 
-impl fmt::Display for Fn {
+impl fmt::Display for RefWithInnerAttrs<'_, '_, Fn> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.is_const {
             write!(f, "const ")?;
@@ -972,7 +1000,19 @@ impl fmt::Display for Fn {
         }
         write!(f, "{}", self.fn_decl)?;
         if let Some(body) = &self.body {
-            write!(f, " {body}")?;
+            write!(f, " ")?;
+            RefWithInnerAttrs {
+                item: body,
+                inner: self.inner.clone(),
+            }
+            .fmt(f)?;
+        } else if !self.inner.is_empty() {
+            write!(f, " ")?;
+            RefWithInnerAttrs {
+                item: &Block::empty(),
+                inner: self.inner.clone(),
+            }
+            .fmt(f)?;
         } else {
             write!(f, ";")?;
         }
@@ -981,8 +1021,20 @@ impl fmt::Display for Fn {
     }
 }
 
-impl From<Fn> for TokenStream {
-    fn from(value: Fn) -> Self {
+impl fmt::Display for Fn {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        RefWithInnerAttrs {
+            item: self,
+            inner: vec![],
+        }
+        .fmt(f)
+    }
+}
+
+impl From<WithInnerAttrs<Fn>> for TokenStream {
+    fn from(value: WithInnerAttrs<Fn>) -> Self {
+        let inner = value.inner;
+        let value = value.item;
         let mut ts = TokenStream::new();
         if value.is_const {
             ts.push(Token::Keyword(KeywordToken::Const));
@@ -1011,9 +1063,25 @@ impl From<Fn> for TokenStream {
         }
         ts.extend(TokenStream::from(value.fn_decl));
         if let Some(body) = value.body {
-            ts.extend(TokenStream::from(body));
+            ts.extend(TokenStream::from(WithInnerAttrs { item: body, inner }));
+        } else if !inner.is_empty() {
+            ts.extend(TokenStream::from(WithInnerAttrs {
+                item: Block::empty(),
+                inner,
+            }));
+        } else {
+            ts.push(Token::Semi);
         }
         ts
+    }
+}
+
+impl From<Fn> for TokenStream {
+    fn from(value: Fn) -> Self {
+        TokenStream::from(WithInnerAttrs {
+            item: value,
+            inner: Vec::new(),
+        })
     }
 }
 
@@ -1221,10 +1289,13 @@ pub struct LoadedMod {
     pub items: Vec<Item>,
 }
 
-impl fmt::Display for LoadedMod {
+impl fmt::Display for RefWithInnerAttrs<'_, '_, LoadedMod> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "mod {} {{", self.ident)?;
         let mut indent = indenter::indented(f).with_str("    ");
+        for inner in &self.inner {
+            writeln!(indent, "{inner}")?;
+        }
         for item in self.items.iter() {
             writeln!(indent, "{item}")?;
         }
@@ -1232,17 +1303,41 @@ impl fmt::Display for LoadedMod {
     }
 }
 
-impl From<LoadedMod> for TokenStream {
-    fn from(value: LoadedMod) -> Self {
+impl fmt::Display for LoadedMod {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        RefWithInnerAttrs {
+            inner: vec![],
+            item: self,
+        }
+        .fmt(f)
+    }
+}
+
+impl From<WithInnerAttrs<LoadedMod>> for TokenStream {
+    fn from(value: WithInnerAttrs<LoadedMod>) -> Self {
+        let inner = value.inner;
+        let value = value.item;
         let mut ts = TokenStream::new();
         ts.push(Token::Keyword(KeywordToken::Mod));
         ts.push(Token::ident(value.ident));
         ts.push(Token::OpenDelim(Delimiter::Brace));
-        for item in value.items.iter() {
-            ts.extend(TokenStream::from(item.clone()));
+        for attr in inner {
+            ts.extend(TokenStream::from(attr));
+        }
+        for item in value.items {
+            ts.extend(TokenStream::from(item));
         }
         ts.push(Token::CloseDelim(Delimiter::Brace));
         ts
+    }
+}
+
+impl From<LoadedMod> for TokenStream {
+    fn from(value: LoadedMod) -> Self {
+        TokenStream::from(WithInnerAttrs {
+            item: value,
+            inner: Vec::new(),
+        })
     }
 }
 
@@ -1298,19 +1393,38 @@ pub enum Mod {
 
 impl_into_item!(Mod);
 
-impl fmt::Display for Mod {
+impl fmt::Display for RefWithInnerAttrs<'_, '_, Mod> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Loaded(module) => write!(f, "{module}"),
-            Self::Unloaded(ident) => write!(f, "mod {ident};"),
+        match &self.item {
+            Mod::Loaded(module) => RefWithInnerAttrs {
+                item: module,
+                inner: self.inner.clone(),
+            }
+            .fmt(f),
+            Mod::Unloaded(ident) => write!(f, "mod {ident};"),
         }
     }
 }
 
-impl From<Mod> for TokenStream {
-    fn from(value: Mod) -> Self {
+impl fmt::Display for Mod {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        RefWithInnerAttrs {
+            item: self,
+            inner: vec![],
+        }
+        .fmt(f)
+    }
+}
+
+impl From<WithInnerAttrs<Mod>> for TokenStream {
+    fn from(value: WithInnerAttrs<Mod>) -> Self {
+        let inner = value.inner;
+        let value = value.item;
         match value {
-            Mod::Loaded(module) => TokenStream::from(module),
+            Mod::Loaded(module) => TokenStream::from(WithInnerAttrs {
+                item: module,
+                inner,
+            }),
             Mod::Unloaded(ident) => {
                 let mut ts = TokenStream::new();
                 ts.push(Token::Keyword(KeywordToken::Mod));
@@ -1319,6 +1433,15 @@ impl From<Mod> for TokenStream {
                 ts
             }
         }
+    }
+}
+
+impl From<Mod> for TokenStream {
+    fn from(value: Mod) -> Self {
+        TokenStream::from(WithInnerAttrs {
+            item: value,
+            inner: Vec::new(),
+        })
     }
 }
 
@@ -1530,19 +1653,32 @@ impl HasPrecedence for Block {
     }
 }
 
-impl fmt::Display for Block {
+impl fmt::Display for RefWithInnerAttrs<'_, '_, Block> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.stmts.is_empty() {
+        if self.stmts.is_empty() && self.inner.is_empty() {
             write!(f, "{{}}")?;
         } else {
             writeln!(f, "{{")?;
             let mut indent = indenter::indented(f).with_str("    ");
+            for inner in &self.inner {
+                writeln!(indent, "{inner}")?;
+            }
             for stmt in self.stmts.iter() {
                 writeln!(indent, "{stmt}")?;
             }
             write!(f, "}}")?;
         }
         Ok(())
+    }
+}
+
+impl fmt::Display for Block {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        RefWithInnerAttrs {
+            inner: vec![],
+            item: self,
+        }
+        .fmt(f)
     }
 }
 
@@ -1560,16 +1696,30 @@ impl From<Vec<Stmt>> for Block {
     }
 }
 
-impl From<Block> for TokenStream {
-    fn from(value: Block) -> Self {
+impl From<WithInnerAttrs<Block>> for TokenStream {
+    fn from(value: WithInnerAttrs<Block>) -> Self {
+        let inner = value.inner;
+        let value = value.item;
         let mut ts = TokenStream::new();
         ts.push(Token::OpenDelim(Delimiter::Brace));
-        for stmt in value.stmts.iter() {
-            ts.extend(TokenStream::from(stmt.clone()));
+        for attr in inner {
+            ts.extend(TokenStream::from(attr));
+        }
+        for stmt in value.stmts {
+            ts.extend(TokenStream::from(stmt));
             // ts.push(Token::Semi);
         }
         ts.push(Token::CloseDelim(Delimiter::Brace));
         ts
+    }
+}
+
+impl From<Block> for TokenStream {
+    fn from(value: Block) -> Self {
+        TokenStream::from(WithInnerAttrs {
+            item: value,
+            inner: Vec::new(),
+        })
     }
 }
 
@@ -2703,7 +2853,7 @@ pub struct Impl {
     pub items: Vec<AssocItem>,
 }
 
-impl fmt::Display for Impl {
+impl fmt::Display for RefWithInnerAttrs<'_, '_, Impl> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "impl")?;
         if !self.generics.is_empty() {
@@ -2732,6 +2882,9 @@ impl fmt::Display for Impl {
         }
         writeln!(f, "{{")?;
         let mut indent = indenter::indented(f).with_str("    ");
+        for inner in &self.inner {
+            writeln!(indent, "{inner}")?;
+        }
         for item in self.items.iter() {
             writeln!(indent, "{item}")?;
         }
@@ -2739,13 +2892,23 @@ impl fmt::Display for Impl {
     }
 }
 
-impl From<Impl> for TokenStream {
-    fn from(value: Impl) -> Self {
+impl fmt::Display for Impl {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        RefWithInnerAttrs {
+            inner: vec![],
+            item: self,
+        }
+        .fmt(f)
+    }
+}
+
+impl From<WithInnerAttrs<Impl>> for TokenStream {
+    fn from(value: WithInnerAttrs<Impl>) -> Self {
         let mut ts = TokenStream::new();
         ts.push(Token::Keyword(KeywordToken::Impl));
-        if !value.generics.is_empty() {
+        if !value.item.generics.is_empty() {
             ts.push(Token::Lt.into_joint());
-            for (i, generic) in value.generics.iter().enumerate() {
+            for (i, generic) in value.item.generics.iter().enumerate() {
                 if i != 0 {
                     ts.push(Token::Comma);
                 }
@@ -2753,27 +2916,39 @@ impl From<Impl> for TokenStream {
             }
             ts.push(Token::Gt);
         }
-        if let Some(of_trait) = value.of_trait {
+        if let Some(of_trait) = value.item.of_trait {
             ts.extend(TokenStream::from(of_trait));
             ts.push(Token::Keyword(KeywordToken::For));
         }
-        ts.extend(TokenStream::from(value.self_ty));
-        if let Some(where_clauses) = value.where_clauses {
+        ts.extend(TokenStream::from(value.item.self_ty));
+        if let Some(where_clauses) = value.item.where_clauses {
             ts.push(Token::Keyword(KeywordToken::Where));
-            for (i, clause) in where_clauses.iter().enumerate() {
+            for (i, clause) in where_clauses.into_iter().enumerate() {
                 if i != 0 {
                     ts.push(Token::Comma);
                 }
-                ts.extend(TokenStream::from(clause.clone()).into_joint());
+                ts.extend(TokenStream::from(clause).into_joint());
             }
         }
         ts.push(Token::OpenDelim(Delimiter::Brace));
-        for item in value.items.iter() {
-            ts.extend(TokenStream::from(item.clone()));
+        for inner in value.inner.into_iter() {
+            ts.extend(TokenStream::from(inner));
+        }
+        for item in value.item.items.into_iter() {
+            ts.extend(TokenStream::from(item));
             // ts.push(Token::Semi);
         }
         ts.push(Token::CloseDelim(Delimiter::Brace));
         ts
+    }
+}
+
+impl From<Impl> for TokenStream {
+    fn from(value: Impl) -> Self {
+        TokenStream::from(WithInnerAttrs {
+            inner: vec![],
+            item: value,
+        })
     }
 }
 
@@ -3217,6 +3392,9 @@ pub struct Item<K = ItemKind> {
     pub kind: K,
 }
 
+pub type ModuleItem = Item<ItemKind>;
+pub type ScopeItem = Item<ItemKind>;
+
 #[cfg(feature = "fuzzing")]
 impl<'a, K: arbitrary::Arbitrary<'a> + HasVisibility> arbitrary::Arbitrary<'a> for Item<K> {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
@@ -3267,23 +3445,80 @@ impl<K> AddVisibility<K> for Item<K> {
     }
 }
 
-impl<K: fmt::Display> fmt::Display for Item<K> {
+impl fmt::Display for ScopeItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for attr in &self.attrs {
+        let (inner, outer): (Vec<_>, Vec<_>) = self.attrs.iter().partition(|attr| attr.is_inner());
+        for attr in outer {
             writeln!(f, "{attr}")?;
         }
-        write!(f, "{}{}", self.vis, self.kind)
+        write!(f, "{}", self.vis)?;
+        match &self.kind {
+            ItemKind::Fn(func) => RefWithInnerAttrs { inner, item: func }.fmt(f),
+            ItemKind::Impl(imp) => RefWithInnerAttrs { inner, item: imp }.fmt(f),
+            ItemKind::Mod(m) => RefWithInnerAttrs { inner, item: m }.fmt(f),
+            _ => self.kind.fmt(f),
+        }
     }
 }
 
-impl<K: Into<TokenStream>> From<Item<K>> for TokenStream {
-    fn from(value: Item<K>) -> Self {
+impl fmt::Display for AssocItem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (inner, outer): (Vec<_>, Vec<_>) = self.attrs.iter().partition(|attr| attr.is_inner());
+        for attr in outer {
+            writeln!(f, "{attr}")?;
+        }
+        write!(f, "{}", self.vis)?;
+        match &self.kind {
+            AssocItemKind::Fn(func) => RefWithInnerAttrs { inner, item: func }.fmt(f),
+            _ => self.kind.fmt(f),
+        }
+    }
+}
+
+impl From<ScopeItem> for TokenStream {
+    fn from(value: ScopeItem) -> Self {
         let mut ts = TokenStream::new();
-        for attr in value.attrs {
+        let (inner, outer): (Vec<_>, Vec<_>) =
+            value.attrs.into_iter().partition(|attr| attr.is_inner());
+        for attr in outer {
             ts.extend(TokenStream::from(attr))
         }
         ts.extend(TokenStream::from(value.vis));
-        ts.extend(value.kind.into());
+        match value.kind {
+            ItemKind::Fn(func) => {
+                ts.extend(TokenStream::from(WithInnerAttrs { inner, item: func }));
+            }
+            ItemKind::Impl(imp) => {
+                ts.extend(TokenStream::from(WithInnerAttrs { inner, item: imp }));
+            }
+            ItemKind::Mod(m) => {
+                ts.extend(TokenStream::from(WithInnerAttrs { inner, item: m }));
+            }
+            kind => {
+                ts.extend(TokenStream::from(kind));
+            }
+        }
+        ts
+    }
+}
+
+impl From<AssocItem> for TokenStream {
+    fn from(value: Item<AssocItemKind>) -> Self {
+        let mut ts = TokenStream::new();
+        let (inner, outer): (Vec<_>, Vec<_>) =
+            value.attrs.into_iter().partition(|attr| attr.is_inner());
+        for attr in outer {
+            ts.extend(TokenStream::from(attr))
+        }
+        ts.extend(TokenStream::from(value.vis));
+        match value.kind {
+            AssocItemKind::Fn(func) => {
+                ts.extend(TokenStream::from(WithInnerAttrs { inner, item: func }));
+            }
+            kind => {
+                ts.extend(TokenStream::from(kind));
+            }
+        }
         ts
     }
 }
