@@ -138,6 +138,42 @@ pub trait HasItem<Itm: MaybeIdent = Item> {
     }
 }
 
+pub trait IntoItem {
+    /// Creates an item with the given visibility.
+    fn into_item(self, visibility: Visibility) -> Item;
+    /// Creates an item with inherited (mostly private) visibility.
+    fn into_inherited_item(self) -> Item
+    where
+        Self: Sized,
+    {
+        self.into_item(Visibility::Inherited)
+    }
+    /// Creates an item with public visibility.
+    fn into_public_item(self) -> Item
+    where
+        Self: Sized,
+    {
+        self.into_item(Visibility::Public)
+    }
+    /// Creates an item with the given visibility scope.
+    fn into_scoped_item(self, scope: VisibilityScope) -> Item
+    where
+        Self: Sized,
+    {
+        self.into_item(Visibility::Scoped(scope))
+    }
+}
+
+macro_rules! impl_into_item {
+    ($ty: ident) => {
+        impl IntoItem for $ty {
+            fn into_item(self, vis: Visibility) -> Item {
+                Item::new(vis, ItemKind::$ty(self))
+            }
+        }
+    };
+}
+
 pub trait Semicolon {
     fn semi(self) -> Semi;
 }
@@ -935,6 +971,8 @@ pub struct Fn {
     pub body: Option<Block>,
 }
 
+impl_into_item!(Fn);
+
 impl fmt::Display for RefWithInnerAttrs<'_, '_, Fn> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.is_const {
@@ -1352,6 +1390,8 @@ pub enum Mod {
     Loaded(LoadedMod),
     Unloaded(String),
 }
+
+impl_into_item!(Mod);
 
 impl fmt::Display for RefWithInnerAttrs<'_, '_, Mod> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -2156,6 +2196,8 @@ pub struct EnumDef {
     pub variants: Vec<Variant>,
 }
 
+impl_into_item!(EnumDef);
+
 impl fmt::Display for EnumDef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "enum {}", self.ident)?;
@@ -2295,6 +2337,8 @@ pub struct StructDef {
     pub fields: Fields,
 }
 
+impl_into_item!(StructDef);
+
 impl fmt::Display for StructDef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "struct {}", self.ident)?;
@@ -2411,6 +2455,8 @@ pub struct UnionDef {
     pub generics: Vec<GenericParam>,
     pub fields: Fields,
 }
+
+impl_into_item!(UnionDef);
 
 impl fmt::Display for UnionDef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -2531,6 +2577,8 @@ pub struct TraitDef {
     pub supertraits: Vec<Type>,
     pub items: Vec<AssocItem>,
 }
+
+impl_into_item!(TraitDef);
 
 impl fmt::Display for TraitDef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -3794,6 +3842,8 @@ impl UseTree {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Use(pub UseTree);
 
+impl_into_item!(Use);
+
 impl fmt::Display for Use {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "use {};", self.0)
@@ -3853,6 +3903,8 @@ pub struct StaticItem {
     pub expr: Option<Expr>,
 }
 
+impl_into_item!(StaticItem);
+
 impl fmt::Display for StaticItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -3903,6 +3955,8 @@ pub struct ConstItem {
     pub expr: Option<Expr>,
 }
 
+impl_into_item!(ConstItem);
+
 impl fmt::Display for ConstItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "const {ident}: {ty}", ident = self.ident, ty = self.ty)?;
@@ -3952,6 +4006,8 @@ pub struct TyAlias {
     pub ident: String,
     pub ty: Option<Type>,
 }
+
+impl_into_item!(TyAlias);
 
 impl fmt::Display for TyAlias {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
