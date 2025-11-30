@@ -356,3 +356,18 @@ fn test_joint_token() {
     ]);
     assert_snapshot!(ts, @"foo.bar");
 }
+
+#[test]
+fn test_attribute() {
+    let fun = Fn::empty("foo");
+    let item = ModuleItem::inherited(ItemKind::Fn(fun))
+        .with_attr(Attribute::inner("foo", AttrArgs::Empty))
+        .with_attr(Attribute::outer("bar", AttrArgs::Empty));
+
+    assert_snapshot!(item, @r###"
+    #[bar]
+    fn foo() {
+        #![foo]
+    }"###
+    );
+}

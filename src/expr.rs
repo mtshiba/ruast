@@ -511,6 +511,16 @@ impl Attribute {
     pub fn doc_comment(comment: impl Into<String>) -> Self {
         Self::new(AttrKind::DocComment(comment.into()))
     }
+
+    /// true if `#![attr]`
+    pub const fn is_inner(&self) -> bool {
+        self.kind.is_inner()
+    }
+
+    /// true if `#[attr]`
+    pub const fn is_outer(&self) -> bool {
+        self.kind.is_outer()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -553,11 +563,51 @@ impl From<AttrKind> for TokenStream {
     }
 }
 
+impl AttrKind {
+    pub fn normal(item: AttributeItem) -> Self {
+        Self::Normal(item)
+    }
+
+    pub fn doc_comment(comment: impl Into<String>) -> Self {
+        Self::DocComment(comment.into())
+    }
+
+    /// true if `#![attr]`
+    pub const fn is_inner(&self) -> bool {
+        match self {
+            AttrKind::Normal(item) => item.is_inner(),
+            AttrKind::DocComment(_) => false,
+        }
+    }
+
+    /// true if `#[attr]`
+    pub const fn is_outer(&self) -> bool {
+        match self {
+            AttrKind::Normal(item) => item.is_outer(),
+            AttrKind::DocComment(_) => false,
+        }
+    }
+}
+
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum AttrStyle {
+    /// `#[attr]`
     Outer,
+    /// `#![attr]`
     Inner,
+}
+
+impl AttrStyle {
+    /// `true` if `#![attr]`
+    pub const fn is_inner(&self) -> bool {
+        matches!(self, AttrStyle::Inner)
+    }
+
+    /// `true` if `#[attr]`
+    pub const fn is_outer(&self) -> bool {
+        matches!(self, AttrStyle::Outer)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -636,6 +686,14 @@ impl AttributeItem {
             AttrArgs::Delimited(arg),
             AttrStyle::Outer,
         )
+    }
+
+    pub const fn is_inner(&self) -> bool {
+        self.style.is_inner()
+    }
+
+    pub const fn is_outer(&self) -> bool {
+        self.style.is_outer()
     }
 }
 
