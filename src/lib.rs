@@ -18,8 +18,9 @@ pub use ty::*;
 pub mod traits {
     pub use crate::{
         Accessible, AddVisibility, Assignable, Awaitable, BinaryOperable, Callable, Castable,
-        EmptyItem, HasItem, Ident, Indexable, IntoConst, IntoTokens, IntoTryBlock, IntoUnsafe,
-        MaybeIdent, MethodCallable, Returnable, Semicolon, Tryable, UnaryOperable, Yieldable,
+        EmptyItem, HasItem, HasPrecedence, HasVisibility, Ident, Indexable, IntoConst, IntoItem,
+        IntoTokens, IntoTryBlock, IntoUnsafe, MaybeIdent, MethodCallable, Parenthesize, Returnable,
+        Semicolon, Tryable, UnaryOperable, Yieldable,
     };
 }
 
