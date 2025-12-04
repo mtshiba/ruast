@@ -212,7 +212,7 @@ impl<I> Deref for WithInnerAttrs<I> {
     }
 }
 
-/// `let pat (:ty)? (= expr)?;`
+/// `'let' pat (:ty)? (= expr)?;`
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Local {
@@ -1281,7 +1281,7 @@ impl Fn {
     }
 }
 
-/// `mod ident { ... }`
+/// `'mod' ident { ... }`
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LoadedMod {
@@ -3104,7 +3104,7 @@ impl MacroDef {
     }
 }
 
-/// `extern unsafe? "abi"? { ... }`
+/// `'extern' 'unsafe'? "abi"? { ... }`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ExternBlock {
     pub is_unsafe: bool,
@@ -3221,7 +3221,7 @@ impl ExternBlock {
     }
 }
 
-/// `extern crate ident (as alias)?;`
+/// `'extern' 'crate' ident ('as' alias)?;`
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ExternCrate {
@@ -3837,7 +3837,7 @@ impl UseTree {
     }
 }
 
-/// `use use_tree;`
+/// `'use' use_tree;`
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Use(pub UseTree);
@@ -3893,7 +3893,7 @@ impl Use {
     }
 }
 
-/// `static ident: ty (= expr)?;`
+/// `'static' ident: ty (= expr)?;`
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StaticItem {
@@ -3946,7 +3946,7 @@ impl Ident for StaticItem {
     }
 }
 
-/// `const ident: ty (= expr)?;`
+/// `'const' ident: ty (= expr)?;`
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ConstItem {
@@ -3999,7 +3999,7 @@ impl ConstItem {
     }
 }
 
-/// `type ident = ty;`
+/// `'type' ident = ty;`
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TyAlias {
