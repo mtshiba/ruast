@@ -235,7 +235,7 @@ fn test_struct() {
     let field1 = ExprField::new("a", Lit::int("1"));
     let field2 = ExprField::new("b", x.clone());
     let field3 = ExprField::new("c", Lit::int("3"));
-    let struct_ = Struct::new("MyStruct", vec![field1, field2, field3]);
+    let struct_ = Struct::new("MyStruct", vec![field1, field2, field3], None);
     assert_snapshot!(struct_, @"MyStruct { a: 1, b: x, c: 3 }");
 }
 
@@ -370,4 +370,274 @@ fn test_attribute() {
         #![foo]
     }"###
     );
+}
+
+#[cfg(feature = "syn")]
+mod syn_conversion {
+    use ruast::*;
+
+    fn parse_and_convert(code: &str) -> Crate {
+        let file: syn::File = syn::parse_str(code).unwrap();
+        Crate::from(file)
+    }
+
+    /// Helper to trim the leading/trailing whitespace from Crate display
+    fn display(krate: &Crate) -> String {
+        format!("{krate}").trim().to_string()
+    }
+
+    #[test]
+    fn test_simple_fn() {
+        let krate = parse_and_convert("fn main() {}");
+        assert_eq!(display(&krate), "fn main() {}");
+    }
+
+    #[test]
+    fn test_fn_with_args_and_return() {
+        let krate = parse_and_convert("fn add(x: i32, y: i32) -> i32 { x + y }");
+        let output = display(&krate);
+        assert!(output.contains("fn add(x: i32, y: i32) -> i32"));
+        assert!(output.contains("x + y"));
+    }
+
+    #[test]
+    fn test_struct_named_fields() {
+        let krate = parse_and_convert("struct Point { x: f64, y: f64 }");
+        let output = display(&krate);
+        assert!(output.contains("struct Point"));
+        assert!(output.contains("x: f64"));
+        assert!(output.contains("y: f64"));
+    }
+
+    #[test]
+    fn test_struct_tuple() {
+        let krate = parse_and_convert("struct Wrapper(i32);");
+        let output = display(&krate);
+        assert!(output.contains("struct Wrapper(i32)"));
+    }
+
+    #[test]
+    fn test_struct_unit() {
+        let krate = parse_and_convert("struct Unit;");
+        let output = display(&krate);
+        assert!(output.contains("struct Unit"));
+    }
+
+    #[test]
+    fn test_enum() {
+        let krate = parse_and_convert(
+            "enum Color { Red, Green, Blue(u8, u8, u8), Named { name: String } }",
+        );
+        let output = display(&krate);
+        assert!(output.contains("enum Color"));
+        assert!(output.contains("Red"));
+        assert!(output.contains("Green"));
+        assert!(output.contains("Blue(u8, u8, u8)"));
+        assert!(output.contains("name: String"));
+    }
+
+    #[test]
+    fn test_trait_def() {
+        let krate = parse_and_convert(
+            "trait Summary { fn summarize(&self) -> String; }",
+        );
+        let output = display(&krate);
+        assert!(output.contains("trait Summary"));
+        assert!(output.contains("fn summarize(&self) -> String;"));
+    }
+
+    #[test]
+    fn test_impl_block() {
+        let krate = parse_and_convert(
+            "impl Point { fn new(x: f64, y: f64) -> Self { Self { x, y } } }",
+        );
+        let output = display(&krate);
+        assert!(output.contains("impl Point"));
+        assert!(output.contains("fn new(x: f64, y: f64) -> Self"));
+    }
+
+    #[test]
+    fn test_use_statement() {
+        let krate = parse_and_convert("use std::collections::HashMap;");
+        assert_eq!(display(&krate), "use std::collections::HashMap;");
+    }
+
+    #[test]
+    fn test_use_group() {
+        let krate = parse_and_convert("use std::io::{Read, Write};");
+        assert_eq!(display(&krate), "use std::io::{Read, Write};");
+    }
+
+    #[test]
+    fn test_use_glob() {
+        let krate = parse_and_convert("use std::collections::*;");
+        assert_eq!(display(&krate), "use std::collections::*;");
+    }
+
+    #[test]
+    fn test_const_item() {
+        let krate = parse_and_convert("const MAX: u32 = 100;");
+        assert_eq!(display(&krate), "const MAX: u32 = 100;");
+    }
+
+    #[test]
+    fn test_static_item() {
+        let krate = parse_and_convert("static mut COUNT: u32 = 0;");
+        assert_eq!(display(&krate), "static mut COUNT: u32 = 0;");
+    }
+
+    #[test]
+    fn test_type_alias() {
+        let krate = parse_and_convert("type Result<T> = std::result::Result<T, Error>;");
+        let output = display(&krate);
+        assert!(output.contains("type Result<T>"));
+        assert!(output.contains("std::result::Result"));
+        assert!(output.contains("T, Error"));
+    }
+
+    #[test]
+    fn test_extern_crate() {
+        let krate = parse_and_convert("extern crate alloc;");
+        assert_eq!(display(&krate), "extern crate alloc;");
+    }
+
+    #[test]
+    fn test_closure() {
+        let krate = parse_and_convert("fn f() { let c = |x: i32| x + 1; }");
+        let output = display(&krate);
+        assert!(output.contains("|x: i32|"));
+        assert!(output.contains("x + 1"));
+    }
+
+    #[test]
+    fn test_match_expr() {
+        let krate = parse_and_convert(
+            r#"fn f(x: i32) -> &'static str {
+                match x {
+                    1 => "one",
+                    2 => "two",
+                    _ => "other",
+                }
+            }"#,
+        );
+        let output = display(&krate);
+        assert!(output.contains("match x"));
+        assert!(output.contains(r#"1 => "one""#));
+        assert!(output.contains(r#"_ => "other""#));
+    }
+
+    #[test]
+    fn test_generics() {
+        let krate = parse_and_convert(
+            "fn first<T: Clone>(items: &[T]) -> T { items[0].clone() }",
+        );
+        let output = display(&krate);
+        assert!(output.contains("fn first<T: Clone>"));
+        assert!(output.contains("items: &[T]"));
+        assert!(output.contains("items[0]"));
+        assert!(output.contains(".clone()"));
+    }
+
+    #[test]
+    fn test_lifetime() {
+        let krate = parse_and_convert(
+            "fn longest<'a>(x: &'a str, y: &'a str) -> &'a str { if x.len() > y.len() { x } else { y } }",
+        );
+        let output = display(&krate);
+        assert!(output.contains("fn longest<'a>"));
+        assert!(output.contains("x: &'a str"));
+        assert!(output.contains("-> &'a str"));
+    }
+
+    #[test]
+    fn test_visibility() {
+        let krate = parse_and_convert("pub fn public() {} pub(crate) fn crate_fn() {}");
+        let output = display(&krate);
+        assert!(output.contains("pub fn public()"));
+        assert!(output.contains("pub(crate) fn crate_fn()"));
+    }
+
+    #[test]
+    fn test_async_fn() {
+        let krate = parse_and_convert("async fn fetch() -> Result<()> { Ok(()) }");
+        let output = display(&krate);
+        assert!(output.contains("async fn fetch()"));
+        assert!(output.contains("Result"));
+        assert!(output.contains("Ok(())"));
+    }
+
+    #[test]
+    fn test_unsafe_fn() {
+        let krate = parse_and_convert("unsafe fn dangerous() {}");
+        assert_eq!(display(&krate), "unsafe fn dangerous() {}");
+    }
+
+    #[test]
+    fn test_trait_impl() {
+        let krate = parse_and_convert(
+            "impl Display for Point { fn fmt(&self, f: &mut Formatter) -> Result { write!(f, \"({}, {})\", self.x, self.y) } }",
+        );
+        let output = display(&krate);
+        assert!(output.contains("impl Display for Point"));
+        assert!(output.contains("fn fmt(&self, f: &mut Formatter) -> Result"));
+        assert!(output.contains("write!"));
+    }
+
+    #[test]
+    fn test_module() {
+        let krate = parse_and_convert("mod inner { fn secret() {} }");
+        let output = display(&krate);
+        assert!(output.contains("mod inner"));
+        assert!(output.contains("fn secret()"));
+    }
+
+    #[test]
+    fn test_union() {
+        let krate = parse_and_convert("union MyUnion { i: i32, f: f32 }");
+        let output = display(&krate);
+        assert!(output.contains("union MyUnion"));
+        assert!(output.contains("i: i32"));
+        assert!(output.contains("f: f32"));
+    }
+
+    #[test]
+    fn test_attributes() {
+        let krate = parse_and_convert("#[derive(Debug, Clone)] struct Foo { x: i32 }");
+        let output = display(&krate);
+        assert!(output.contains("#[derive("));
+        assert!(output.contains("Debug"));
+        assert!(output.contains("Clone"));
+        assert!(output.contains("struct Foo"));
+        assert!(output.contains("x: i32"));
+    }
+
+    /// Test that the conversion doesn't panic on complex real-world code
+    #[test]
+    fn test_complex_code() {
+        let code = r#"
+            use std::fmt;
+
+            #[derive(Debug)]
+            pub struct Config {
+                pub name: String,
+                pub value: i32,
+            }
+
+            impl fmt::Display for Config {
+                fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    write!(f, "{}: {}", self.name, self.value)
+                }
+            }
+
+            pub fn process(configs: &[Config]) -> Vec<String> {
+                configs.iter().map(|c| c.name.clone()).collect()
+            }
+        "#;
+        let krate = parse_and_convert(code);
+        let output = display(&krate);
+        assert!(output.contains("use std::fmt;"));
+        assert!(output.contains("struct Config"));
+        assert!(output.contains("impl fmt::Display for Config"));
+        assert!(output.contains("fn process"));
+    }
 }

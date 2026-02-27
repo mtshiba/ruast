@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::expr::{Const, GenericArg, Lit, MacCall, Path, PathSegment};
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
-use crate::{impl_display_for_enum, impl_obvious_conversion, EmptyItem};
+use crate::EmptyItem;
 
 #[cfg(feature = "fuzzing")]
 use crate::token::String;
@@ -239,7 +239,7 @@ impl From<BareFnArg> for TokenStream {
     fn from(value: BareFnArg) -> Self {
         let mut ts = TokenStream::new();
         if let Some(name) = value.name {
-            ts.push(Token::ident(name));
+            ts.push(Token::ident(name).into_joint());
             ts.push(Token::Colon);
         }
         ts.extend(TokenStream::from(value.ty));
@@ -304,8 +304,17 @@ impl From<syn::TypeBareFn> for BareFn {
         };
         let is_unsafe = value.unsafety.is_some();
         let abi = value.abi.map(|a| a.name.as_ref().unwrap().value());
+        let generic_params = value
+            .lifetimes
+            .map(|bl| {
+                bl.lifetimes
+                    .into_iter()
+                    .map(GenericParam::from)
+                    .collect()
+            })
+            .unwrap_or_default();
         Self {
-            generic_params: vec![], // TODO:
+            generic_params,
             inputs,
             output,
             is_unsafe,
@@ -369,11 +378,11 @@ impl BareFn {
         BareFn::new(generic_params, inputs, output, None, false)
     }
 
-    pub fn add_input(&mut self, input: Param) {
+    pub fn add_input(&mut self, input: BareFnArg) {
         self.inputs.push(input);
     }
 
-    pub fn with_input(mut self, input: Param) -> Self {
+    pub fn with_input(mut self, input: BareFnArg) -> Self {
         self.add_input(input);
         self
     }
@@ -493,9 +502,59 @@ impl ConstParam {
 pub enum GenericParam {
     TypeParam(TypeParam),
     ConstParam(ConstParam),
+    Lifetime(String),
 }
-impl_display_for_enum!(GenericParam; TypeParam, ConstParam);
-impl_obvious_conversion!(GenericParam; TypeParam, ConstParam);
+
+impl fmt::Display for GenericParam {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::TypeParam(tp) => write!(f, "{tp}"),
+            Self::ConstParam(cp) => write!(f, "{cp}"),
+            Self::Lifetime(lt) => write!(f, "'{lt}"),
+        }
+    }
+}
+
+impl From<GenericParam> for TokenStream {
+    fn from(item: GenericParam) -> Self {
+        match item {
+            GenericParam::TypeParam(v) => v.into(),
+            GenericParam::ConstParam(v) => v.into(),
+            GenericParam::Lifetime(lt) => TokenStream::from(vec![Token::Lifetime(lt)]),
+        }
+    }
+}
+
+impl From<TypeParam> for GenericParam {
+    fn from(item: TypeParam) -> Self {
+        Self::TypeParam(item)
+    }
+}
+
+impl From<ConstParam> for GenericParam {
+    fn from(item: ConstParam) -> Self {
+        Self::ConstParam(item)
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::GenericParam> for GenericParam {
+    fn from(value: syn::GenericParam) -> Self {
+        match value {
+            syn::GenericParam::Type(tp) => GenericParam::TypeParam(TypeParam {
+                ident: tp.ident.to_string(),
+                bounds: tp.bounds.into_iter().map(GenericBound::from).collect(),
+            }),
+            syn::GenericParam::Const(cp) => GenericParam::ConstParam(ConstParam {
+                ident: cp.ident.to_string(),
+                ty: Type::from(cp.ty),
+            }),
+            syn::GenericParam::Lifetime(lt) => {
+                GenericParam::Lifetime(lt.lifetime.ident.to_string())
+            }
+        }
+    }
+}
 
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -507,7 +566,14 @@ pub struct PolyTraitRef {
 impl fmt::Display for PolyTraitRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if !self.bound_generic_params.is_empty() {
-            // TODO:
+            write!(f, "for<")?;
+            for (i, param) in self.bound_generic_params.iter().enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{param}")?;
+            }
+            write!(f, "> ")?;
         }
         write!(f, "{}", self.trait_ref)
     }
@@ -516,7 +582,15 @@ impl fmt::Display for PolyTraitRef {
 #[cfg(feature = "syn")]
 impl From<syn::TraitBound> for PolyTraitRef {
     fn from(value: syn::TraitBound) -> Self {
-        let bound_generic_params = vec![]; // TODO:
+        let bound_generic_params = value
+            .lifetimes
+            .map(|bl| {
+                bl.lifetimes
+                    .into_iter()
+                    .map(GenericParam::from)
+                    .collect()
+            })
+            .unwrap_or_default();
         let trait_ref = Path::from(value.path);
         Self {
             bound_generic_params,
@@ -576,8 +650,27 @@ impl From<syn::TypeParamBound> for GenericBound {
             syn::TypeParamBound::Lifetime(lifetime) => {
                 GenericBound::Outlives(lifetime.ident.to_string())
             }
-            _ => todo!(),
+            _ => unimplemented!("unsupported TypeParamBound variant"),
         }
+    }
+}
+
+impl From<PolyTraitRef> for TokenStream {
+    fn from(value: PolyTraitRef) -> Self {
+        let mut ts = TokenStream::new();
+        if !value.bound_generic_params.is_empty() {
+            ts.push(Token::Keyword(KeywordToken::For));
+            ts.push(Token::Lt);
+            for (i, param) in value.bound_generic_params.iter().enumerate() {
+                if i != 0 {
+                    ts.push(Token::Comma);
+                }
+                ts.extend(TokenStream::from(param.clone()));
+            }
+            ts.push(Token::Gt);
+        }
+        ts.extend(TokenStream::from(value.trait_ref));
+        ts
     }
 }
 
@@ -727,6 +820,14 @@ impl From<ImplTrait> for TokenStream {
             ts.extend(TokenStream::from(bound));
         }
         ts
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::TypeImplTrait> for ImplTrait {
+    fn from(value: syn::TypeImplTrait) -> Self {
+        let bounds = value.bounds.into_iter().map(GenericBound::from).collect();
+        Self { bounds }
     }
 }
 
@@ -904,7 +1005,7 @@ impl From<syn::Type> for Type {
             syn::Type::Group(g) => Type::from(*g.elem),
             syn::Type::Paren(p) => Type::from(*p.elem),
             // non-exhaustive
-            _ => todo!(),
+            _ => unimplemented!("unsupported syn::Type variant"),
         }
     }
 }

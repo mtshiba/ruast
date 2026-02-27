@@ -51,15 +51,15 @@ fn test_ptr_to_tokenstream() {
 
 #[test]
 fn test_barefn_to_tokenstream() {
-    let simple_fn = BareFn::safe(vec![], vec![], Type::unit());
+    let simple_fn = BareFn::safe(vec![], vec![], Some(Type::unit()));
     let ts = TokenStream::from(simple_fn);
     assert_snapshot!(ts, @"fn() -> ()");
 
-    let unsafe_fn = BareFn::new(vec![], vec![], Type::i32(), None, true);
+    let unsafe_fn = BareFn::new(vec![], vec![], Some(Type::i32()), None, true);
     let ts = TokenStream::from(unsafe_fn);
     assert_snapshot!(ts, @"unsafe fn() -> i32");
 
-    let extern_fn = BareFn::new(vec![], vec![], Type::i32(), Some("C".into()), false);
+    let extern_fn = BareFn::new(vec![], vec![], Some(Type::i32()), Some("C".into()), false);
     let ts = TokenStream::from(extern_fn);
     assert_snapshot!(ts, @"extern \"C\" fn() -> i32");
 }
@@ -702,6 +702,7 @@ fn test_struct_to_tokenstream() {
             ExprField::new("name", Lit::str("Alice")),
             ExprField::new("age", Lit::int("30")),
         ],
+        None,
     );
     let ts = TokenStream::from(struct_expr);
     assert_snapshot!(ts, @r#"Person { name: "Alice", age: 30 }"#);
@@ -756,14 +757,14 @@ fn test_type_ref_variants_to_tokenstream() {
 
 #[test]
 fn test_type_barefn_to_tokenstream() {
-    let fn_ty = Type::BareFn(BareFn::safe(vec![], vec![], Type::unit()));
+    let fn_ty = Type::BareFn(BareFn::safe(vec![], vec![], Some(Type::unit())));
     let ts = TokenStream::from(fn_ty);
     assert_snapshot!(ts, @"fn() -> ()");
 
     let unsafe_fn_ty = Type::BareFn(BareFn::new(
         vec![],
         vec![],
-        Type::i32(),
+        Some(Type::i32()),
         Some("C".into()),
         true,
     ));
@@ -851,9 +852,9 @@ fn test_empty_bounds_to_tokenstream() {
 
 #[test]
 fn test_barefn_with_params_to_tokenstream() {
-    let param1 = Param::ident("x", Type::i32());
-    let param2 = Param::ident("y", Type::str());
-    let fn_with_params = BareFn::safe(vec![], vec![param1, param2], Type::bool());
+    let param1 = BareFnArg::new(Some("x"), Type::i32());
+    let param2 = BareFnArg::new(Some("y"), Type::str());
+    let fn_with_params = BareFn::safe(vec![], vec![param1, param2], Some(Type::bool()));
     let ts = TokenStream::from(fn_with_params);
     assert_snapshot!(ts, @"fn(x: i32, y: str) -> bool");
 }
@@ -1288,6 +1289,7 @@ fn test_constitem_to_tokenstream() {
 fn test_tyalias_to_tokenstream() {
     let ty_alias = TyAlias {
         ident: "MyType".into(),
+        generics: vec![],
         ty: Some(Type::i32()),
     };
     let ts = TokenStream::from(ty_alias);

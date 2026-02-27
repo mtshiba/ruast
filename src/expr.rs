@@ -3,6 +3,8 @@ use std::fmt;
 use std::ops::{Add, Deref, DerefMut, Div, Mul, Neg, Sub};
 
 use crate::stmt::{Block, EmptyItem, FnDecl, Pat, Use};
+#[cfg(feature = "syn")]
+use crate::stmt::Param;
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 use crate::ty::Type;
 use crate::{
@@ -697,6 +699,35 @@ impl AttributeItem {
     }
 }
 
+#[cfg(feature = "syn")]
+impl From<syn::Attribute> for AttributeItem {
+    fn from(value: syn::Attribute) -> Self {
+        let style = match value.style {
+            syn::AttrStyle::Inner(_) => AttrStyle::Inner,
+            syn::AttrStyle::Outer => AttrStyle::Outer,
+        };
+        let (path, args) = match value.meta {
+            syn::Meta::Path(p) => (Path::from(p), AttrArgs::Empty),
+            syn::Meta::List(list) => {
+                let path = Path::from(list.path);
+                let tokens_str = list.tokens.to_string();
+                let tokens = TokenStream::from(vec![Token::ident(tokens_str)]);
+                let delim = match list.delimiter {
+                    syn::MacroDelimiter::Paren(_) => MacDelimiter::Parenthesis,
+                    syn::MacroDelimiter::Brace(_) => MacDelimiter::Brace,
+                    syn::MacroDelimiter::Bracket(_) => MacDelimiter::Bracket,
+                };
+                (path, AttrArgs::Delimited(DelimArgs { delim, tokens }))
+            }
+            syn::Meta::NameValue(nv) => {
+                let path = Path::from(nv.path);
+                (path, AttrArgs::Eq(Expr::from(nv.value)))
+            }
+        };
+        Self { path, args, style }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Expr {
     pub attrs: Vec<AttributeItem>,
@@ -912,6 +943,14 @@ impl Deref for Array {
 impl DerefMut for Array {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::ExprArray> for Array {
+    fn from(value: syn::ExprArray) -> Self {
+        let exprs = value.elems.into_iter().map(Expr::from).collect();
+        Self(exprs)
     }
 }
 
@@ -1880,15 +1919,24 @@ impl fmt::Display for Closure {
 impl From<syn::ExprClosure> for Closure {
     fn from(value: syn::ExprClosure) -> Self {
         let is_const = value.constness.is_some();
-        let is_static = value.staticness.is_some();
+        let is_static = false;
         let is_async = value.asyncness.is_some();
-        let is_move = value.move_token.is_some();
-        let inputs = value.inputs.into_iter().map(Pat::from).collect();
+        let is_move = value.capture.is_some();
+        let inputs = value
+            .inputs
+            .into_iter()
+            .map(|pat| {
+                match pat {
+                    syn::Pat::Type(pt) => Param::new(Pat::from(*pt.pat), Type::from(*pt.ty)),
+                    other => Param::new(Pat::from(other), Type::Infer),
+                }
+            })
+            .collect();
         let output = match value.output {
             syn::ReturnType::Default => None,
             syn::ReturnType::Type(_, ty) => Some(Type::from(*ty)),
         };
-        let fn_decl = FnDecl::new(inputs, output);
+        let fn_decl = FnDecl::new(inputs, output, false);
         let body = Expr::from(*value.body);
         Self {
             is_const,
@@ -3347,6 +3395,13 @@ impl From<syn::TypePath> for Path {
     }
 }
 
+#[cfg(feature = "syn")]
+impl From<syn::ExprPath> for Path {
+    fn from(value: syn::ExprPath) -> Self {
+        Self::from(value.path)
+    }
+}
+
 impl From<PathSegment> for Path {
     fn from(ident: PathSegment) -> Self {
         Self::single(ident)
@@ -3425,7 +3480,7 @@ impl Path {
     }
 
     pub fn struct_(self, fields: Vec<ExprField>) -> Struct {
-        Struct::new(self, fields)
+        Struct::new(self, fields, None)
     }
 
     pub fn use_(self) -> Use {
@@ -3467,6 +3522,17 @@ impl fmt::Display for PathSegment {
 }
 
 #[cfg(feature = "syn")]
+#[cfg(feature = "syn")]
+impl From<syn::Ident> for PathSegment {
+    fn from(value: syn::Ident) -> Self {
+        Self {
+            ident: value.to_string(),
+            args: None,
+        }
+    }
+}
+
+#[cfg(feature = "syn")]
 impl From<syn::PathSegment> for PathSegment {
     fn from(value: syn::PathSegment) -> Self {
         match value.arguments {
@@ -3483,7 +3549,20 @@ impl From<syn::PathSegment> for PathSegment {
                         .collect(),
                 ),
             },
-            syn::PathArguments::Parenthesized(_) => todo!(),
+            syn::PathArguments::Parenthesized(args) => {
+                let mut generic_args: Vec<GenericArg> = args
+                    .inputs
+                    .into_iter()
+                    .map(|ty| GenericArg::Type(Type::from(ty)))
+                    .collect();
+                if let syn::ReturnType::Type(_, ret_ty) = args.output {
+                    generic_args.push(GenericArg::Type(Type::from(*ret_ty)));
+                }
+                Self {
+                    ident: value.ident.to_string(),
+                    args: Some(generic_args),
+                }
+            }
         }
     }
 }
@@ -3614,7 +3693,7 @@ impl fmt::Display for AddrOf {
 impl From<syn::ExprReference> for AddrOf {
     fn from(value: syn::ExprReference) -> Self {
         let kind = BorrowKind::Ref;
-        let mutable = if value.mutability.is_some() {
+        let mutability = if value.mutability.is_some() {
             Mutability::Mut
         } else {
             Mutability::Not
@@ -3622,7 +3701,7 @@ impl From<syn::ExprReference> for AddrOf {
         let expr = Expr::from(*value.expr);
         Self {
             kind,
-            mutable,
+            mutability,
             expr: Box::new(expr),
         }
     }
@@ -3978,7 +4057,24 @@ impl fmt::Display for MacCall {
 
 #[cfg(feature = "syn")]
 impl From<syn::Macro> for MacCall {
-    // TODO:
+    fn from(value: syn::Macro) -> Self {
+        let path = Path::from(value.path);
+        let delim = match value.delimiter {
+            syn::MacroDelimiter::Paren(_) => MacDelimiter::Parenthesis,
+            syn::MacroDelimiter::Brace(_) => MacDelimiter::Brace,
+            syn::MacroDelimiter::Bracket(_) => MacDelimiter::Bracket,
+        };
+        let tokens = TokenStream::from(vec![Token::ident(value.tokens.to_string())]);
+        let args = DelimArgs { delim, tokens };
+        Self { path, args }
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::ExprMacro> for MacCall {
+    fn from(value: syn::ExprMacro) -> Self {
+        Self::from(value.mac)
+    }
 }
 
 impl From<MacCall> for TokenStream {

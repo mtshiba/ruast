@@ -353,3 +353,16 @@ impl Crate {
 
 #[cfg(feature = "tokenize")]
 impl_to_tokens!(Crate,);
+
+#[cfg(feature = "syn")]
+impl From<syn::File> for Crate {
+    fn from(value: syn::File) -> Self {
+        let attrs = value
+            .attrs
+            .into_iter()
+            .map(|a| Attribute::from(AttributeItem::from(a)))
+            .collect();
+        let items = value.items.into_iter().map(Item::from).collect();
+        Self { attrs, items }
+    }
+}

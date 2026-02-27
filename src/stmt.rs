@@ -7,6 +7,8 @@ use crate::expr::{
     Async, Attribute, Call, ConstBlock, DelimArgs, Expr, MacCall, MethodCall, Path, Range,
     TryBlock, UnsafeBlock,
 };
+#[cfg(feature = "syn")]
+use crate::expr::AttributeItem;
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 use crate::ty::Type;
 use crate::{
@@ -853,7 +855,10 @@ impl From<syn::Pat> for Pat {
                 is_mut: pat.mutability.is_some(),
                 pat: Box::new(Pat::from(*pat.pat)),
             }),
-            syn::Pat::Type(pat) => unimplemented!("Pat::Type"),
+            syn::Pat::Type(pat) => Pat::Type(TypePat {
+                pat: Box::new(Pat::from(*pat.pat)),
+                ty: Type::from(*pat.ty),
+            }),
             syn::Pat::Verbatim(_) => unimplemented!("Pat::Verbatim"),
             _ => unimplemented!(),
         }
@@ -925,6 +930,7 @@ impl From<Pat> for TokenStream {
                 ts
             }
             Pat::MacCall(mac_call) => TokenStream::from(mac_call),
+            Pat::Type(type_pat) => TokenStream::from(type_pat),
         }
     }
 }
@@ -1194,6 +1200,70 @@ impl fmt::Display for Fn {
             inner: vec![],
         }
         .fmt(f)
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::ItemFn> for Fn {
+    fn from(value: syn::ItemFn) -> Self {
+        let is_unsafe = value.sig.unsafety.is_some();
+        let is_const = value.sig.constness.is_some();
+        let is_async = value.sig.asyncness.is_some();
+        let abi = value.sig.abi.map(|a| a.name.as_ref().unwrap().value());
+        let ident = value.sig.ident.to_string();
+        let generics = value
+            .sig
+            .generics
+            .params
+            .into_iter()
+            .map(GenericParam::from)
+            .collect();
+        let inputs = value.sig.inputs.into_iter().map(Param::from).collect();
+        let output = match value.sig.output {
+            syn::ReturnType::Default => None,
+            syn::ReturnType::Type(_, ty) => Some(Type::from(*ty)),
+        };
+        let is_variadic = value.sig.variadic.is_some();
+        let fn_decl = FnDecl::new(inputs, output, is_variadic);
+        let body = Some(Block::from(*value.block));
+        Self {
+            is_unsafe,
+            is_const,
+            is_async,
+            abi,
+            ident,
+            generics,
+            fn_decl,
+            body,
+        }
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::FnArg> for Param {
+    fn from(value: syn::FnArg) -> Self {
+        match value {
+            syn::FnArg::Receiver(rec) => {
+                let pat = if rec.reference.is_some() {
+                    if rec.mutability.is_some() {
+                        Pat::ref_mut_self()
+                    } else {
+                        Pat::ref_self()
+                    }
+                } else if rec.mutability.is_some() {
+                    Pat::mut_self()
+                } else {
+                    Pat::slf()
+                };
+                let ty = Type::ImplicitSelf;
+                Param::new(pat, ty)
+            }
+            syn::FnArg::Typed(pt) => {
+                let pat = Pat::from(*pt.pat);
+                let ty = Type::from(*pt.ty);
+                Param::new(pat, ty)
+            }
+        }
     }
 }
 
@@ -1862,6 +1932,22 @@ impl From<Vec<Stmt>> for Block {
     }
 }
 
+#[cfg(feature = "syn")]
+impl From<syn::Block> for Block {
+    fn from(value: syn::Block) -> Self {
+        let stmts = value.stmts.into_iter().map(Stmt::from).collect();
+        Self { stmts }
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::ExprBlock> for Block {
+    fn from(value: syn::ExprBlock) -> Self {
+        let stmts = value.block.stmts.into_iter().map(Stmt::from).collect();
+        Self { stmts }
+    }
+}
+
 impl From<WithInnerAttrs<Block>> for TokenStream {
     fn from(value: WithInnerAttrs<Block>) -> Self {
         let inner = value.inner;
@@ -2408,32 +2494,34 @@ impl From<syn::ItemEnum> for EnumDef {
 #[cfg(feature = "syn")]
 impl From<syn::Variant> for Variant {
     fn from(value: syn::Variant) -> Self {
+        let attrs = vec![];
         let vis = Visibility::Inherited;
         let ident = value.ident.to_string();
-        let data = VariantData::from(value.fields);
-        let disr_expr = value.discriminant.map(|d| Expr::from(d.1));
+        let fields = Fields::from(value.fields);
+        let discriminant = value.discriminant.map(|d| Expr::from(d.1));
         Self {
+            attrs,
             vis,
             ident,
-            data,
-            disr_expr,
+            fields,
+            discriminant,
         }
     }
 }
 
 #[cfg(feature = "syn")]
-impl From<syn::Fields> for VariantData {
+impl From<syn::Fields> for Fields {
     fn from(value: syn::Fields) -> Self {
         match value {
             syn::Fields::Named(fields) => {
                 let fields = fields.named.into_iter().map(FieldDef::from).collect();
-                VariantData::Struct(fields)
+                Fields::Struct(fields)
             }
             syn::Fields::Unnamed(fields) => {
                 let fields = fields.unnamed.into_iter().map(FieldDef::from).collect();
-                VariantData::Tuple(fields)
+                Fields::Tuple(fields)
             }
-            syn::Fields::Unit => VariantData::Unit,
+            syn::Fields::Unit => Fields::Unit,
         }
     }
 }
@@ -2835,7 +2923,7 @@ impl fmt::Display for TraitDef {
                 write!(f, "{sup}")?;
             }
         }
-        write!(f, " {{")?;
+        writeln!(f, " {{")?;
         let mut indent = indenter::indented(f).with_str("    ");
         for item in self.items.iter() {
             writeln!(indent, "{item}")?;
@@ -3373,24 +3461,28 @@ impl fmt::Display for ExternBlock {
 impl From<syn::ItemForeignMod> for ExternBlock {
     fn from(value: syn::ItemForeignMod) -> Self {
         let is_unsafe = value.unsafety.is_some();
-        let abi = Some(value.abi.name.as_ref().unwrap().value());
-        let items = value.items.into_iter().map(AssocItem::from).collect();
+        let abi = value.abi.name.map(|n| n.value());
+        let stmts: Vec<Stmt> = value
+            .items
+            .into_iter()
+            .map(|item| {
+                let kind = match item {
+                    syn::ForeignItem::Fn(f) => ItemKind::Fn(Fn::from(f)),
+                    syn::ForeignItem::Static(s) => ItemKind::StaticItem(StaticItem::from(s)),
+                    syn::ForeignItem::Type(t) => ItemKind::TyAlias(TyAlias::from(t)),
+                    _ => unimplemented!(),
+                };
+                Stmt::Item(Item {
+                    attrs: vec![],
+                    vis: Visibility::Inherited,
+                    kind,
+                })
+            })
+            .collect();
         Self {
             is_unsafe,
             abi,
-            items,
-        }
-    }
-}
-
-#[cfg(feature = "syn")]
-impl From<syn::ForeignItem> for AssocItem {
-    fn from(value: syn::ForeignItem) -> Self {
-        match value {
-            syn::ForeignItem::Fn(item) => AssocItem::Fn(Fn::from(item)),
-            syn::ForeignItem::Static(item) => AssocItem::Static(StaticItem::from(item)),
-            syn::ForeignItem::Type(item) => AssocItem::TyAlias(TyAlias::from(item)),
-            _ => unimplemented!(),
+            block: Block { stmts },
         }
     }
 }
@@ -3435,13 +3527,15 @@ impl From<syn::ForeignItemStatic> for StaticItem {
     fn from(value: syn::ForeignItemStatic) -> Self {
         let ident = value.ident.to_string();
         let ty = Type::from(*value.ty);
-        let mutability = Mutability::from(value.mutability);
-        let expr = value.expr.map(|e| Box::new(Expr::from(*e)));
+        let mutability = match value.mutability {
+            syn::StaticMutability::Mut(_) => Mutability::Mut,
+            _ => Mutability::Not,
+        };
         Self {
             mutability,
             ident,
             ty,
-            expr,
+            expr: None,
         }
     }
 }
@@ -3679,6 +3773,25 @@ impl fmt::Display for Visibility {
             Self::Inherited => write!(f, ""),
             Self::Public => write!(f, "pub "),
             Self::Scoped(scope) => write!(f, "pub({scope}) "),
+        }
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::Visibility> for Visibility {
+    fn from(value: syn::Visibility) -> Self {
+        match value {
+            syn::Visibility::Public(_) => Visibility::Public,
+            syn::Visibility::Restricted(r) => {
+                let path = r.path.get_ident().map(|i| i.to_string());
+                match path.as_deref() {
+                    Some("crate") => Visibility::Scoped(VisibilityScope::Crate),
+                    Some("super") => Visibility::Scoped(VisibilityScope::Super),
+                    Some("self") => Visibility::Scoped(VisibilityScope::Self_),
+                    _ => Visibility::Scoped(VisibilityScope::Crate),
+                }
+            }
+            _ => Visibility::Inherited,
         }
     }
 }
@@ -3962,15 +4075,320 @@ impl MaybeIdent for ItemKind {
 }
 
 #[cfg(feature = "syn")]
+impl From<syn::ItemStruct> for StructDef {
+    fn from(value: syn::ItemStruct) -> Self {
+        let ident = value.ident.to_string();
+        let generics = value
+            .generics
+            .params
+            .into_iter()
+            .map(GenericParam::from)
+            .collect();
+        let fields = Fields::from(value.fields);
+        Self {
+            ident,
+            generics,
+            fields,
+        }
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::ItemUnion> for UnionDef {
+    fn from(value: syn::ItemUnion) -> Self {
+        let ident = value.ident.to_string();
+        let generics = value
+            .generics
+            .params
+            .into_iter()
+            .map(GenericParam::from)
+            .collect();
+        let fields = Fields::Struct(value.fields.named.into_iter().map(FieldDef::from).collect());
+        Self {
+            ident,
+            generics,
+            fields,
+        }
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::ItemTrait> for TraitDef {
+    fn from(value: syn::ItemTrait) -> Self {
+        let ident = value.ident.to_string();
+        let generics = value
+            .generics
+            .params
+            .into_iter()
+            .map(GenericParam::from)
+            .collect();
+        let supertraits = value
+            .supertraits
+            .into_iter()
+            .filter_map(|bound| {
+                if let syn::TypeParamBound::Trait(t) = bound {
+                    Some(Type::Path(Path::from(t.path)))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let items = value
+            .items
+            .into_iter()
+            .map(|ti| match ti {
+                syn::TraitItem::Fn(f) => {
+                    let func = fn_from_signature(f.sig, f.default);
+                    Item::inherited(AssocItemKind::Fn(func))
+                }
+                syn::TraitItem::Type(t) => Item::inherited(AssocItemKind::TyAlias(TyAlias {
+                    ident: t.ident.to_string(),
+                    generics: t.generics.params.into_iter().map(GenericParam::from).collect(),
+                    ty: None,
+                })),
+                syn::TraitItem::Const(c) => {
+                    Item::inherited(AssocItemKind::ConstItem(ConstItem {
+                        ident: c.ident.to_string(),
+                        ty: Type::from(c.ty),
+                        expr: c.default.map(|(_, e)| Expr::from(e)),
+                    }))
+                }
+                syn::TraitItem::Macro(m) => {
+                    Item::inherited(AssocItemKind::MacCall(MacCall::from(m.mac)))
+                }
+                _ => unimplemented!("unsupported TraitItem variant"),
+            })
+            .collect();
+        Self {
+            ident,
+            generics,
+            supertraits,
+            items,
+        }
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::ItemImpl> for Impl {
+    fn from(value: syn::ItemImpl) -> Self {
+        let generics = value
+            .generics
+            .params
+            .into_iter()
+            .map(GenericParam::from)
+            .collect();
+        let of_trait = value.trait_.map(|(_, path, _)| Type::Path(Path::from(path)));
+        let self_ty = Type::from(*value.self_ty);
+        let items = value
+            .items
+            .into_iter()
+            .map(|ii| match ii {
+                syn::ImplItem::Fn(f) => {
+                    let vis = Visibility::from(f.vis);
+                    let func = fn_from_signature(f.sig, Some(f.block));
+                    Item::new(vis, AssocItemKind::Fn(func))
+                }
+                syn::ImplItem::Type(t) => {
+                    let vis = Visibility::from(t.vis);
+                    Item::new(
+                        vis,
+                        AssocItemKind::TyAlias(TyAlias {
+                            ident: t.ident.to_string(),
+                            generics: t.generics.params.into_iter().map(GenericParam::from).collect(),
+                            ty: Some(Type::from(t.ty)),
+                        }),
+                    )
+                }
+                syn::ImplItem::Const(c) => {
+                    let vis = Visibility::from(c.vis);
+                    Item::new(
+                        vis,
+                        AssocItemKind::ConstItem(ConstItem {
+                            ident: c.ident.to_string(),
+                            ty: Type::from(c.ty),
+                            expr: Some(Expr::from(c.expr)),
+                        }),
+                    )
+                }
+                syn::ImplItem::Macro(m) => {
+                    Item::inherited(AssocItemKind::MacCall(MacCall::from(m.mac)))
+                }
+                _ => unimplemented!("unsupported ImplItem variant"),
+            })
+            .collect();
+        Self {
+            generics,
+            of_trait,
+            self_ty,
+            where_clauses: None,
+            items,
+        }
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::ItemMod> for Mod {
+    fn from(value: syn::ItemMod) -> Self {
+        match value.content {
+            Some((_, items)) => {
+                let items = items.into_iter().map(Item::from).collect();
+                Mod::Loaded(LoadedMod {
+                    ident: value.ident.to_string(),
+                    items,
+                })
+            }
+            None => Mod::Unloaded(value.ident.to_string()),
+        }
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::ItemStatic> for StaticItem {
+    fn from(value: syn::ItemStatic) -> Self {
+        let mutability = match value.mutability {
+            syn::StaticMutability::Mut(_) => Mutability::Mut,
+            _ => Mutability::Not,
+        };
+        let ident = value.ident.to_string();
+        let ty = Type::from(*value.ty);
+        let expr = Some(Expr::from(*value.expr));
+        Self {
+            mutability,
+            ident,
+            ty,
+            expr,
+        }
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::ItemType> for TyAlias {
+    fn from(value: syn::ItemType) -> Self {
+        Self {
+            ident: value.ident.to_string(),
+            generics: value.generics.params.into_iter().map(GenericParam::from).collect(),
+            ty: Some(Type::from(*value.ty)),
+        }
+    }
+}
+
+/// Helper to convert a syn::Signature (+ optional block) to a ruast Fn
+#[cfg(feature = "syn")]
+fn fn_from_signature(sig: syn::Signature, block: Option<syn::Block>) -> Fn {
+    let is_unsafe = sig.unsafety.is_some();
+    let is_const = sig.constness.is_some();
+    let is_async = sig.asyncness.is_some();
+    let abi = sig.abi.map(|a| a.name.as_ref().unwrap().value());
+    let ident = sig.ident.to_string();
+    let generics = sig
+        .generics
+        .params
+        .into_iter()
+        .map(GenericParam::from)
+        .collect();
+    let inputs = sig.inputs.into_iter().map(Param::from).collect();
+    let output = match sig.output {
+        syn::ReturnType::Default => None,
+        syn::ReturnType::Type(_, ty) => Some(Type::from(*ty)),
+    };
+    let is_variadic = sig.variadic.is_some();
+    let fn_decl = FnDecl::new(inputs, output, is_variadic);
+    let body = block.map(Block::from);
+    Fn {
+        is_unsafe,
+        is_const,
+        is_async,
+        abi,
+        ident,
+        generics,
+        fn_decl,
+        body,
+    }
+}
+
+#[cfg(feature = "syn")]
 impl From<syn::Item> for Item {
     fn from(item: syn::Item) -> Self {
-        match item {
+        let (attrs, vis, kind) = match item {
             syn::Item::Use(item) => {
-                Self::new(Visibility::from(item.vis), ItemKind::Use(Use::from(item)))
+                let attrs = item.attrs.clone();
+                let vis = Visibility::from(item.vis.clone());
+                (attrs, vis, ItemKind::Use(Use::from(item)))
             }
-            // TODO:
-            _ => unimplemented!(),
-        }
+            syn::Item::Fn(item) => {
+                let attrs = item.attrs.clone();
+                let vis = Visibility::from(item.vis.clone());
+                (attrs, vis, ItemKind::Fn(Fn::from(item)))
+            }
+            syn::Item::Struct(item) => {
+                let attrs = item.attrs.clone();
+                let vis = Visibility::from(item.vis.clone());
+                (attrs, vis, ItemKind::StructDef(StructDef::from(item)))
+            }
+            syn::Item::Enum(item) => {
+                let attrs = item.attrs.clone();
+                let vis = Visibility::from(item.vis.clone());
+                (attrs, vis, ItemKind::EnumDef(EnumDef::from(item)))
+            }
+            syn::Item::Union(item) => {
+                let attrs = item.attrs.clone();
+                let vis = Visibility::from(item.vis.clone());
+                (attrs, vis, ItemKind::UnionDef(UnionDef::from(item)))
+            }
+            syn::Item::Trait(item) => {
+                let attrs = item.attrs.clone();
+                let vis = Visibility::from(item.vis.clone());
+                (attrs, vis, ItemKind::TraitDef(TraitDef::from(item)))
+            }
+            syn::Item::Impl(item) => {
+                let attrs = item.attrs.clone();
+                (attrs, Visibility::Inherited, ItemKind::Impl(Impl::from(item)))
+            }
+            syn::Item::Mod(item) => {
+                let attrs = item.attrs.clone();
+                let vis = Visibility::from(item.vis.clone());
+                (attrs, vis, ItemKind::Mod(Mod::from(item)))
+            }
+            syn::Item::Static(item) => {
+                let attrs = item.attrs.clone();
+                let vis = Visibility::from(item.vis.clone());
+                (attrs, vis, ItemKind::StaticItem(StaticItem::from(item)))
+            }
+            syn::Item::Const(item) => {
+                let attrs = item.attrs.clone();
+                let vis = Visibility::from(item.vis.clone());
+                (attrs, vis, ItemKind::ConstItem(ConstItem::from(item)))
+            }
+            syn::Item::Type(item) => {
+                let attrs = item.attrs.clone();
+                let vis = Visibility::from(item.vis.clone());
+                (attrs, vis, ItemKind::TyAlias(TyAlias::from(item)))
+            }
+            syn::Item::ForeignMod(item) => {
+                let attrs = item.attrs.clone();
+                (attrs, Visibility::Inherited, ItemKind::ExternBlock(ExternBlock::from(item)))
+            }
+            syn::Item::ExternCrate(item) => {
+                let attrs = item.attrs.clone();
+                let vis = Visibility::from(item.vis.clone());
+                (attrs, vis, ItemKind::ExternCrate(ExternCrate::from(item)))
+            }
+            syn::Item::Macro(item) => {
+                let attrs = item.attrs.clone();
+                (
+                    attrs,
+                    Visibility::Inherited,
+                    ItemKind::MacCallWithSemi(Semi(MacCall::from(item.mac))),
+                )
+            }
+            _ => unimplemented!("unsupported syn::Item variant"),
+        };
+        let mut result = Self::new(vis, kind);
+        result.attrs = attrs
+            .into_iter()
+            .map(|a| Attribute::from(AttributeItem::from(a)))
+            .collect();
+        result
     }
 }
 
@@ -4182,6 +4600,34 @@ impl fmt::Display for Use {
     }
 }
 
+#[cfg(feature = "syn")]
+impl From<syn::ItemUse> for Use {
+    fn from(value: syn::ItemUse) -> Self {
+        Use(UseTree::from(value.tree))
+    }
+}
+
+#[cfg(feature = "syn")]
+impl From<syn::UseTree> for UseTree {
+    fn from(value: syn::UseTree) -> Self {
+        match value {
+            syn::UseTree::Path(path) => UseTree::Path(UsePath {
+                ident: path.ident.to_string(),
+                tree: Box::new(UseTree::from(*path.tree)),
+            }),
+            syn::UseTree::Name(name) => UseTree::Name(name.ident.to_string()),
+            syn::UseTree::Rename(rename) => UseTree::Rename(UseRename {
+                ident: rename.ident.to_string(),
+                alias: rename.rename.to_string(),
+            }),
+            syn::UseTree::Glob(_) => UseTree::Glob,
+            syn::UseTree::Group(group) => {
+                UseTree::Group(group.items.into_iter().map(UseTree::from).collect())
+            }
+        }
+    }
+}
+
 impl From<Use> for TokenStream {
     fn from(value: Use) -> Self {
         let mut ts = TokenStream::new();
@@ -4350,6 +4796,7 @@ impl ConstItem {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TyAlias {
     pub ident: String,
+    pub generics: Vec<GenericParam>,
     pub ty: Option<Type>,
 }
 
@@ -4358,6 +4805,16 @@ impl_into_item!(TyAlias);
 impl fmt::Display for TyAlias {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "type {ident}", ident = self.ident)?;
+        if !self.generics.is_empty() {
+            write!(f, "<")?;
+            for (i, generic) in self.generics.iter().enumerate() {
+                if i != 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{generic}")?;
+            }
+            write!(f, ">")?;
+        }
         if let Some(ty) = &self.ty {
             write!(f, " = {ty}")?;
         }
@@ -4366,11 +4823,32 @@ impl fmt::Display for TyAlias {
     }
 }
 
+#[cfg(feature = "syn")]
+impl From<syn::ForeignItemType> for TyAlias {
+    fn from(value: syn::ForeignItemType) -> Self {
+        Self {
+            ident: value.ident.to_string(),
+            generics: value.generics.params.into_iter().map(GenericParam::from).collect(),
+            ty: None,
+        }
+    }
+}
+
 impl From<TyAlias> for TokenStream {
     fn from(value: TyAlias) -> Self {
         let mut ts = TokenStream::new();
         ts.push(Token::Keyword(KeywordToken::Type));
         ts.push(Token::ident(value.ident));
+        if !value.generics.is_empty() {
+            ts.push(Token::Lt);
+            for (i, generic) in value.generics.into_iter().enumerate() {
+                if i != 0 {
+                    ts.push(Token::Comma);
+                }
+                ts.extend(TokenStream::from(generic));
+            }
+            ts.push(Token::Gt);
+        }
         if let Some(ty) = value.ty {
             ts.push(Token::Eq);
             ts.extend(TokenStream::from(ty));
@@ -4603,7 +5081,9 @@ impl From<syn::Stmt> for Stmt {
             syn::Stmt::Item(item) => Self::Item(Item::from(item)),
             syn::Stmt::Expr(expr, None) => Self::Expr(Expr::from(expr)),
             syn::Stmt::Expr(expr, Some(_)) => Self::Semi(Semi(Expr::from(expr))),
-            syn::Stmt::Macro(mac_call) => Self::MacCall(MacCall::from(mac_call.mac)),
+            syn::Stmt::Macro(mac_call) => {
+                Self::MacCallWithSemi(Semi(MacCall::from(mac_call.mac)))
+            }
         }
     }
 }
