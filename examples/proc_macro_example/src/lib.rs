@@ -30,9 +30,7 @@ pub fn derive_getter(input: TokenStream) -> TokenStream {
     for field in struct_.fields {
         let slf = ruast::Path::from("self");
         let name = field.ident.unwrap().to_string();
-        let syn::Type::Path(ty) = field.ty else {
-            todo!()
-        };
+        let ty = ruast::Type::from(field.ty);
         let fn_name = format!("get_{name}");
         let ret = ruast::Type::ref_(ruast::Type::from(ty.path.get_ident().unwrap().to_string()));
         let fn_decl = ruast::FnDecl::regular(vec![ruast::Param::ref_self()], Some(ret));
