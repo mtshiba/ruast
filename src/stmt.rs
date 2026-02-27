@@ -236,8 +236,10 @@ impl fmt::Display for Local {
 #[cfg(feature = "syn")]
 impl From<syn::Local> for Local {
     fn from(value: syn::Local) -> Self {
-        let pat = Pat::from(value.pat);
-        let ty = None; // TODO: Type annotation on `let` is not yet supported.
+        let (pat, ty) = match value.pat {
+            syn::Pat::Type(pt) => (Pat::from(*pt.pat), Some(Type::from(*pt.ty))),
+            other => (Pat::from(other), None),
+        };
         let kind = match value.init {
             Some(init) => LocalKind::Init(Expr::from(*init.expr)),
             None => LocalKind::Decl,

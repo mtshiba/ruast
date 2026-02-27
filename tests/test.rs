@@ -611,6 +611,21 @@ mod syn_conversion {
         assert!(output.contains("x: i32"));
     }
 
+    #[test]
+    fn test_let_with_type_annotation() {
+        let krate = parse_and_convert("fn f() { let x: i32 = 42; }");
+        let output = display(&krate);
+        assert!(output.contains("let x: i32 = 42;"));
+    }
+
+    #[test]
+    fn test_let_without_type_annotation() {
+        let krate = parse_and_convert("fn f() { let x = 42; }");
+        let output = display(&krate);
+        assert!(output.contains("let x = 42;"));
+        assert!(!output.contains("let x:"));
+    }
+
     /// Test that the conversion doesn't panic on complex real-world code
     #[test]
     fn test_complex_code() {
