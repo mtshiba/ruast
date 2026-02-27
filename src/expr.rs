@@ -2207,7 +2207,7 @@ impl From<syn::ExprField> for Field {
         };
         Self {
             expr: Box::new(expr),
-            ident,
+            ident: ident.into(),
         }
     }
 }
@@ -2956,27 +2956,27 @@ impl From<syn::Lit> for Lit {
         match value {
             syn::Lit::Bool(lit) => Self {
                 kind: LitKind::Bool,
-                symbol: lit.value().to_string(),
+                symbol: lit.value().to_string().into(),
             },
             syn::Lit::Byte(lit) => Self {
                 kind: LitKind::Byte,
-                symbol: lit.value().to_string(),
+                symbol: lit.value().to_string().into(),
             },
             syn::Lit::Char(lit) => Self {
                 kind: LitKind::Char,
-                symbol: lit.value().to_string(),
+                symbol: lit.value().to_string().into(),
             },
             syn::Lit::Int(lit) => Self {
                 kind: LitKind::Integer,
-                symbol: lit.base10_digits().to_string(),
+                symbol: lit.base10_digits().to_string().into(),
             },
             syn::Lit::Float(lit) => Self {
                 kind: LitKind::Float,
-                symbol: lit.base10_digits().to_string(),
+                symbol: lit.base10_digits().to_string().into(),
             },
             syn::Lit::Str(lit) => Self {
                 kind: LitKind::Str,
-                symbol: lit.value(),
+                symbol: lit.value().into(),
             },
             _ => todo!("Handle other lit types"),
         }
@@ -3001,7 +3001,7 @@ impl From<&str> for Lit {
     fn from(symbol: &str) -> Self {
         Self {
             kind: LitKind::Str,
-            symbol: symbol.to_string(),
+            symbol: symbol.to_string().into(),
         }
     }
 }
@@ -3526,7 +3526,7 @@ impl fmt::Display for PathSegment {
 impl From<syn::Ident> for PathSegment {
     fn from(value: syn::Ident) -> Self {
         Self {
-            ident: value.to_string(),
+            ident: value.to_string().into(),
             args: None,
         }
     }
@@ -3537,11 +3537,11 @@ impl From<syn::PathSegment> for PathSegment {
     fn from(value: syn::PathSegment) -> Self {
         match value.arguments {
             syn::PathArguments::None => Self {
-                ident: value.ident.to_string(),
+                ident: value.ident.to_string().into(),
                 args: None,
             },
             syn::PathArguments::AngleBracketed(args) => Self {
-                ident: value.ident.to_string(),
+                ident: value.ident.to_string().into(),
                 args: Some(
                     args.args
                         .into_iter()
@@ -3559,7 +3559,7 @@ impl From<syn::PathSegment> for PathSegment {
                     generic_args.push(GenericArg::Type(Type::from(*ret_ty)));
                 }
                 Self {
-                    ident: value.ident.to_string(),
+                    ident: value.ident.to_string().into(),
                     args: Some(generic_args),
                 }
             }
@@ -3574,7 +3574,7 @@ impl From<String> for PathSegment {
 impl From<&str> for PathSegment {
     fn from(ident: &str) -> Self {
         Self {
-            ident: ident.to_string(),
+            ident: ident.to_string().into(),
             args: None,
         }
     }
@@ -3785,7 +3785,7 @@ impl fmt::Display for Break {
 #[cfg(feature = "syn")]
 impl From<syn::ExprBreak> for Break {
     fn from(value: syn::ExprBreak) -> Self {
-        let label = value.label.map(|l| l.to_string());
+        let label = value.label.map(|l| l.to_string().into());
         let expr = value.expr.map(|e| Box::new(Expr::from(*e)));
         Self { label, expr }
     }
@@ -3840,7 +3840,7 @@ impl fmt::Display for Continue {
 #[cfg(feature = "syn")]
 impl From<syn::ExprContinue> for Continue {
     fn from(value: syn::ExprContinue) -> Self {
-        let label = value.label.map(|l| l.ident.to_string());
+        let label = value.label.map(|l| l.ident.to_string().into());
         Self { label }
     }
 }
@@ -3884,7 +3884,7 @@ impl fmt::Display for GenericArg {
 impl From<syn::GenericArgument> for GenericArg {
     fn from(value: syn::GenericArgument) -> Self {
         match value {
-            syn::GenericArgument::Lifetime(lifetime) => Self::Lifetime(lifetime.to_string()),
+            syn::GenericArgument::Lifetime(lifetime) => Self::Lifetime(lifetime.to_string().into()),
             syn::GenericArgument::Type(ty) => Self::Type(Type::from(ty)),
             syn::GenericArgument::Const(constant) => Self::Const(Const::from(constant)),
             _ => unreachable!(),
@@ -4193,7 +4193,7 @@ impl From<syn::FieldValue> for ExprField {
             syn::Member::Unnamed(index) => index.index.to_string(),
         };
         let expr = Expr::from(value.expr);
-        Self { ident, expr }
+        Self { ident: ident.into(), expr }
     }
 }
 

@@ -404,7 +404,7 @@ impl From<&str> for IdentPat {
     fn from(ident: &str) -> Self {
         Self {
             is_mut: false,
-            ident: ident.to_string(),
+            ident: ident.to_string().into(),
             pat: None,
         }
     }
@@ -422,7 +422,7 @@ impl From<String> for IdentPat {
 #[cfg(feature = "syn")]
 impl From<syn::PatIdent> for IdentPat {
     fn from(value: syn::PatIdent) -> Self {
-        let ident = value.ident.to_string();
+        let ident = value.ident.to_string().into();
         let is_mut = value.mutability.is_some();
         let pat = value.subpat.map(|(_, x)| Box::new(Pat::from(*x)));
         Self { is_mut, ident, pat }
@@ -504,8 +504,8 @@ impl From<syn::PatStruct> for StructPat {
             .into_iter()
             .map(|field| PatField {
                 ident: match field.member {
-                    syn::Member::Named(ident) => ident.to_string(),
-                    syn::Member::Unnamed(index) => index.index.to_string(),
+                    syn::Member::Named(ident) => ident.to_string().into(),
+                    syn::Member::Unnamed(index) => index.index.to_string().into(),
                 },
                 pat: Pat::from(*field.pat),
             })
@@ -1211,8 +1211,8 @@ impl From<syn::ItemFn> for Fn {
         let is_unsafe = value.sig.unsafety.is_some();
         let is_const = value.sig.constness.is_some();
         let is_async = value.sig.asyncness.is_some();
-        let abi = value.sig.abi.map(|a| a.name.as_ref().unwrap().value());
-        let ident = value.sig.ident.to_string();
+        let abi = value.sig.abi.map(|a| a.name.as_ref().unwrap().value().into());
+        let ident = value.sig.ident.to_string().into();
         let generics = value
             .sig
             .generics
@@ -1285,7 +1285,7 @@ impl From<WithInnerAttrs<Fn>> for TokenStream {
         }
         if let Some(abi) = value.abi {
             ts.push(Token::Keyword(KeywordToken::Extern));
-            ts.push(Token::lit(format!("\"{abi}\"")));
+            ts.push(Token::lit(Lit::from(String::from(format!("\"{abi}\"")))));
         }
         ts.push(Token::Keyword(KeywordToken::Fn));
         ts.push(Token::ident(value.ident).into_joint());
@@ -2477,7 +2477,7 @@ impl fmt::Display for EnumDef {
 #[cfg(feature = "syn")]
 impl From<syn::ItemEnum> for EnumDef {
     fn from(value: syn::ItemEnum) -> Self {
-        let ident = value.ident.to_string();
+        let ident = value.ident.to_string().into();
         let generics = value
             .generics
             .params
@@ -2498,7 +2498,7 @@ impl From<syn::Variant> for Variant {
     fn from(value: syn::Variant) -> Self {
         let attrs = vec![];
         let vis = Visibility::Inherited;
-        let ident = value.ident.to_string();
+        let ident = value.ident.to_string().into();
         let fields = Fields::from(value.fields);
         let discriminant = value.discriminant.map(|d| Expr::from(d.1));
         Self {
@@ -2532,7 +2532,7 @@ impl From<syn::Fields> for Fields {
 impl From<syn::Field> for FieldDef {
     fn from(value: syn::Field) -> Self {
         let vis = Visibility::from(value.vis);
-        let ident = value.ident.map(|i| i.to_string());
+        let ident = value.ident.map(|i| i.to_string().into());
         let ty = Type::from(value.ty);
         Self {
             attrs: vec![],
@@ -3463,7 +3463,7 @@ impl fmt::Display for ExternBlock {
 impl From<syn::ItemForeignMod> for ExternBlock {
     fn from(value: syn::ItemForeignMod) -> Self {
         let is_unsafe = value.unsafety.is_some();
-        let abi = value.abi.name.map(|n| n.value());
+        let abi = value.abi.name.map(|n| n.value().into());
         let stmts: Vec<Stmt> = value
             .items
             .into_iter()
@@ -3495,8 +3495,8 @@ impl From<syn::ForeignItemFn> for Fn {
         let is_unsafe = value.sig.unsafety.is_some();
         let is_const = value.sig.constness.is_some();
         let is_async = value.sig.asyncness.is_some();
-        let abi = value.sig.abi.map(|a| a.name.as_ref().unwrap().value());
-        let ident = value.sig.ident.to_string();
+        let abi = value.sig.abi.map(|a| a.name.as_ref().unwrap().value().into());
+        let ident = value.sig.ident.to_string().into();
         let generics = value
             .sig
             .generics
@@ -3527,7 +3527,7 @@ impl From<syn::ForeignItemFn> for Fn {
 #[cfg(feature = "syn")]
 impl From<syn::ForeignItemStatic> for StaticItem {
     fn from(value: syn::ForeignItemStatic) -> Self {
-        let ident = value.ident.to_string();
+        let ident = value.ident.to_string().into();
         let ty = Type::from(*value.ty);
         let mutability = match value.mutability {
             syn::StaticMutability::Mut(_) => Mutability::Mut,
@@ -3649,8 +3649,8 @@ impl fmt::Display for ExternCrate {
 #[cfg(feature = "syn")]
 impl From<syn::ItemExternCrate> for ExternCrate {
     fn from(value: syn::ItemExternCrate) -> Self {
-        let ident = value.ident.to_string();
-        let alias = value.rename.map(|(_, id)| id.to_string());
+        let ident = value.ident.to_string().into();
+        let alias = value.rename.map(|(_, id)| id.to_string().into());
         Self { ident, alias }
     }
 }
@@ -4079,7 +4079,7 @@ impl MaybeIdent for ItemKind {
 #[cfg(feature = "syn")]
 impl From<syn::ItemStruct> for StructDef {
     fn from(value: syn::ItemStruct) -> Self {
-        let ident = value.ident.to_string();
+        let ident = value.ident.to_string().into();
         let generics = value
             .generics
             .params
@@ -4098,7 +4098,7 @@ impl From<syn::ItemStruct> for StructDef {
 #[cfg(feature = "syn")]
 impl From<syn::ItemUnion> for UnionDef {
     fn from(value: syn::ItemUnion) -> Self {
-        let ident = value.ident.to_string();
+        let ident = value.ident.to_string().into();
         let generics = value
             .generics
             .params
@@ -4117,7 +4117,7 @@ impl From<syn::ItemUnion> for UnionDef {
 #[cfg(feature = "syn")]
 impl From<syn::ItemTrait> for TraitDef {
     fn from(value: syn::ItemTrait) -> Self {
-        let ident = value.ident.to_string();
+        let ident = value.ident.to_string().into();
         let generics = value
             .generics
             .params
@@ -4144,13 +4144,13 @@ impl From<syn::ItemTrait> for TraitDef {
                     Item::inherited(AssocItemKind::Fn(func))
                 }
                 syn::TraitItem::Type(t) => Item::inherited(AssocItemKind::TyAlias(TyAlias {
-                    ident: t.ident.to_string(),
+                    ident: t.ident.to_string().into(),
                     generics: t.generics.params.into_iter().map(GenericParam::from).collect(),
                     ty: None,
                 })),
                 syn::TraitItem::Const(c) => {
                     Item::inherited(AssocItemKind::ConstItem(ConstItem {
-                        ident: c.ident.to_string(),
+                        ident: c.ident.to_string().into(),
                         ty: Type::from(c.ty),
                         expr: c.default.map(|(_, e)| Expr::from(e)),
                     }))
@@ -4195,7 +4195,7 @@ impl From<syn::ItemImpl> for Impl {
                     Item::new(
                         vis,
                         AssocItemKind::TyAlias(TyAlias {
-                            ident: t.ident.to_string(),
+                            ident: t.ident.to_string().into(),
                             generics: t.generics.params.into_iter().map(GenericParam::from).collect(),
                             ty: Some(Type::from(t.ty)),
                         }),
@@ -4206,7 +4206,7 @@ impl From<syn::ItemImpl> for Impl {
                     Item::new(
                         vis,
                         AssocItemKind::ConstItem(ConstItem {
-                            ident: c.ident.to_string(),
+                            ident: c.ident.to_string().into(),
                             ty: Type::from(c.ty),
                             expr: Some(Expr::from(c.expr)),
                         }),
@@ -4235,11 +4235,11 @@ impl From<syn::ItemMod> for Mod {
             Some((_, items)) => {
                 let items = items.into_iter().map(Item::from).collect();
                 Mod::Loaded(LoadedMod {
-                    ident: value.ident.to_string(),
+                    ident: value.ident.to_string().into(),
                     items,
                 })
             }
-            None => Mod::Unloaded(value.ident.to_string()),
+            None => Mod::Unloaded(value.ident.to_string().into()),
         }
     }
 }
@@ -4251,7 +4251,7 @@ impl From<syn::ItemStatic> for StaticItem {
             syn::StaticMutability::Mut(_) => Mutability::Mut,
             _ => Mutability::Not,
         };
-        let ident = value.ident.to_string();
+        let ident = value.ident.to_string().into();
         let ty = Type::from(*value.ty);
         let expr = Some(Expr::from(*value.expr));
         Self {
@@ -4267,7 +4267,7 @@ impl From<syn::ItemStatic> for StaticItem {
 impl From<syn::ItemType> for TyAlias {
     fn from(value: syn::ItemType) -> Self {
         Self {
-            ident: value.ident.to_string(),
+            ident: value.ident.to_string().into(),
             generics: value.generics.params.into_iter().map(GenericParam::from).collect(),
             ty: Some(Type::from(*value.ty)),
         }
@@ -4280,8 +4280,8 @@ fn fn_from_signature(sig: syn::Signature, block: Option<syn::Block>) -> Fn {
     let is_unsafe = sig.unsafety.is_some();
     let is_const = sig.constness.is_some();
     let is_async = sig.asyncness.is_some();
-    let abi = sig.abi.map(|a| a.name.as_ref().unwrap().value());
-    let ident = sig.ident.to_string();
+    let abi = sig.abi.map(|a| a.name.as_ref().unwrap().value().into());
+    let ident = sig.ident.to_string().into();
     let generics = sig
         .generics
         .params
@@ -4614,13 +4614,13 @@ impl From<syn::UseTree> for UseTree {
     fn from(value: syn::UseTree) -> Self {
         match value {
             syn::UseTree::Path(path) => UseTree::Path(UsePath {
-                ident: path.ident.to_string(),
+                ident: path.ident.to_string().into(),
                 tree: Box::new(UseTree::from(*path.tree)),
             }),
-            syn::UseTree::Name(name) => UseTree::Name(name.ident.to_string()),
+            syn::UseTree::Name(name) => UseTree::Name(name.ident.to_string().into()),
             syn::UseTree::Rename(rename) => UseTree::Rename(UseRename {
-                ident: rename.ident.to_string(),
-                alias: rename.rename.to_string(),
+                ident: rename.ident.to_string().into(),
+                alias: rename.rename.to_string().into(),
             }),
             syn::UseTree::Glob(_) => UseTree::Glob,
             syn::UseTree::Group(group) => {
@@ -4751,7 +4751,7 @@ impl fmt::Display for ConstItem {
 #[cfg(feature = "syn")]
 impl From<syn::ItemConst> for ConstItem {
     fn from(value: syn::ItemConst) -> Self {
-        let ident = value.ident.to_string();
+        let ident = value.ident.to_string().into();
         let ty = Type::from(*value.ty);
         let expr = Expr::from(*value.expr);
         Self {
@@ -4829,7 +4829,7 @@ impl fmt::Display for TyAlias {
 impl From<syn::ForeignItemType> for TyAlias {
     fn from(value: syn::ForeignItemType) -> Self {
         Self {
-            ident: value.ident.to_string(),
+            ident: value.ident.to_string().into(),
             generics: value.generics.params.into_iter().map(GenericParam::from).collect(),
             ty: None,
         }

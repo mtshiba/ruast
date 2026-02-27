@@ -94,7 +94,7 @@ impl fmt::Display for Ref {
 #[cfg(feature = "syn")]
 impl From<syn::TypeReference> for Ref {
     fn from(value: syn::TypeReference) -> Self {
-        let lifetime = value.lifetime.map(|l| l.ident.to_string());
+        let lifetime = value.lifetime.map(|l| l.ident.to_string().into());
         let mutable = value.mutability.is_some();
         let mut_ty = MutTy::new(mutable, *value.elem);
         Self {
@@ -229,7 +229,7 @@ impl fmt::Display for BareFnArg {
 #[cfg(feature = "syn")]
 impl From<syn::BareFnArg> for BareFnArg {
     fn from(value: syn::BareFnArg) -> Self {
-        let name = value.name.map(|(name, _)| name.to_string());
+        let name = value.name.map(|(name, _)| name.to_string().into());
         let ty = Type::from(value.ty);
         Self { name, ty }
     }
@@ -260,6 +260,7 @@ impl BareFnArg {
     }
 }
 
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BareFn {
     pub generic_params: Vec<GenericParam>,
@@ -303,7 +304,7 @@ impl From<syn::TypeBareFn> for BareFn {
             syn::ReturnType::Type(_, ty) => Some(Box::new(Type::from(*ty))),
         };
         let is_unsafe = value.unsafety.is_some();
-        let abi = value.abi.map(|a| a.name.as_ref().unwrap().value());
+        let abi = value.abi.map(|a| a.name.as_ref().unwrap().value().into());
         let generic_params = value
             .lifetimes
             .map(|bl| {
@@ -542,15 +543,15 @@ impl From<syn::GenericParam> for GenericParam {
     fn from(value: syn::GenericParam) -> Self {
         match value {
             syn::GenericParam::Type(tp) => GenericParam::TypeParam(TypeParam {
-                ident: tp.ident.to_string(),
+                ident: tp.ident.to_string().into(),
                 bounds: tp.bounds.into_iter().map(GenericBound::from).collect(),
             }),
             syn::GenericParam::Const(cp) => GenericParam::ConstParam(ConstParam {
-                ident: cp.ident.to_string(),
+                ident: cp.ident.to_string().into(),
                 ty: Type::from(cp.ty),
             }),
             syn::GenericParam::Lifetime(lt) => {
-                GenericParam::Lifetime(lt.lifetime.ident.to_string())
+                GenericParam::Lifetime(lt.lifetime.ident.to_string().into())
             }
         }
     }
@@ -648,7 +649,7 @@ impl From<syn::TypeParamBound> for GenericBound {
                 GenericBound::Trait(PolyTraitRef::from(trait_bound))
             }
             syn::TypeParamBound::Lifetime(lifetime) => {
-                GenericBound::Outlives(lifetime.ident.to_string())
+                GenericBound::Outlives(lifetime.ident.to_string().into())
             }
             _ => unimplemented!("unsupported TypeParamBound variant"),
         }

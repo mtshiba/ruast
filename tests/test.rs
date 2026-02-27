@@ -382,7 +382,7 @@ mod syn_conversion {
     }
 
     /// Helper to trim the leading/trailing whitespace from Crate display
-    fn display(krate: &Crate) -> String {
+    fn display(krate: &Crate) -> std::string::String {
         format!("{krate}").trim().to_string()
     }
 
