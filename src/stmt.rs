@@ -2465,6 +2465,7 @@ impl Variant {
 pub struct EnumDef {
     pub ident: String,
     pub generics: Vec<GenericParam>,
+    pub where_clauses: Option<Vec<WherePredicate>>,
     pub variants: Vec<Variant>,
 }
 
@@ -2483,6 +2484,15 @@ impl fmt::Display for EnumDef {
             }
             write!(f, ">")?;
         }
+        if let Some(where_clauses) = &self.where_clauses {
+            write!(f, " where ")?;
+            for (i, clause) in where_clauses.iter().enumerate() {
+                if i != 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{clause}")?;
+            }
+        }
         writeln!(f, " {{")?;
         let mut indent = indenter::indented(f).with_str("    ");
         for variant in self.variants.iter() {
@@ -2496,6 +2506,7 @@ impl fmt::Display for EnumDef {
 impl From<syn::ItemEnum> for EnumDef {
     fn from(value: syn::ItemEnum) -> Self {
         let ident = value.ident.to_string().into();
+        let where_clauses = where_clauses_from_generics(&value.generics);
         let generics = value
             .generics
             .params
@@ -2506,6 +2517,7 @@ impl From<syn::ItemEnum> for EnumDef {
         Self {
             ident,
             generics,
+            where_clauses,
             variants,
         }
     }
@@ -2575,6 +2587,15 @@ impl From<EnumDef> for TokenStream {
             }
             ts.push(Token::Gt);
         }
+        if let Some(where_clauses) = value.where_clauses {
+            ts.push(Token::Keyword(KeywordToken::Where));
+            for (i, clause) in where_clauses.into_iter().enumerate() {
+                if i != 0 {
+                    ts.push(Token::Comma);
+                }
+                ts.extend(TokenStream::from(clause));
+            }
+        }
         ts.push(Token::OpenDelim(Delimiter::Brace));
         for variant in value.variants.iter() {
             ts.extend(TokenStream::from(variant.clone()).into_joint());
@@ -2619,6 +2640,7 @@ impl EnumDef {
         Self {
             ident: ident.into(),
             generics,
+            where_clauses: None,
             variants,
         }
     }
@@ -2674,6 +2696,7 @@ impl EnumDef {
 pub struct StructDef {
     pub ident: String,
     pub generics: Vec<GenericParam>,
+    pub where_clauses: Option<Vec<WherePredicate>>,
     pub fields: Fields,
 }
 
@@ -2691,6 +2714,15 @@ impl fmt::Display for StructDef {
                 write!(f, "{generic}")?;
             }
             write!(f, ">")?;
+        }
+        if let Some(where_clauses) = &self.where_clauses {
+            write!(f, " where ")?;
+            for (i, clause) in where_clauses.iter().enumerate() {
+                if i != 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{clause}")?;
+            }
         }
         write!(f, "{}", self.fields)
     }
@@ -2710,6 +2742,15 @@ impl From<StructDef> for TokenStream {
                 ts.extend(TokenStream::from(generic.clone()));
             }
             ts.push(Token::Gt);
+        }
+        if let Some(where_clauses) = value.where_clauses {
+            ts.push(Token::Keyword(KeywordToken::Where));
+            for (i, clause) in where_clauses.into_iter().enumerate() {
+                if i != 0 {
+                    ts.push(Token::Comma);
+                }
+                ts.extend(TokenStream::from(clause));
+            }
         }
         ts.extend(TokenStream::from(value.fields));
         ts
@@ -2744,6 +2785,7 @@ impl StructDef {
         Self {
             ident: ident.into(),
             generics,
+            where_clauses: None,
             fields,
         }
     }
@@ -2793,6 +2835,7 @@ impl StructDef {
 pub struct UnionDef {
     pub ident: String,
     pub generics: Vec<GenericParam>,
+    pub where_clauses: Option<Vec<WherePredicate>>,
     pub fields: Fields,
 }
 
@@ -2810,6 +2853,15 @@ impl fmt::Display for UnionDef {
                 write!(f, "{generic}")?;
             }
             write!(f, ">")?;
+        }
+        if let Some(where_clauses) = &self.where_clauses {
+            write!(f, " where ")?;
+            for (i, clause) in where_clauses.iter().enumerate() {
+                if i != 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{clause}")?;
+            }
         }
         write!(f, "{}", self.fields)
     }
@@ -2829,6 +2881,15 @@ impl From<UnionDef> for TokenStream {
                 ts.extend(TokenStream::from(generic.clone()));
             }
             ts.push(Token::Gt);
+        }
+        if let Some(where_clauses) = value.where_clauses {
+            ts.push(Token::Keyword(KeywordToken::Where));
+            for (i, clause) in where_clauses.into_iter().enumerate() {
+                if i != 0 {
+                    ts.push(Token::Comma);
+                }
+                ts.extend(TokenStream::from(clause));
+            }
         }
         ts.extend(TokenStream::from(value.fields));
         ts
@@ -2865,6 +2926,7 @@ impl UnionDef {
         Self {
             ident: ident.into(),
             generics,
+            where_clauses: None,
             fields,
         }
     }
@@ -2914,6 +2976,7 @@ impl UnionDef {
 pub struct TraitDef {
     pub ident: String,
     pub generics: Vec<GenericParam>,
+    pub where_clauses: Option<Vec<WherePredicate>>,
     pub supertraits: Vec<GenericBound>,
     pub items: Vec<AssocItem>,
 }
@@ -2940,6 +3003,15 @@ impl fmt::Display for TraitDef {
                     write!(f, " + ")?;
                 }
                 write!(f, "{sup}")?;
+            }
+        }
+        if let Some(where_clauses) = &self.where_clauses {
+            write!(f, " where ")?;
+            for (i, clause) in where_clauses.iter().enumerate() {
+                if i != 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{clause}")?;
             }
         }
         writeln!(f, " {{")?;
@@ -2975,10 +3047,18 @@ impl From<TraitDef> for TokenStream {
                 ts.extend(TokenStream::from(sup.clone()));
             }
         }
+        if let Some(where_clauses) = value.where_clauses {
+            ts.push(Token::Keyword(KeywordToken::Where));
+            for (i, clause) in where_clauses.into_iter().enumerate() {
+                if i != 0 {
+                    ts.push(Token::Comma);
+                }
+                ts.extend(TokenStream::from(clause));
+            }
+        }
         ts.push(Token::OpenDelim(Delimiter::Brace));
         for item in value.items.iter() {
             ts.extend(TokenStream::from(item.clone()));
-            // ts.push(Token::Semi);
         }
         ts.push(Token::CloseDelim(Delimiter::Brace));
         ts
@@ -3020,6 +3100,7 @@ impl TraitDef {
         Self {
             ident: ident.into(),
             generics,
+            where_clauses: None,
             supertraits,
             items,
         }
@@ -4122,6 +4203,7 @@ impl MaybeIdent for ItemKind {
 impl From<syn::ItemStruct> for StructDef {
     fn from(value: syn::ItemStruct) -> Self {
         let ident = value.ident.to_string().into();
+        let where_clauses = where_clauses_from_generics(&value.generics);
         let generics = value
             .generics
             .params
@@ -4132,6 +4214,7 @@ impl From<syn::ItemStruct> for StructDef {
         Self {
             ident,
             generics,
+            where_clauses,
             fields,
         }
     }
@@ -4141,6 +4224,7 @@ impl From<syn::ItemStruct> for StructDef {
 impl From<syn::ItemUnion> for UnionDef {
     fn from(value: syn::ItemUnion) -> Self {
         let ident = value.ident.to_string().into();
+        let where_clauses = where_clauses_from_generics(&value.generics);
         let generics = value
             .generics
             .params
@@ -4151,6 +4235,7 @@ impl From<syn::ItemUnion> for UnionDef {
         Self {
             ident,
             generics,
+            where_clauses,
             fields,
         }
     }
@@ -4160,6 +4245,7 @@ impl From<syn::ItemUnion> for UnionDef {
 impl From<syn::ItemTrait> for TraitDef {
     fn from(value: syn::ItemTrait) -> Self {
         let ident = value.ident.to_string().into();
+        let where_clauses = where_clauses_from_generics(&value.generics);
         let generics = value
             .generics
             .params
@@ -4200,6 +4286,7 @@ impl From<syn::ItemTrait> for TraitDef {
         Self {
             ident,
             generics,
+            where_clauses,
             supertraits,
             items,
         }

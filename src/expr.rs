@@ -4316,6 +4316,12 @@ impl fmt::Display for Struct {
             }
             write!(f, "{field}")?;
         }
+        if let Some(rest) = &self.rest {
+            if !self.fields.is_empty() {
+                write!(f, ", ")?;
+            }
+            write!(f, "..{rest}")?;
+        }
         write!(f, " }}")
     }
 }
