@@ -1457,9 +1457,22 @@ impl From<If> for TokenStream {
         ts.extend(TokenStream::from(value.then));
         if let Some(else_) = value.else_ {
             ts.push(Token::Keyword(KeywordToken::Else));
-            ts.push(Token::OpenDelim(Delimiter::Brace));
-            ts.extend(TokenStream::from(*else_));
-            ts.push(Token::CloseDelim(Delimiter::Brace));
+            // LabelledBlock (no label) and If already provide their own delimiters.
+            // Only wrap other expressions in { } to avoid double-bracing.
+            let skip_wrap = else_.attrs.is_empty()
+                && matches!(
+                    &else_.kind,
+                    ExprKind::LabelledBlock(lb) if lb.label.is_none()
+                )
+                || else_.attrs.is_empty()
+                    && matches!(&else_.kind, ExprKind::If(_));
+            if skip_wrap {
+                ts.extend(TokenStream::from(*else_));
+            } else {
+                ts.push(Token::OpenDelim(Delimiter::Brace));
+                ts.extend(TokenStream::from(*else_));
+                ts.push(Token::CloseDelim(Delimiter::Brace));
+            }
         }
         ts
     }
@@ -2978,7 +2991,10 @@ impl From<AssignOp> for TokenStream {
         } else {
             ts.extend(TokenStream::from(*value.left));
         }
-        ts.push(Token::from(value.op));
+        ts.push(match Token::from(value.op) {
+            Token::BinOp(op) => Token::BinOpEq(op),
+            _ => unreachable!("AssignOp should only use BinOp operators"),
+        });
         if precedence < value.right.precedence() {
             ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
             ts.extend(TokenStream::from(*value.right).into_joint());

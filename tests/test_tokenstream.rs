@@ -309,7 +309,7 @@ fn test_if_to_tokenstream() {
         )))))),
     );
     let ts = TokenStream::from(if_else_stmt);
-    assert_snapshot!(ts, @"if false { 1 } else { { 2 } }");
+    assert_snapshot!(ts, @"if false { 1 } else { 2 }");
 }
 
 #[test]
@@ -512,7 +512,7 @@ fn test_binopkind_to_tokenstream() {
 fn test_assignop_to_tokenstream() {
     let assign_op = AssignOp::new(Path::single("x"), BinOpKind::Add, Lit::int("5"));
     let ts = TokenStream::from(assign_op);
-    assert_snapshot!(ts, @"x + 5");
+    assert_snapshot!(ts, @"x += 5");
 }
 
 #[test]
