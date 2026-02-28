@@ -214,10 +214,17 @@ impl_hasitem_methods!(Crate);
 
 impl fmt::Display for Crate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Only inner attributes (#![...]) are valid at crate level.
+        // Outer attributes (#[...]) must be attached to items and are
+        // rendered by Item::Display, not here.
         for attr in self.attrs.iter() {
-            writeln!(f, "{attr}")?;
+            if attr.is_inner() {
+                writeln!(f, "{attr}")?;
+            }
         }
-        writeln!(f)?;
+        if !self.items.is_empty() {
+            writeln!(f)?;
+        }
         for item in self.items.iter() {
             writeln!(f, "{item}")?;
         }
@@ -229,7 +236,9 @@ impl From<Crate> for TokenStream {
     fn from(value: Crate) -> Self {
         let mut ts = TokenStream::new();
         for attr in value.attrs {
-            ts.extend(TokenStream::from(attr));
+            if attr.is_inner() {
+                ts.extend(TokenStream::from(attr));
+            }
         }
         for item in value.items {
             ts.extend(TokenStream::from(item));

@@ -2485,12 +2485,14 @@ impl fmt::Display for EnumDef {
             write!(f, ">")?;
         }
         if let Some(where_clauses) = &self.where_clauses {
-            write!(f, " where ")?;
-            for (i, clause) in where_clauses.iter().enumerate() {
-                if i != 0 {
-                    write!(f, ", ")?;
+            if !where_clauses.is_empty() {
+                write!(f, " where ")?;
+                for (i, clause) in where_clauses.iter().enumerate() {
+                    if i != 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{clause}")?;
                 }
-                write!(f, "{clause}")?;
             }
         }
         writeln!(f, " {{")?;
@@ -2588,12 +2590,14 @@ impl From<EnumDef> for TokenStream {
             ts.push(Token::Gt);
         }
         if let Some(where_clauses) = value.where_clauses {
-            ts.push(Token::Keyword(KeywordToken::Where));
-            for (i, clause) in where_clauses.into_iter().enumerate() {
-                if i != 0 {
-                    ts.push(Token::Comma);
+            if !where_clauses.is_empty() {
+                ts.push(Token::Keyword(KeywordToken::Where));
+                for (i, clause) in where_clauses.into_iter().enumerate() {
+                    if i != 0 {
+                        ts.push(Token::Comma);
+                    }
+                    ts.extend(TokenStream::from(clause));
                 }
-                ts.extend(TokenStream::from(clause));
             }
         }
         ts.push(Token::OpenDelim(Delimiter::Brace));
@@ -2716,12 +2720,14 @@ impl fmt::Display for StructDef {
             write!(f, ">")?;
         }
         if let Some(where_clauses) = &self.where_clauses {
-            write!(f, " where ")?;
-            for (i, clause) in where_clauses.iter().enumerate() {
-                if i != 0 {
-                    write!(f, ", ")?;
+            if !where_clauses.is_empty() {
+                write!(f, " where ")?;
+                for (i, clause) in where_clauses.iter().enumerate() {
+                    if i != 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{clause}")?;
                 }
-                write!(f, "{clause}")?;
             }
         }
         write!(f, "{}", self.fields)
@@ -2744,12 +2750,14 @@ impl From<StructDef> for TokenStream {
             ts.push(Token::Gt);
         }
         if let Some(where_clauses) = value.where_clauses {
-            ts.push(Token::Keyword(KeywordToken::Where));
-            for (i, clause) in where_clauses.into_iter().enumerate() {
-                if i != 0 {
-                    ts.push(Token::Comma);
+            if !where_clauses.is_empty() {
+                ts.push(Token::Keyword(KeywordToken::Where));
+                for (i, clause) in where_clauses.into_iter().enumerate() {
+                    if i != 0 {
+                        ts.push(Token::Comma);
+                    }
+                    ts.extend(TokenStream::from(clause));
                 }
-                ts.extend(TokenStream::from(clause));
             }
         }
         ts.extend(TokenStream::from(value.fields));
@@ -2855,12 +2863,14 @@ impl fmt::Display for UnionDef {
             write!(f, ">")?;
         }
         if let Some(where_clauses) = &self.where_clauses {
-            write!(f, " where ")?;
-            for (i, clause) in where_clauses.iter().enumerate() {
-                if i != 0 {
-                    write!(f, ", ")?;
+            if !where_clauses.is_empty() {
+                write!(f, " where ")?;
+                for (i, clause) in where_clauses.iter().enumerate() {
+                    if i != 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{clause}")?;
                 }
-                write!(f, "{clause}")?;
             }
         }
         write!(f, "{}", self.fields)
@@ -2883,12 +2893,14 @@ impl From<UnionDef> for TokenStream {
             ts.push(Token::Gt);
         }
         if let Some(where_clauses) = value.where_clauses {
-            ts.push(Token::Keyword(KeywordToken::Where));
-            for (i, clause) in where_clauses.into_iter().enumerate() {
-                if i != 0 {
-                    ts.push(Token::Comma);
+            if !where_clauses.is_empty() {
+                ts.push(Token::Keyword(KeywordToken::Where));
+                for (i, clause) in where_clauses.into_iter().enumerate() {
+                    if i != 0 {
+                        ts.push(Token::Comma);
+                    }
+                    ts.extend(TokenStream::from(clause));
                 }
-                ts.extend(TokenStream::from(clause));
             }
         }
         ts.extend(TokenStream::from(value.fields));
@@ -3006,12 +3018,14 @@ impl fmt::Display for TraitDef {
             }
         }
         if let Some(where_clauses) = &self.where_clauses {
-            write!(f, " where ")?;
-            for (i, clause) in where_clauses.iter().enumerate() {
-                if i != 0 {
-                    write!(f, ", ")?;
+            if !where_clauses.is_empty() {
+                write!(f, " where ")?;
+                for (i, clause) in where_clauses.iter().enumerate() {
+                    if i != 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{clause}")?;
                 }
-                write!(f, "{clause}")?;
             }
         }
         writeln!(f, " {{")?;
@@ -3048,12 +3062,14 @@ impl From<TraitDef> for TokenStream {
             }
         }
         if let Some(where_clauses) = value.where_clauses {
-            ts.push(Token::Keyword(KeywordToken::Where));
-            for (i, clause) in where_clauses.into_iter().enumerate() {
-                if i != 0 {
-                    ts.push(Token::Comma);
+            if !where_clauses.is_empty() {
+                ts.push(Token::Keyword(KeywordToken::Where));
+                for (i, clause) in where_clauses.into_iter().enumerate() {
+                    if i != 0 {
+                        ts.push(Token::Comma);
+                    }
+                    ts.extend(TokenStream::from(clause));
                 }
-                ts.extend(TokenStream::from(clause));
             }
         }
         ts.push(Token::OpenDelim(Delimiter::Brace));
@@ -4768,6 +4784,7 @@ impl From<Use> for TokenStream {
         let mut ts = TokenStream::new();
         ts.push(Token::Keyword(KeywordToken::Use));
         ts.extend(TokenStream::from(value.0));
+        ts.push(Token::Semi);
         ts
     }
 }
@@ -4849,6 +4866,7 @@ impl From<StaticItem> for TokenStream {
             ts.push(Token::Eq);
             ts.extend(TokenStream::from(expr));
         }
+        ts.push(Token::Semi);
         ts
     }
 }
@@ -4906,6 +4924,7 @@ impl From<ConstItem> for TokenStream {
             ts.push(Token::Eq);
             ts.extend(TokenStream::from(expr));
         }
+        ts.push(Token::Semi);
         ts
     }
 }
@@ -4988,6 +5007,7 @@ impl From<TyAlias> for TokenStream {
             ts.push(Token::Eq);
             ts.extend(TokenStream::from(ty));
         }
+        ts.push(Token::Semi);
         ts
     }
 }

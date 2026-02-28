@@ -379,7 +379,7 @@ fn test_match_to_tokenstream() {
 fn test_closure_to_tokenstream() {
     let closure = Closure::simple(FnDecl::regular(vec![], None), Lit::int("42"));
     let ts = TokenStream::from(closure);
-    assert_snapshot!(ts, @"|| -> { 42 }");
+    assert_snapshot!(ts, @"|| { 42 }");
 
     let closure_with_params = Closure::simple(
         FnDecl::regular(
@@ -389,7 +389,7 @@ fn test_closure_to_tokenstream() {
         Lit::int("x"),
     );
     let ts = TokenStream::from(closure_with_params);
-    assert_snapshot!(ts, @"|x: i32| -> { x }");
+    assert_snapshot!(ts, @"|x: i32| { x }");
 }
 
 #[test]
@@ -1252,11 +1252,11 @@ fn test_use_to_tokenstream() {
         UseTree::Name("std".into()),
     )));
     let ts = TokenStream::from(use_item);
-    assert_snapshot!(ts, @"use std::std");
+    assert_snapshot!(ts, @"use std::std ;");
 
     let use_glob = Use::from(UseTree::Path(UsePath::new("std", UseTree::Glob)));
     let ts = TokenStream::from(use_glob);
-    assert_snapshot!(ts, @"use std::*");
+    assert_snapshot!(ts, @"use std::* ;");
 
     let use_group = Use::from(Path::single("std").chain("sync").chain_use_group(vec![
         UseTree::from(Path::single(PathSegment::simple("Arc"))),
@@ -1264,7 +1264,7 @@ fn test_use_to_tokenstream() {
         UseTree::from(Path::single(PathSegment::simple("MutexGuard"))),
     ]));
     let ts = TokenStream::from(use_group);
-    assert_snapshot!(ts, @"use std::sync::{Arc, Mutex, MutexGuard}");
+    assert_snapshot!(ts, @"use std::sync::{Arc, Mutex, MutexGuard} ;");
 }
 
 #[test]
@@ -1276,14 +1276,14 @@ fn test_staticitem_to_tokenstream() {
         expr: Some(Expr::new(Lit::int("42"))),
     };
     let ts = TokenStream::from(static_item);
-    assert_snapshot!(ts, @"static MY_STATIC: i32 = 42");
+    assert_snapshot!(ts, @"static MY_STATIC: i32 = 42 ;");
 }
 
 #[test]
 fn test_constitem_to_tokenstream() {
     let const_item = ConstItem::new("MY_CONST", Type::i32(), Some(Expr::new(Lit::int("42"))));
     let ts = TokenStream::from(const_item);
-    assert_snapshot!(ts, @"const MY_CONST: i32 = 42");
+    assert_snapshot!(ts, @"const MY_CONST: i32 = 42 ;");
 }
 
 #[test]
@@ -1294,7 +1294,7 @@ fn test_tyalias_to_tokenstream() {
         ty: Some(Type::i32()),
     };
     let ts = TokenStream::from(ty_alias);
-    assert_snapshot!(ts, @"type MyType = i32");
+    assert_snapshot!(ts, @"type MyType = i32 ;");
 }
 
 #[test]

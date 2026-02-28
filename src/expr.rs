@@ -762,7 +762,12 @@ impl HasPrecedence for Expr {
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for attr in self.attrs.iter() {
-            writeln!(f, "{attr}")?;
+            // Only outer attributes (#[...]) are valid on expressions.
+            // Inner attributes (#![...]) are rendered inside block-like
+            // expressions by their own Display impls (e.g. Block, Closure).
+            if attr.style.is_outer() {
+                writeln!(f, "{attr}")?;
+            }
         }
         self.kind.fmt(f)
     }
@@ -844,7 +849,9 @@ impl From<Expr> for TokenStream {
     fn from(value: Expr) -> Self {
         let mut ts = TokenStream::new();
         for attr in value.attrs.iter() {
-            ts.extend(TokenStream::from(attr.clone()));
+            if attr.style.is_outer() {
+                ts.extend(TokenStream::from(attr.clone()));
+            }
         }
         ts.extend(TokenStream::from(value.kind));
         ts
@@ -2023,7 +2030,10 @@ impl From<Closure> for TokenStream {
             }
         }
         ts.push(Token::Or);
-        ts.push(Token::RArrow);
+        if let Some(output) = value.fn_decl.output {
+            ts.push(Token::RArrow);
+            ts.extend(TokenStream::from(output));
+        }
         ts.push(Token::OpenDelim(Delimiter::Brace));
         ts.extend(TokenStream::from(*value.body));
         ts.push(Token::CloseDelim(Delimiter::Brace));
