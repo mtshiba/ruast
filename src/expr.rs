@@ -135,7 +135,7 @@ impl_to_tokens!(
     GenericArg,
     DelimArgs,
     MacCall,
-    ExprField,
+    FieldValue,
     Struct,
     Repeat,
     Try,
@@ -164,35 +164,35 @@ impl<E: Into<Expr>> Callable for E {
 }
 
 pub trait MethodCallable {
-    fn method_call(self, seg: impl Into<PathSegment>, args: Vec<Expr>) -> MethodCall;
-    fn method_call0(self, seg: impl Into<PathSegment>) -> MethodCall
+    fn method_call(self, method: impl Into<PathSegment>, args: Vec<Expr>) -> MethodCall;
+    fn method_call0(self, method: impl Into<PathSegment>) -> MethodCall
     where
         Self: Sized,
     {
-        self.method_call(seg, vec![])
+        self.method_call(method, vec![])
     }
-    fn method_call1(self, seg: impl Into<PathSegment>, arg: impl Into<Expr>) -> MethodCall
+    fn method_call1(self, method: impl Into<PathSegment>, arg: impl Into<Expr>) -> MethodCall
     where
         Self: Sized,
     {
-        self.method_call(seg, vec![arg.into()])
+        self.method_call(method, vec![arg.into()])
     }
     fn method_call2(
         self,
-        seg: impl Into<PathSegment>,
+        method: impl Into<PathSegment>,
         arg1: impl Into<Expr>,
         arg2: impl Into<Expr>,
     ) -> MethodCall
     where
         Self: Sized,
     {
-        self.method_call(seg, vec![arg1.into(), arg2.into()])
+        self.method_call(method, vec![arg1.into(), arg2.into()])
     }
 }
 
 impl<E: Into<Expr>> MethodCallable for E {
-    fn method_call(self, seg: impl Into<PathSegment>, args: Vec<Expr>) -> MethodCall {
-        MethodCall::new(self, seg, args)
+    fn method_call(self, method: impl Into<PathSegment>, args: Vec<Expr>) -> MethodCall {
+        MethodCall::new(self, method, args)
     }
 }
 
@@ -247,46 +247,46 @@ impl<E: Into<Expr>> Tryable for E {
 }
 
 pub trait Assignable {
-    fn assign(self, rhs: impl Into<Expr>) -> Assign;
+    fn assign(self, right: impl Into<Expr>) -> Assign;
 }
 
 impl<E: Into<Expr>> Assignable for E {
-    fn assign(self, rhs: impl Into<Expr>) -> Assign {
-        Assign::new(self, rhs)
+    fn assign(self, right: impl Into<Expr>) -> Assign {
+        Assign::new(self, right)
     }
 }
 
 pub trait BinaryOperable {
-    fn bin_op(self, op: BinOpKind, rhs: impl Into<Expr>) -> Binary;
-    fn add(self, rhs: impl Into<Expr>) -> Binary
+    fn bin_op(self, op: BinOpKind, right: impl Into<Expr>) -> Binary;
+    fn add(self, right: impl Into<Expr>) -> Binary
     where
         Self: Sized,
     {
-        self.bin_op(BinOpKind::Add, rhs)
+        self.bin_op(BinOpKind::Add, right)
     }
-    fn sub(self, rhs: impl Into<Expr>) -> Binary
+    fn sub(self, right: impl Into<Expr>) -> Binary
     where
         Self: Sized,
     {
-        self.bin_op(BinOpKind::Sub, rhs)
+        self.bin_op(BinOpKind::Sub, right)
     }
-    fn mul(self, rhs: impl Into<Expr>) -> Binary
+    fn mul(self, right: impl Into<Expr>) -> Binary
     where
         Self: Sized,
     {
-        self.bin_op(BinOpKind::Mul, rhs)
+        self.bin_op(BinOpKind::Mul, right)
     }
-    fn div(self, rhs: impl Into<Expr>) -> Binary
+    fn div(self, right: impl Into<Expr>) -> Binary
     where
         Self: Sized,
     {
-        self.bin_op(BinOpKind::Div, rhs)
+        self.bin_op(BinOpKind::Div, right)
     }
 }
 
 impl<E: Into<Expr>> BinaryOperable for E {
-    fn bin_op(self, op: BinOpKind, rhs: impl Into<Expr>) -> Binary {
-        Binary::new(self, op, rhs)
+    fn bin_op(self, op: BinOpKind, right: impl Into<Expr>) -> Binary {
+        Binary::new(self, op, right)
     }
 }
 
@@ -781,7 +781,14 @@ impl From<syn::Expr> for Expr {
             syn::Expr::Array(arr) => Expr::from(Array::from(arr)),
             syn::Expr::Assign(assign) => Expr::from(Assign::from(assign)),
             syn::Expr::Await(awt) => Expr::from(Await::from(awt)),
-            syn::Expr::Binary(bin) => Expr::from(Binary::from(bin)),
+            syn::Expr::Binary(bin) => match BinOpKind::try_from_assign_op(&bin.op) {
+                Some(op) => {
+                    let left = Box::new(Expr::from(*bin.left));
+                    let right = Box::new(Expr::from(*bin.right));
+                    Expr::from(AssignOp { left, op, right })
+                }
+                None => Expr::from(Binary::from(bin)),
+            },
             syn::Expr::Block(block) => Expr::from(Block::from(block)),
             syn::Expr::Break(brk) => Expr::from(Break::from(brk)),
             syn::Expr::Call(call) => Expr::from(Call::from(call)),
@@ -813,6 +820,14 @@ impl From<syn::Expr> for Expr {
             syn::Expr::Unsafe(unsafe_expr) => Expr::from(UnsafeBlock::from(unsafe_expr)),
             syn::Expr::While(while_expr) => Expr::from(While::from(while_expr)),
             syn::Expr::Yield(yield_expr) => Expr::from(Yield::from(yield_expr)),
+            syn::Expr::Async(async_expr) => Expr::from(Async {
+                is_move: async_expr.capture.is_some(),
+                block: Block::from(async_expr.block),
+            }),
+            syn::Expr::Const(const_expr) => {
+                Expr::from(ConstBlock::new(Block::from(const_expr.block)))
+            }
+            syn::Expr::Infer(_) => Expr::from(Underscore {}),
             _ => unimplemented!(),
         }
     }
@@ -1067,9 +1082,9 @@ impl Tuple {
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Binary {
-    pub lhs: Box<Expr>,
+    pub left: Box<Expr>,
     pub op: BinOpKind,
-    pub rhs: Box<Expr>,
+    pub right: Box<Expr>,
 }
 
 #[cfg(feature = "fuzzing")]
@@ -1087,19 +1102,19 @@ impl Binary {
 
 impl fmt::Display for Binary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.precedence() < self.lhs.precedence()
+        if self.precedence() < self.left.precedence()
         // foo as T < y ==> (foo as T) < y
-        || ((self.op == BinOpKind::Lt || self.op == BinOpKind::Shl) && self.lhs.precedence() == OperatorPrecedence::Cast)
+        || ((self.op == BinOpKind::Lt || self.op == BinOpKind::Shl) && self.left.precedence() == OperatorPrecedence::Cast)
         {
-            write!(f, "({})", self.lhs)?;
+            write!(f, "({})", self.left)?;
         } else {
-            write!(f, "{}", self.lhs)?;
+            write!(f, "{}", self.left)?;
         }
         write!(f, " {} ", self.op)?;
-        if self.precedence() < self.rhs.precedence() {
-            write!(f, "({})", self.rhs)?;
+        if self.precedence() < self.right.precedence() {
+            write!(f, "({})", self.right)?;
         } else {
-            write!(f, "{}", self.rhs)?;
+            write!(f, "{}", self.right)?;
         }
         Ok(())
     }
@@ -1108,13 +1123,13 @@ impl fmt::Display for Binary {
 #[cfg(feature = "syn")]
 impl From<syn::ExprBinary> for Binary {
     fn from(value: syn::ExprBinary) -> Self {
-        let lhs = Expr::from(*value.left);
+        let left = Expr::from(*value.left);
         let op = BinOpKind::from(value.op);
-        let rhs = Expr::from(*value.right);
+        let right = Expr::from(*value.right);
         Self {
-            lhs: Box::new(lhs),
+            left: Box::new(left),
             op,
-            rhs: Box::new(rhs),
+            right: Box::new(right),
         }
     }
 }
@@ -1123,23 +1138,23 @@ impl From<Binary> for TokenStream {
     fn from(value: Binary) -> Self {
         let mut ts = TokenStream::new();
         let precedence = value.precedence();
-        if precedence < value.lhs.precedence()
+        if precedence < value.left.precedence()
         // foo as T < y ==> (foo as T) < y
-        || ((value.op == BinOpKind::Lt || value.op == BinOpKind::Shl) && value.lhs.precedence() == OperatorPrecedence::Cast)
+        || ((value.op == BinOpKind::Lt || value.op == BinOpKind::Shl) && value.left.precedence() == OperatorPrecedence::Cast)
         {
             ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-            ts.extend(TokenStream::from(*value.lhs).into_joint());
+            ts.extend(TokenStream::from(*value.left).into_joint());
             ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         } else {
-            ts.extend(TokenStream::from(*value.lhs));
+            ts.extend(TokenStream::from(*value.left));
         }
         ts.push(Token::from(value.op));
-        if precedence < value.rhs.precedence() {
+        if precedence < value.right.precedence() {
             ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-            ts.extend(TokenStream::from(*value.rhs).into_joint());
+            ts.extend(TokenStream::from(*value.right).into_joint());
             ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         } else {
-            ts.extend(TokenStream::from(*value.rhs));
+            ts.extend(TokenStream::from(*value.right));
         }
         ts
     }
@@ -1148,29 +1163,29 @@ impl From<Binary> for TokenStream {
 impl<E: Into<Expr>> Add<E> for Expr {
     type Output = Binary;
 
-    fn add(self, rhs: E) -> Self::Output {
-        Binary::new(self, BinOpKind::Add, rhs)
+    fn add(self, right: E) -> Self::Output {
+        Binary::new(self, BinOpKind::Add, right)
     }
 }
 impl<E: Into<Expr>> Sub<E> for Expr {
     type Output = Binary;
 
-    fn sub(self, rhs: E) -> Self::Output {
-        Binary::new(self, BinOpKind::Sub, rhs)
+    fn sub(self, right: E) -> Self::Output {
+        Binary::new(self, BinOpKind::Sub, right)
     }
 }
 impl<E: Into<Expr>> Mul<E> for Expr {
     type Output = Binary;
 
-    fn mul(self, rhs: E) -> Self::Output {
-        Binary::new(self, BinOpKind::Mul, rhs)
+    fn mul(self, right: E) -> Self::Output {
+        Binary::new(self, BinOpKind::Mul, right)
     }
 }
 impl<E: Into<Expr>> Div<E> for Expr {
     type Output = Binary;
 
-    fn div(self, rhs: E) -> Self::Output {
-        Binary::new(self, BinOpKind::Div, rhs)
+    fn div(self, right: E) -> Self::Output {
+        Binary::new(self, BinOpKind::Div, right)
     }
 }
 
@@ -1181,11 +1196,11 @@ impl HasPrecedence for Binary {
 }
 
 impl Binary {
-    pub fn new(lhs: impl Into<Expr>, op: BinOpKind, rhs: impl Into<Expr>) -> Self {
+    pub fn new(left: impl Into<Expr>, op: BinOpKind, right: impl Into<Expr>) -> Self {
         Self {
-            lhs: Box::new(lhs.into()),
+            left: Box::new(left.into()),
             op,
-            rhs: Box::new(rhs.into()),
+            right: Box::new(right.into()),
         }
     }
 }
@@ -1453,10 +1468,11 @@ impl If {
     }
 }
 
-/// `'while' cond { body }`
+/// `('label ':')? 'while' cond { body }`
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct While {
+    pub label: Option<String>,
     pub cond: Box<Expr>,
     pub body: Block,
 }
@@ -1469,6 +1485,9 @@ impl HasPrecedence for While {
 
 impl fmt::Display for While {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(label) = &self.label {
+            write!(f, "'{label}: ")?;
+        }
         write!(f, "while ")?;
         if self.cond.should_wrap() {
             write!(f, "({})", self.cond)?;
@@ -1482,9 +1501,11 @@ impl fmt::Display for While {
 #[cfg(feature = "syn")]
 impl From<syn::ExprWhile> for While {
     fn from(value: syn::ExprWhile) -> Self {
+        let label = value.label.map(|l| l.name.ident.to_string().into());
         let cond = Expr::from(*value.cond);
         let body = Block::from(value.body);
         Self {
+            label,
             cond: Box::new(cond),
             body,
         }
@@ -1494,6 +1515,10 @@ impl From<syn::ExprWhile> for While {
 impl From<While> for TokenStream {
     fn from(value: While) -> Self {
         let mut ts = TokenStream::new();
+        if let Some(label) = value.label {
+            ts.push(Token::lifetime(label).into_joint());
+            ts.push(Token::Colon);
+        }
         ts.push(Token::Keyword(KeywordToken::While));
         if value.cond.should_wrap() {
             ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
@@ -1510,16 +1535,18 @@ impl From<While> for TokenStream {
 impl While {
     pub fn new(cond: impl Into<Expr>, body: Block) -> Self {
         Self {
+            label: None,
             cond: Box::new(cond.into()),
             body,
         }
     }
 }
 
-/// `'for' pat 'in' expr { body }`
+/// `('label ':')? 'for' pat 'in' expr { body }`
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ForLoop {
+    pub label: Option<String>,
     pub pat: Box<Pat>,
     pub expr: Box<Expr>,
     pub body: Block,
@@ -1533,6 +1560,9 @@ impl HasPrecedence for ForLoop {
 
 impl fmt::Display for ForLoop {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(label) = &self.label {
+            write!(f, "'{label}: ")?;
+        }
         write!(f, "for {pat} in ", pat = self.pat,)?;
         if self.expr.should_wrap() {
             write!(f, "({})", self.expr)?;
@@ -1546,10 +1576,12 @@ impl fmt::Display for ForLoop {
 #[cfg(feature = "syn")]
 impl From<syn::ExprForLoop> for ForLoop {
     fn from(value: syn::ExprForLoop) -> Self {
+        let label = value.label.map(|l| l.name.ident.to_string().into());
         let pat = Pat::from(*value.pat);
         let expr = Expr::from(*value.expr);
         let body = Block::from(value.body);
         Self {
+            label,
             pat: Box::new(pat),
             expr: Box::new(expr),
             body,
@@ -1560,6 +1592,10 @@ impl From<syn::ExprForLoop> for ForLoop {
 impl From<ForLoop> for TokenStream {
     fn from(value: ForLoop) -> Self {
         let mut ts = TokenStream::new();
+        if let Some(label) = value.label {
+            ts.push(Token::lifetime(label).into_joint());
+            ts.push(Token::Colon);
+        }
         ts.push(Token::Keyword(KeywordToken::For));
         ts.extend(TokenStream::from(*value.pat));
         ts.push(Token::Keyword(KeywordToken::In));
@@ -1578,6 +1614,7 @@ impl From<ForLoop> for TokenStream {
 impl ForLoop {
     pub fn new(pat: impl Into<Pat>, expr: impl Into<Expr>, body: Block) -> Self {
         Self {
+            label: None,
             pat: Box::new(pat.into()),
             expr: Box::new(expr.into()),
             body,
@@ -1585,10 +1622,11 @@ impl ForLoop {
     }
 }
 
-/// `'loop' { body }`
+/// `('label ':')? 'loop' { body }`
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Loop {
+    pub label: Option<String>,
     pub body: Block,
 }
 
@@ -1600,6 +1638,9 @@ impl HasPrecedence for Loop {
 
 impl fmt::Display for Loop {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(label) = &self.label {
+            write!(f, "'{label}: ")?;
+        }
         write!(f, "loop {body}", body = self.body)
     }
 }
@@ -1607,14 +1648,19 @@ impl fmt::Display for Loop {
 #[cfg(feature = "syn")]
 impl From<syn::ExprLoop> for Loop {
     fn from(value: syn::ExprLoop) -> Self {
+        let label = value.label.map(|l| l.name.ident.to_string().into());
         let body = Block::from(value.body);
-        Self { body }
+        Self { label, body }
     }
 }
 
 impl From<Loop> for TokenStream {
     fn from(value: Loop) -> Self {
         let mut ts = TokenStream::new();
+        if let Some(label) = value.label {
+            ts.push(Token::lifetime(label).into_joint());
+            ts.push(Token::Colon);
+        }
         ts.push(Token::Keyword(KeywordToken::Loop));
         ts.extend(TokenStream::from(value.body));
         ts
@@ -1631,7 +1677,10 @@ impl EmptyItem for Loop {
 
 impl Loop {
     pub fn new(body: Block) -> Self {
-        Self { body }
+        Self {
+            label: None,
+            body,
+        }
     }
 }
 
@@ -2022,10 +2071,11 @@ impl Closure {
     }
 }
 
-/// `'async' { ... }`
+/// `'async' { ... }` or `'async move' { ... }`
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Async {
+    pub is_move: bool,
     pub block: Block,
 }
 
@@ -2037,7 +2087,11 @@ impl HasPrecedence for Async {
 
 impl fmt::Display for Async {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "async {block}", block = self.block)
+        if self.is_move {
+            write!(f, "async move {block}", block = self.block)
+        } else {
+            write!(f, "async {block}", block = self.block)
+        }
     }
 }
 
@@ -2045,6 +2099,9 @@ impl From<Async> for TokenStream {
     fn from(value: Async) -> Self {
         let mut ts = TokenStream::new();
         ts.push(Token::Keyword(KeywordToken::Async));
+        if value.is_move {
+            ts.push(Token::Keyword(KeywordToken::Move));
+        }
         ts.extend(TokenStream::from(value.block));
         ts
     }
@@ -2060,7 +2117,10 @@ impl EmptyItem for Async {
 
 impl Async {
     pub fn new(block: Block) -> Self {
-        Self { block }
+        Self {
+            is_move: false,
+            block,
+        }
     }
 }
 
@@ -2574,12 +2634,12 @@ impl Yield {
     }
 }
 
-/// `lhs = rhs`
+/// `left = right`
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Assign {
-    pub lhs: Box<Expr>,
-    pub rhs: Box<Expr>,
+    pub left: Box<Expr>,
+    pub right: Box<Expr>,
 }
 
 impl HasPrecedence for Assign {
@@ -2590,16 +2650,16 @@ impl HasPrecedence for Assign {
 
 impl fmt::Display for Assign {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.precedence() < self.lhs.precedence() {
-            write!(f, "({})", self.lhs)?;
+        if self.precedence() < self.left.precedence() {
+            write!(f, "({})", self.left)?;
         } else {
-            write!(f, "{}", self.lhs)?;
+            write!(f, "{}", self.left)?;
         }
         write!(f, " = ")?;
-        if self.precedence() < self.rhs.precedence() {
-            write!(f, "({})", self.rhs)
+        if self.precedence() < self.right.precedence() {
+            write!(f, "({})", self.right)
         } else {
-            write!(f, "{}", self.rhs)
+            write!(f, "{}", self.right)
         }
     }
 }
@@ -2608,8 +2668,8 @@ impl fmt::Display for Assign {
 impl From<syn::ExprAssign> for Assign {
     fn from(value: syn::ExprAssign) -> Self {
         Self {
-            lhs: Box::new(Expr::from(*value.left)),
-            rhs: Box::new(Expr::from(*value.right)),
+            left: Box::new(Expr::from(*value.left)),
+            right: Box::new(Expr::from(*value.right)),
         }
     }
 }
@@ -2618,30 +2678,30 @@ impl From<Assign> for TokenStream {
     fn from(value: Assign) -> Self {
         let mut ts = TokenStream::new();
         let precedence = value.precedence();
-        if precedence < value.lhs.precedence() {
+        if precedence < value.left.precedence() {
             ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-            ts.extend(TokenStream::from(*value.lhs).into_joint());
+            ts.extend(TokenStream::from(*value.left).into_joint());
             ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         } else {
-            ts.extend(TokenStream::from(*value.lhs));
+            ts.extend(TokenStream::from(*value.left));
         }
         ts.push(Token::Eq);
-        if precedence < value.rhs.precedence() {
+        if precedence < value.right.precedence() {
             ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-            ts.extend(TokenStream::from(*value.rhs).into_joint());
+            ts.extend(TokenStream::from(*value.right).into_joint());
             ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         } else {
-            ts.extend(TokenStream::from(*value.rhs));
+            ts.extend(TokenStream::from(*value.right));
         }
         ts
     }
 }
 
 impl Assign {
-    pub fn new(lhs: impl Into<Expr>, rhs: impl Into<Expr>) -> Self {
+    pub fn new(left: impl Into<Expr>, right: impl Into<Expr>) -> Self {
         Self {
-            lhs: Box::new(lhs.into()),
-            rhs: Box::new(rhs.into()),
+            left: Box::new(left.into()),
+            right: Box::new(right.into()),
         }
     }
 }
@@ -2786,6 +2846,25 @@ impl From<syn::BinOp> for BinOpKind {
     }
 }
 
+#[cfg(feature = "syn")]
+impl BinOpKind {
+    fn try_from_assign_op(op: &syn::BinOp) -> Option<Self> {
+        match op {
+            syn::BinOp::AddAssign(_) => Some(Self::Add),
+            syn::BinOp::SubAssign(_) => Some(Self::Sub),
+            syn::BinOp::MulAssign(_) => Some(Self::Mul),
+            syn::BinOp::DivAssign(_) => Some(Self::Div),
+            syn::BinOp::RemAssign(_) => Some(Self::Rem),
+            syn::BinOp::BitAndAssign(_) => Some(Self::BitAnd),
+            syn::BinOp::BitOrAssign(_) => Some(Self::BitOr),
+            syn::BinOp::BitXorAssign(_) => Some(Self::BitXor),
+            syn::BinOp::ShlAssign(_) => Some(Self::Shl),
+            syn::BinOp::ShrAssign(_) => Some(Self::Shr),
+            _ => None,
+        }
+    }
+}
+
 impl BinOpKind {
     pub fn as_assign_op(&self) -> &str {
         match self {
@@ -2837,21 +2916,21 @@ impl From<BinOpKind> for TokenStream {
     }
 }
 
-/// `lhs op= rhs`
+/// `left op= right`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AssignOp {
-    pub lhs: Box<Expr>,
+    pub left: Box<Expr>,
     pub op: BinOpKind,
-    pub rhs: Box<Expr>,
+    pub right: Box<Expr>,
 }
 
 #[cfg(feature = "fuzzing")]
 impl<'a> arbitrary::Arbitrary<'a> for AssignOp {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         Ok(Self {
-            lhs: Box::new(Expr::arbitrary(u)?),
+            left: Box::new(Expr::arbitrary(u)?),
             op: BinOpKind::arbitrary_assign_op(u)?,
-            rhs: Box::new(Expr::arbitrary(u)?),
+            right: Box::new(Expr::arbitrary(u)?),
         })
     }
 }
@@ -2864,16 +2943,16 @@ impl HasPrecedence for AssignOp {
 
 impl fmt::Display for AssignOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.precedence() < self.lhs.precedence() {
-            write!(f, "({})", self.lhs)?;
+        if self.precedence() < self.left.precedence() {
+            write!(f, "({})", self.left)?;
         } else {
-            write!(f, "{}", self.lhs)?;
+            write!(f, "{}", self.left)?;
         }
         write!(f, " {} ", self.op.as_assign_op())?;
-        if self.precedence() < self.rhs.precedence() {
-            write!(f, "({})", self.rhs)
+        if self.precedence() < self.right.precedence() {
+            write!(f, "({})", self.right)
         } else {
-            write!(f, "{}", self.rhs)
+            write!(f, "{}", self.right)
         }
     }
 }
@@ -2882,31 +2961,31 @@ impl From<AssignOp> for TokenStream {
     fn from(value: AssignOp) -> Self {
         let mut ts = TokenStream::new();
         let precedence = value.precedence();
-        if precedence < value.lhs.precedence() {
+        if precedence < value.left.precedence() {
             ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-            ts.extend(TokenStream::from(*value.lhs).into_joint());
+            ts.extend(TokenStream::from(*value.left).into_joint());
             ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         } else {
-            ts.extend(TokenStream::from(*value.lhs));
+            ts.extend(TokenStream::from(*value.left));
         }
         ts.push(Token::from(value.op));
-        if precedence < value.rhs.precedence() {
+        if precedence < value.right.precedence() {
             ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
-            ts.extend(TokenStream::from(*value.rhs).into_joint());
+            ts.extend(TokenStream::from(*value.right).into_joint());
             ts.push(Token::CloseDelim(Delimiter::Parenthesis));
         } else {
-            ts.extend(TokenStream::from(*value.rhs));
+            ts.extend(TokenStream::from(*value.right));
         }
         ts
     }
 }
 
 impl AssignOp {
-    pub fn new(lhs: impl Into<Expr>, op: BinOpKind, rhs: impl Into<Expr>) -> Self {
+    pub fn new(left: impl Into<Expr>, op: BinOpKind, right: impl Into<Expr>) -> Self {
         Self {
-            lhs: Box::new(lhs.into()),
+            left: Box::new(left.into()),
             op,
-            rhs: Box::new(rhs.into()),
+            right: Box::new(right.into()),
         }
     }
 }
@@ -3251,7 +3330,7 @@ impl Call {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MethodCall {
     pub receiver: Box<Expr>,
-    pub seg: PathSegment,
+    pub method: PathSegment,
     pub args: Vec<Expr>,
 }
 
@@ -3268,7 +3347,7 @@ impl fmt::Display for MethodCall {
         } else {
             write!(f, "{}", self.receiver)?;
         }
-        write!(f, ".{}(", self.seg)?;
+        write!(f, ".{}(", self.method)?;
         for (i, arg) in self.args.iter().enumerate() {
             if i > 0 {
                 write!(f, ", ")?;
@@ -3283,11 +3362,23 @@ impl fmt::Display for MethodCall {
 impl From<syn::ExprMethodCall> for MethodCall {
     fn from(value: syn::ExprMethodCall) -> Self {
         let receiver = Expr::from(*value.receiver);
-        let seg = PathSegment::from(value.method);
+        let method = if let Some(turbofish) = value.turbofish {
+            let args: Vec<GenericArg> = turbofish
+                .args
+                .into_iter()
+                .map(GenericArg::from)
+                .collect();
+            PathSegment {
+                ident: value.method.to_string().into(),
+                args: Some(args),
+            }
+        } else {
+            PathSegment::from(value.method)
+        };
         let args = value.args.into_iter().map(Expr::from).collect();
         Self {
             receiver: Box::new(receiver),
-            seg,
+            method,
             args,
         }
     }
@@ -3305,7 +3396,7 @@ impl From<MethodCall> for TokenStream {
             ts.extend(TokenStream::from(*value.receiver).into_joint());
         }
         ts.push(Token::Dot.into_joint());
-        ts.extend(TokenStream::from(value.seg).into_joint());
+        ts.extend(TokenStream::from(value.method).into_joint());
         ts.push(Token::OpenDelim(Delimiter::Parenthesis).into_joint());
         for (i, arg) in value.args.iter().enumerate() {
             if i > 0 {
@@ -3319,10 +3410,10 @@ impl From<MethodCall> for TokenStream {
 }
 
 impl MethodCall {
-    pub fn new(receiver: impl Into<Expr>, seg: impl Into<PathSegment>, args: Vec<Expr>) -> Self {
+    pub fn new(receiver: impl Into<Expr>, method: impl Into<PathSegment>, args: Vec<Expr>) -> Self {
         Self {
             receiver: Box::new(receiver.into()),
-            seg: seg.into(),
+            method: method.into(),
             args,
         }
     }
@@ -3330,6 +3421,7 @@ impl MethodCall {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Path {
+    pub is_global: bool,
     pub segments: Vec<PathSegment>,
 }
 
@@ -3341,7 +3433,7 @@ impl<'a> arbitrary::Arbitrary<'a> for Path {
         for _ in 0..len {
             segments.push(PathSegment::arbitrary(u)?);
         }
-        Ok(Self { segments })
+        Ok(Self { is_global: false, segments })
     }
 }
 
@@ -3353,7 +3445,7 @@ impl Path {
         for _ in 0..len {
             segments.push(PathSegment::arbitrary_no_arg(u)?);
         }
-        Ok(Self { segments })
+        Ok(Self { is_global: false, segments })
     }
 }
 
@@ -3365,6 +3457,9 @@ impl HasPrecedence for Path {
 
 impl fmt::Display for Path {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_global {
+            write!(f, "::")?;
+        }
         let mut iter = self.segments.iter();
         if let Some(segment) = iter.next() {
             write!(f, "{segment}")?;
@@ -3380,6 +3475,7 @@ impl fmt::Display for Path {
 impl From<syn::Path> for Path {
     fn from(value: syn::Path) -> Self {
         Self {
+            is_global: value.leading_colon.is_some(),
             segments: value
                 .segments
                 .into_iter()
@@ -3417,10 +3513,18 @@ impl From<&str> for Path {
         Self::single(PathSegment::simple(ident))
     }
 }
+impl From<Vec<PathSegment>> for Path {
+    fn from(segments: Vec<PathSegment>) -> Self {
+        Self { is_global: false, segments }
+    }
+}
 
 impl From<Path> for TokenStream {
     fn from(value: Path) -> Self {
         let mut ts = TokenStream::new();
+        if value.is_global {
+            ts.push(Token::ModSep.into_joint());
+        }
         for (i, segment) in value.segments.iter().enumerate() {
             if i > 0 {
                 ts.push(Token::ModSep.into_joint());
@@ -3437,19 +3541,24 @@ impl From<Path> for TokenStream {
 
 impl Path {
     pub const fn new(segments: Vec<PathSegment>) -> Self {
-        Self { segments }
+        Self { is_global: false, segments }
     }
 
     pub fn single(ident: impl Into<PathSegment>) -> Self {
         Self {
+            is_global: false,
             segments: vec![ident.into()],
         }
+    }
+
+    pub fn global(segments: Vec<PathSegment>) -> Self {
+        Self { is_global: true, segments }
     }
 
     pub fn chain(self, ident: impl Into<PathSegment>) -> Self {
         let mut segments = self.segments;
         segments.push(ident.into());
-        Self { segments }
+        Self { is_global: self.is_global, segments }
     }
 
     pub fn chain_use_group(self, group: Vec<UseTree>) -> UseTree {
@@ -3479,7 +3588,7 @@ impl Path {
         MacCall::new(self, args)
     }
 
-    pub fn struct_(self, fields: Vec<ExprField>) -> Struct {
+    pub fn struct_(self, fields: Vec<FieldValue>) -> Struct {
         Struct::new(self, fields, None)
     }
 
@@ -3785,7 +3894,7 @@ impl fmt::Display for Break {
 #[cfg(feature = "syn")]
 impl From<syn::ExprBreak> for Break {
     fn from(value: syn::ExprBreak) -> Self {
-        let label = value.label.map(|l| l.to_string().into());
+        let label = value.label.map(|l| l.ident.to_string().into());
         let expr = value.expr.map(|e| Box::new(Expr::from(*e)));
         Self { label, expr }
     }
@@ -3868,6 +3977,16 @@ pub enum GenericArg {
     Lifetime(String),
     Type(Type),
     Const(Const),
+    /// `Item = u32`
+    AssocType {
+        ident: String,
+        ty: Type,
+    },
+    /// `Item: Display`
+    AssocConst {
+        ident: String,
+        value: Const,
+    },
 }
 
 impl fmt::Display for GenericArg {
@@ -3876,6 +3995,8 @@ impl fmt::Display for GenericArg {
             Self::Lifetime(lifetime) => write!(f, "'{lifetime}"),
             Self::Type(ty) => write!(f, "{ty}"),
             Self::Const(constant) => write!(f, "{constant}"),
+            Self::AssocType { ident, ty } => write!(f, "{ident} = {ty}"),
+            Self::AssocConst { ident, value } => write!(f, "{ident} = {value}"),
         }
     }
 }
@@ -3884,10 +4005,20 @@ impl fmt::Display for GenericArg {
 impl From<syn::GenericArgument> for GenericArg {
     fn from(value: syn::GenericArgument) -> Self {
         match value {
-            syn::GenericArgument::Lifetime(lifetime) => Self::Lifetime(lifetime.to_string().into()),
+            syn::GenericArgument::Lifetime(lifetime) => {
+                Self::Lifetime(lifetime.ident.to_string().into())
+            }
             syn::GenericArgument::Type(ty) => Self::Type(Type::from(ty)),
             syn::GenericArgument::Const(constant) => Self::Const(Const::from(constant)),
-            _ => unreachable!(),
+            syn::GenericArgument::AssocType(assoc) => Self::AssocType {
+                ident: assoc.ident.to_string().into(),
+                ty: Type::from(assoc.ty),
+            },
+            syn::GenericArgument::AssocConst(assoc) => Self::AssocConst {
+                ident: assoc.ident.to_string().into(),
+                value: Const::from(assoc.value),
+            },
+            _ => unimplemented!(),
         }
     }
 }
@@ -3898,6 +4029,20 @@ impl From<GenericArg> for TokenStream {
             GenericArg::Lifetime(lifetime) => TokenStream::from(vec![Token::lifetime(lifetime)]),
             GenericArg::Type(ty) => TokenStream::from(ty),
             GenericArg::Const(constant) => TokenStream::from(constant),
+            GenericArg::AssocType { ident, ty } => {
+                let mut ts = TokenStream::new();
+                ts.push(Token::ident(ident));
+                ts.push(Token::Eq);
+                ts.extend(TokenStream::from(ty));
+                ts
+            }
+            GenericArg::AssocConst { ident, value } => {
+                let mut ts = TokenStream::new();
+                ts.push(Token::ident(ident));
+                ts.push(Token::Eq);
+                ts.extend(TokenStream::from(value));
+                ts
+            }
         }
     }
 }
@@ -4110,19 +4255,19 @@ impl MacCall {
 /// `ident: expr`
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ExprField {
+pub struct FieldValue {
     pub ident: String,
     pub expr: Expr,
 }
 
-impl fmt::Display for ExprField {
+impl fmt::Display for FieldValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{ident}: {expr}", ident = self.ident, expr = self.expr)
     }
 }
 
-impl From<ExprField> for TokenStream {
-    fn from(value: ExprField) -> Self {
+impl From<FieldValue> for TokenStream {
+    fn from(value: FieldValue) -> Self {
         let mut ts = TokenStream::new();
         ts.push(Token::ident(value.ident).into_joint());
         ts.push(Token::Colon);
@@ -4131,7 +4276,7 @@ impl From<ExprField> for TokenStream {
     }
 }
 
-impl ExprField {
+impl FieldValue {
     pub fn new(ident: impl Into<String>, expr: impl Into<Expr>) -> Self {
         Self {
             ident: ident.into(),
@@ -4152,7 +4297,7 @@ impl ExprField {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Struct {
     pub path: Path,
-    pub fields: Vec<ExprField>,
+    pub fields: Vec<FieldValue>,
     pub rest: Option<Box<Expr>>,
 }
 
@@ -4179,14 +4324,14 @@ impl fmt::Display for Struct {
 impl From<syn::ExprStruct> for Struct {
     fn from(value: syn::ExprStruct) -> Self {
         let path = Path::from(value.path);
-        let fields = value.fields.into_iter().map(ExprField::from).collect();
+        let fields = value.fields.into_iter().map(FieldValue::from).collect();
         let rest = value.rest.map(|r| Box::new(Expr::from(*r)));
         Self { path, fields, rest }
     }
 }
 
 #[cfg(feature = "syn")]
-impl From<syn::FieldValue> for ExprField {
+impl From<syn::FieldValue> for FieldValue {
     fn from(value: syn::FieldValue) -> Self {
         let ident = match value.member {
             syn::Member::Named(ident) => ident.to_string(),
@@ -4225,7 +4370,7 @@ impl From<Struct> for TokenStream {
 }
 
 impl Struct {
-    pub fn new(path: impl Into<Path>, fields: Vec<ExprField>, rest: Option<Expr>) -> Self {
+    pub fn new(path: impl Into<Path>, fields: Vec<FieldValue>, rest: Option<Expr>) -> Self {
         Self {
             path: path.into(),
             fields,
@@ -4620,10 +4765,10 @@ impl Expr {
         }))
     }
 
-    pub fn method_call(self, seg: PathSegment, args: Vec<Expr>) -> Self {
+    pub fn method_call(self, method: PathSegment, args: Vec<Expr>) -> Self {
         Self::new(ExprKind::MethodCall(MethodCall {
             receiver: Box::new(self),
-            seg,
+            method,
             args,
         }))
     }

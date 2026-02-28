@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::expr::{Const, GenericArg, Lit, MacCall, Path, PathSegment};
+use crate::expr::{Const, Expr, GenericArg, Lit, MacCall, Path, PathSegment};
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 use crate::EmptyItem;
 
@@ -304,7 +304,12 @@ impl From<syn::TypeBareFn> for BareFn {
             syn::ReturnType::Type(_, ty) => Some(Box::new(Type::from(*ty))),
         };
         let is_unsafe = value.unsafety.is_some();
-        let abi = value.abi.map(|a| a.name.as_ref().unwrap().value().into());
+        let abi = value.abi.map(|a| {
+            a.name
+                .map(|n| n.value())
+                .unwrap_or_else(|| "C".to_string())
+                .into()
+        });
         let generic_params = value
             .lifetimes
             .map(|bl| {
@@ -403,6 +408,7 @@ impl BareFn {
 pub struct TypeParam {
     pub ident: String,
     pub bounds: Vec<GenericBound>,
+    pub default: Option<Type>,
 }
 
 impl fmt::Display for TypeParam {
@@ -418,6 +424,9 @@ impl fmt::Display for TypeParam {
                     .collect::<Vec<_>>()
                     .join(" + ")
             )?;
+        }
+        if let Some(default) = &self.default {
+            write!(f, " = {default}")?;
         }
         Ok(())
     }
@@ -436,6 +445,10 @@ impl From<TypeParam> for TokenStream {
                 ts.extend(TokenStream::from(bound));
             }
         }
+        if let Some(default) = value.default {
+            ts.push(Token::Eq);
+            ts.extend(TokenStream::from(default));
+        }
         ts
     }
 }
@@ -445,6 +458,7 @@ impl TypeParam {
         Self {
             ident: ident.into(),
             bounds,
+            default: None,
         }
     }
 
@@ -452,6 +466,7 @@ impl TypeParam {
         Self {
             ident: ident.into(),
             bounds: vec![],
+            default: None,
         }
     }
 
@@ -470,11 +485,16 @@ impl TypeParam {
 pub struct ConstParam {
     pub ident: String,
     pub ty: Type,
+    pub default: Option<Expr>,
 }
 
 impl fmt::Display for ConstParam {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "const {}: {}", self.ident, self.ty)
+        write!(f, "const {}: {}", self.ident, self.ty)?;
+        if let Some(default) = &self.default {
+            write!(f, " = {default}")?;
+        }
+        Ok(())
     }
 }
 
@@ -485,6 +505,10 @@ impl From<ConstParam> for TokenStream {
         ts.push(Token::ident(value.ident).into_joint());
         ts.push(Token::Colon);
         ts.extend(TokenStream::from(value.ty));
+        if let Some(default) = value.default {
+            ts.push(Token::Eq);
+            ts.extend(TokenStream::from(default));
+        }
         ts
     }
 }
@@ -494,6 +518,63 @@ impl ConstParam {
         Self {
             ident: ident.into(),
             ty,
+            default: None,
+        }
+    }
+}
+
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LifetimeParam {
+    pub name: String,
+    pub bounds: Vec<String>,
+}
+
+impl fmt::Display for LifetimeParam {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "'{}", self.name)?;
+        if !self.bounds.is_empty() {
+            write!(f, ": ")?;
+            for (i, bound) in self.bounds.iter().enumerate() {
+                if i > 0 {
+                    write!(f, " + ")?;
+                }
+                write!(f, "'{bound}")?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl From<LifetimeParam> for TokenStream {
+    fn from(value: LifetimeParam) -> Self {
+        let mut ts = TokenStream::new();
+        ts.push(Token::Lifetime(value.name).into_joint());
+        if !value.bounds.is_empty() {
+            ts.push(Token::Colon);
+            for (i, bound) in value.bounds.iter().enumerate() {
+                if i > 0 {
+                    ts.push(Token::BinOp(BinOpToken::Plus));
+                }
+                ts.push(Token::Lifetime(bound.clone()));
+            }
+        }
+        ts
+    }
+}
+
+impl LifetimeParam {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            bounds: vec![],
+        }
+    }
+
+    pub fn with_bounds(name: impl Into<String>, bounds: Vec<String>) -> Self {
+        Self {
+            name: name.into(),
+            bounds,
         }
     }
 }
@@ -503,7 +584,7 @@ impl ConstParam {
 pub enum GenericParam {
     TypeParam(TypeParam),
     ConstParam(ConstParam),
-    Lifetime(String),
+    Lifetime(LifetimeParam),
 }
 
 impl fmt::Display for GenericParam {
@@ -511,7 +592,7 @@ impl fmt::Display for GenericParam {
         match self {
             Self::TypeParam(tp) => write!(f, "{tp}"),
             Self::ConstParam(cp) => write!(f, "{cp}"),
-            Self::Lifetime(lt) => write!(f, "'{lt}"),
+            Self::Lifetime(lt) => write!(f, "{lt}"),
         }
     }
 }
@@ -521,7 +602,7 @@ impl From<GenericParam> for TokenStream {
         match item {
             GenericParam::TypeParam(v) => v.into(),
             GenericParam::ConstParam(v) => v.into(),
-            GenericParam::Lifetime(lt) => TokenStream::from(vec![Token::Lifetime(lt)]),
+            GenericParam::Lifetime(lt) => lt.into(),
         }
     }
 }
@@ -538,6 +619,12 @@ impl From<ConstParam> for GenericParam {
     }
 }
 
+impl From<LifetimeParam> for GenericParam {
+    fn from(item: LifetimeParam) -> Self {
+        Self::Lifetime(item)
+    }
+}
+
 #[cfg(feature = "syn")]
 impl From<syn::GenericParam> for GenericParam {
     fn from(value: syn::GenericParam) -> Self {
@@ -545,13 +632,19 @@ impl From<syn::GenericParam> for GenericParam {
             syn::GenericParam::Type(tp) => GenericParam::TypeParam(TypeParam {
                 ident: tp.ident.to_string().into(),
                 bounds: tp.bounds.into_iter().map(GenericBound::from).collect(),
+                default: tp.default.map(Type::from),
             }),
             syn::GenericParam::Const(cp) => GenericParam::ConstParam(ConstParam {
                 ident: cp.ident.to_string().into(),
                 ty: Type::from(cp.ty),
+                default: cp.default.map(Expr::from),
             }),
             syn::GenericParam::Lifetime(lt) => {
-                GenericParam::Lifetime(lt.lifetime.ident.to_string().into())
+                let bounds = lt.bounds.iter().map(|b| b.ident.to_string().into()).collect();
+                GenericParam::Lifetime(LifetimeParam {
+                    name: lt.lifetime.ident.to_string().into(),
+                    bounds,
+                })
             }
         }
     }
@@ -630,6 +723,12 @@ impl PolyTraitRef {
 pub enum GenericBound {
     Trait(PolyTraitRef),
     Outlives(String),
+}
+
+impl From<PolyTraitRef> for GenericBound {
+    fn from(value: PolyTraitRef) -> Self {
+        Self::Trait(value)
+    }
 }
 
 impl fmt::Display for GenericBound {

@@ -34,6 +34,7 @@ fn test_general() {
         ident: "main".into(),
         generics: vec![],
         fn_decl: FnDecl::regular(vec![], None),
+        where_clauses: None,
         body: Some(Block::from(Stmt::Semi(Semi::new(Expr::new(MacCall {
             path: Path::single("println"),
             args: DelimArgs::from(vec![Token::lit("Hello, world!")]),
@@ -109,9 +110,9 @@ fn test_if_else() {
 
 #[test]
 fn test_binop() {
-    let lhs = Lit::int("1");
-    let rhs = Lit::int("2");
-    let add = lhs.clone().add(rhs.clone());
+    let left = Lit::int("1");
+    let right = Lit::int("2");
+    let add = left.clone().add(right.clone());
     assert_snapshot!(add, @"1 + 2");
 
     let add_add = add.clone().add(Lit::int("3"));
@@ -120,11 +121,11 @@ fn test_binop() {
     let mul_add = add.mul(Lit::int("3"));
     assert_snapshot!(mul_add, @"(1 + 2) * 3");
 
-    let mul = lhs.clone().mul(rhs.clone());
+    let mul = left.clone().mul(right.clone());
     let add_mul = mul.add(Lit::int("3"));
     assert_snapshot!(add_mul, @"1 * 2 + 3");
 
-    let add = lhs.neg().add(rhs.neg());
+    let add = left.neg().add(right.neg());
     assert_snapshot!(add, @"-1 + -2");
 }
 
@@ -232,9 +233,9 @@ fn test_tuple() {
 #[test]
 fn test_struct() {
     let x = Path::single("x");
-    let field1 = ExprField::new("a", Lit::int("1"));
-    let field2 = ExprField::new("b", x.clone());
-    let field3 = ExprField::new("c", Lit::int("3"));
+    let field1 = FieldValue::new("a", Lit::int("1"));
+    let field2 = FieldValue::new("b", x.clone());
+    let field3 = FieldValue::new("c", Lit::int("3"));
     let struct_ = Struct::new("MyStruct", vec![field1, field2, field3], None);
     assert_snapshot!(struct_, @"MyStruct { a: 1, b: x, c: 3 }");
 }

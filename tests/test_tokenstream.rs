@@ -689,7 +689,7 @@ fn test_maccall_to_tokenstream() {
 
 #[test]
 fn test_exprfield_to_tokenstream() {
-    let expr_field = ExprField::new("name", Lit::str("value"));
+    let expr_field = FieldValue::new("name", Lit::str("value"));
     let ts = TokenStream::from(expr_field);
     assert_snapshot!(ts, @"name: \"value\"");
 }
@@ -699,8 +699,8 @@ fn test_struct_to_tokenstream() {
     let struct_expr = Struct::new(
         Path::single("Person"),
         vec![
-            ExprField::new("name", Lit::str("Alice")),
-            ExprField::new("age", Lit::int("30")),
+            FieldValue::new("name", Lit::str("Alice")),
+            FieldValue::new("age", Lit::int("30")),
         ],
         None,
     );
@@ -934,6 +934,7 @@ fn test_structpat_to_tokenstream() {
             ident: "x".into(),
             pat: Pat::ident("a"),
         }],
+        has_rest: false,
     };
     let ts = TokenStream::from(struct_pat);
     assert_snapshot!(ts, @"Point { x: a }");

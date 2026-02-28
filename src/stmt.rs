@@ -12,8 +12,8 @@ use crate::expr::AttributeItem;
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 use crate::ty::Type;
 use crate::{
-    impl_display_for_enum, impl_hasitem_methods, impl_obvious_conversion, ForLoop, GenericParam,
-    HasPrecedence, Lit, Mutability, OperatorPrecedence,
+    impl_display_for_enum, impl_hasitem_methods, impl_obvious_conversion, ForLoop, GenericBound,
+    GenericParam, HasPrecedence, Lit, Mutability, OperatorPrecedence,
 };
 
 #[cfg(feature = "fuzzing")]
@@ -241,7 +241,16 @@ impl From<syn::Local> for Local {
             other => (Pat::from(other), None),
         };
         let kind = match value.init {
-            Some(init) => LocalKind::Init(Expr::from(*init.expr)),
+            Some(init) => match init.diverge {
+                Some((_, diverge)) => {
+                    let block = match *diverge {
+                        syn::Expr::Block(b) => Block::from(b.block),
+                        other => Block::single(Expr::from(other)),
+                    };
+                    LocalKind::InitElse(Expr::from(*init.expr), block)
+                }
+                None => LocalKind::Init(Expr::from(*init.expr)),
+            },
             None => LocalKind::Decl,
         };
         Self { pat, ty, kind }
@@ -382,6 +391,7 @@ impl From<PatField> for TokenStream {
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct IdentPat {
+    pub is_ref: bool,
     pub is_mut: bool,
     pub ident: String,
     pub pat: Option<Box<Pat>>,
@@ -389,6 +399,9 @@ pub struct IdentPat {
 
 impl fmt::Display for IdentPat {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_ref {
+            write!(f, "ref ")?;
+        }
         if self.is_mut {
             write!(f, "mut ")?;
         }
@@ -403,6 +416,7 @@ impl fmt::Display for IdentPat {
 impl From<&str> for IdentPat {
     fn from(ident: &str) -> Self {
         Self {
+            is_ref: false,
             is_mut: false,
             ident: ident.to_string().into(),
             pat: None,
@@ -412,6 +426,7 @@ impl From<&str> for IdentPat {
 impl From<String> for IdentPat {
     fn from(ident: String) -> Self {
         Self {
+            is_ref: false,
             is_mut: false,
             ident,
             pat: None,
@@ -423,15 +438,24 @@ impl From<String> for IdentPat {
 impl From<syn::PatIdent> for IdentPat {
     fn from(value: syn::PatIdent) -> Self {
         let ident = value.ident.to_string().into();
+        let is_ref = value.by_ref.is_some();
         let is_mut = value.mutability.is_some();
         let pat = value.subpat.map(|(_, x)| Box::new(Pat::from(*x)));
-        Self { is_mut, ident, pat }
+        Self {
+            is_ref,
+            is_mut,
+            ident,
+            pat,
+        }
     }
 }
 
 impl From<IdentPat> for TokenStream {
     fn from(value: IdentPat) -> Self {
         let mut ts = TokenStream::new();
+        if value.is_ref {
+            ts.push(Token::Keyword(KeywordToken::Ref));
+        }
         if value.is_mut {
             ts.push(Token::Keyword(KeywordToken::Mut));
         }
@@ -447,6 +471,7 @@ impl From<IdentPat> for TokenStream {
 impl IdentPat {
     pub fn new(is_mut: bool, ident: impl Into<String>, pat: Option<impl Into<Pat>>) -> Self {
         Self {
+            is_ref: false,
             is_mut,
             ident: ident.into(),
             pat: pat.map(|x| Box::new(x.into())),
@@ -455,6 +480,7 @@ impl IdentPat {
 
     pub fn mut_(ident: impl Into<String>, pat: Option<Pat>) -> Self {
         Self {
+            is_ref: false,
             is_mut: true,
             ident: ident.into(),
             pat: pat.map(Box::new),
@@ -480,6 +506,7 @@ impl IdentPat {
 pub struct StructPat {
     pub path: Path,
     pub fields: Vec<PatField>,
+    pub has_rest: bool,
 }
 
 impl fmt::Display for StructPat {
@@ -491,6 +518,12 @@ impl fmt::Display for StructPat {
             }
             write!(f, "{field}")?;
         }
+        if self.has_rest {
+            if !self.fields.is_empty() {
+                write!(f, ", ")?;
+            }
+            write!(f, "..")?;
+        }
         write!(f, "}}")
     }
 }
@@ -499,6 +532,7 @@ impl fmt::Display for StructPat {
 impl From<syn::PatStruct> for StructPat {
     fn from(value: syn::PatStruct) -> Self {
         let path = Path::from(value.path);
+        let has_rest = value.rest.is_some();
         let fields = value
             .fields
             .into_iter()
@@ -510,7 +544,11 @@ impl From<syn::PatStruct> for StructPat {
                 pat: Pat::from(*field.pat),
             })
             .collect();
-        Self { path, fields }
+        Self {
+            path,
+            fields,
+            has_rest,
+        }
     }
 }
 
@@ -523,11 +561,17 @@ impl From<StructPat> for TokenStream {
             if i != 0 {
                 ts.push(Token::Comma);
             }
-            if i == value.fields.len() - 1 {
+            if !value.has_rest && i == value.fields.len() - 1 {
                 ts.extend(TokenStream::from(field.clone()));
             } else {
                 ts.extend(TokenStream::from(field.clone()).into_joint());
             }
+        }
+        if value.has_rest {
+            if !value.fields.is_empty() {
+                ts.push(Token::Comma);
+            }
+            ts.push(Token::DotDot);
         }
         ts.push(Token::CloseDelim(Delimiter::Brace));
         ts
@@ -1142,6 +1186,7 @@ pub struct Fn {
     pub ident: String,
     pub generics: Vec<GenericParam>,
     pub fn_decl: FnDecl,
+    pub where_clauses: Option<Vec<WherePredicate>>,
     pub body: Option<Block>,
 }
 
@@ -1173,6 +1218,15 @@ impl fmt::Display for RefWithInnerAttrs<'_, '_, Fn> {
             write!(f, ">")?;
         }
         write!(f, "{}", self.fn_decl)?;
+        if let Some(clauses) = &self.where_clauses {
+            write!(f, " where ")?;
+            for (i, clause) in clauses.iter().enumerate() {
+                if i != 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{clause}")?;
+            }
+        }
         if let Some(body) = &self.body {
             write!(f, " ")?;
             RefWithInnerAttrs {
@@ -1208,36 +1262,7 @@ impl fmt::Display for Fn {
 #[cfg(feature = "syn")]
 impl From<syn::ItemFn> for Fn {
     fn from(value: syn::ItemFn) -> Self {
-        let is_unsafe = value.sig.unsafety.is_some();
-        let is_const = value.sig.constness.is_some();
-        let is_async = value.sig.asyncness.is_some();
-        let abi = value.sig.abi.map(|a| a.name.as_ref().unwrap().value().into());
-        let ident = value.sig.ident.to_string().into();
-        let generics = value
-            .sig
-            .generics
-            .params
-            .into_iter()
-            .map(GenericParam::from)
-            .collect();
-        let inputs = value.sig.inputs.into_iter().map(Param::from).collect();
-        let output = match value.sig.output {
-            syn::ReturnType::Default => None,
-            syn::ReturnType::Type(_, ty) => Some(Type::from(*ty)),
-        };
-        let is_variadic = value.sig.variadic.is_some();
-        let fn_decl = FnDecl::new(inputs, output, is_variadic);
-        let body = Some(Block::from(*value.block));
-        Self {
-            is_unsafe,
-            is_const,
-            is_async,
-            abi,
-            ident,
-            generics,
-            fn_decl,
-            body,
-        }
+        fn_from_signature(value.sig, Some(*value.block))
     }
 }
 
@@ -1357,6 +1382,7 @@ impl Fn {
             ident: ident.into(),
             generics,
             fn_decl,
+            where_clauses: None,
             body,
         }
     }
@@ -1370,6 +1396,7 @@ impl Fn {
             ident: ident.into(),
             generics: Vec::new(),
             fn_decl,
+            where_clauses: None,
             body: Some(body),
         }
     }
@@ -1387,6 +1414,7 @@ impl Fn {
             ident: ident.into(),
             generics,
             fn_decl,
+            where_clauses: None,
             body: None,
         }
     }
@@ -1404,6 +1432,7 @@ impl Fn {
             ident: ident.into(),
             generics,
             fn_decl,
+            where_clauses: None,
             body: None,
         }
     }
@@ -1421,6 +1450,7 @@ impl Fn {
             ident: ident.into(),
             generics,
             fn_decl,
+            where_clauses: None,
             body: None,
         }
     }
@@ -1438,6 +1468,7 @@ impl Fn {
             ident: ident.into(),
             generics,
             fn_decl,
+            where_clauses: None,
             body: None,
         }
     }
@@ -1451,6 +1482,7 @@ impl Fn {
             ident: "main".into(),
             generics: Vec::new(),
             fn_decl: FnDecl::regular(Vec::new(), output),
+            where_clauses: None,
             body: Some(body),
         }
     }
@@ -1464,6 +1496,7 @@ impl Fn {
             ident: ident.into(),
             generics: Vec::new(),
             fn_decl: FnDecl::empty(),
+            where_clauses: None,
             body: None,
         }
     }
@@ -1477,6 +1510,7 @@ impl Fn {
             ident: ident.into(),
             generics: Vec::new(),
             fn_decl: FnDecl::regular(vec![Param::new(self_pat, Type::ImplicitSelf)], None),
+            where_clauses: None,
             body: Some(Block::empty()),
         }
     }
@@ -2320,7 +2354,6 @@ impl Fields {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Variant {
     pub attrs: Vec<Attribute>,
-    pub vis: Visibility,
     pub ident: String,
     pub fields: Fields,
     pub discriminant: Option<Expr>,
@@ -2331,7 +2364,7 @@ impl fmt::Display for Variant {
         for attr in self.attrs.iter() {
             writeln!(f, "{attr}")?;
         }
-        write!(f, "{}{}{}", self.vis, self.ident, self.fields)?;
+        write!(f, "{}{}", self.ident, self.fields)?;
         if let Some(discriminant) = &self.discriminant {
             write!(f, " = {discriminant}")?;
         }
@@ -2345,7 +2378,6 @@ impl From<Variant> for TokenStream {
         for attr in value.attrs.iter() {
             ts.extend(TokenStream::from(attr.clone()));
         }
-        ts.extend(TokenStream::from(value.vis));
         ts.push(Token::ident(value.ident).into_joint());
         ts.extend(TokenStream::from(value.fields));
         if let Some(discriminant) = value.discriminant {
@@ -2373,14 +2405,12 @@ impl Ident for Variant {
 impl Variant {
     pub fn new(
         attrs: Vec<Attribute>,
-        vis: Visibility,
         ident: impl Into<String>,
         data: Fields,
         discriminant: Option<Expr>,
     ) -> Self {
         Self {
             attrs,
-            vis,
             ident: ident.into(),
             fields: data,
             discriminant,
@@ -2388,31 +2418,19 @@ impl Variant {
     }
 
     pub fn empty(ident: impl Into<String>) -> Self {
-        Self::new(vec![], Visibility::Inherited, ident, Fields::Unit, None)
+        Self::new(vec![], ident, Fields::Unit, None)
     }
 
     pub fn inherited(ident: impl Into<String>, data: Fields) -> Self {
-        Self::new(vec![], Visibility::Inherited, ident, data, None)
+        Self::new(vec![], ident, data, None)
     }
 
     pub fn struct_(ident: impl Into<String>, fields: Vec<FieldDef>) -> Self {
-        Self::new(
-            vec![],
-            Visibility::Inherited,
-            ident,
-            Fields::Struct(fields),
-            None,
-        )
+        Self::new(vec![], ident, Fields::Struct(fields), None)
     }
 
     pub fn tuple(ident: impl Into<String>, fields: Vec<FieldDef>) -> Self {
-        Self::new(
-            vec![],
-            Visibility::Inherited,
-            ident,
-            Fields::Tuple(fields),
-            None,
-        )
+        Self::new(vec![], ident, Fields::Tuple(fields), None)
     }
 
     pub fn tuple1(ident: impl Into<String>, ty: impl Into<Type>) -> Self {
@@ -2496,14 +2514,12 @@ impl From<syn::ItemEnum> for EnumDef {
 #[cfg(feature = "syn")]
 impl From<syn::Variant> for Variant {
     fn from(value: syn::Variant) -> Self {
-        let attrs = vec![];
-        let vis = Visibility::Inherited;
+        let attrs = value.attrs.into_iter().map(|a| Attribute::from(AttributeItem::from(a))).collect();
         let ident = value.ident.to_string().into();
         let fields = Fields::from(value.fields);
         let discriminant = value.discriminant.map(|d| Expr::from(d.1));
         Self {
             attrs,
-            vis,
             ident,
             fields,
             discriminant,
@@ -2531,11 +2547,12 @@ impl From<syn::Fields> for Fields {
 #[cfg(feature = "syn")]
 impl From<syn::Field> for FieldDef {
     fn from(value: syn::Field) -> Self {
+        let attrs = value.attrs.into_iter().map(|a| Attribute::from(AttributeItem::from(a))).collect();
         let vis = Visibility::from(value.vis);
         let ident = value.ident.map(|i| i.to_string().into());
         let ty = Type::from(value.ty);
         Self {
-            attrs: vec![],
+            attrs,
             vis,
             ident,
             ty,
@@ -2897,7 +2914,7 @@ impl UnionDef {
 pub struct TraitDef {
     pub ident: String,
     pub generics: Vec<GenericParam>,
-    pub supertraits: Vec<Type>,
+    pub supertraits: Vec<GenericBound>,
     pub items: Vec<AssocItem>,
 }
 
@@ -2997,7 +3014,7 @@ impl TraitDef {
     pub fn new(
         ident: impl Into<String>,
         generics: Vec<GenericParam>,
-        supertraits: Vec<Type>,
+        supertraits: Vec<GenericBound>,
         items: Vec<AssocItem>,
     ) -> Self {
         Self {
@@ -3016,12 +3033,12 @@ impl TraitDef {
         Self::new(ident, Vec::new(), Vec::new(), Vec::new())
     }
 
-    pub fn add_supertrait(&mut self, ty: impl Into<Type>) {
-        self.supertraits.push(ty.into());
+    pub fn add_supertrait(&mut self, bound: impl Into<GenericBound>) {
+        self.supertraits.push(bound.into());
     }
 
-    pub fn with_supertrait(mut self, ty: impl Into<Type>) -> Self {
-        self.add_supertrait(ty);
+    pub fn with_supertrait(mut self, bound: impl Into<GenericBound>) -> Self {
+        self.add_supertrait(bound);
         self
     }
 
@@ -3157,6 +3174,49 @@ impl fmt::Display for WherePredicate {
     }
 }
 
+#[cfg(feature = "syn")]
+impl From<syn::WherePredicate> for WherePredicate {
+    fn from(value: syn::WherePredicate) -> Self {
+        match value {
+            syn::WherePredicate::Type(pt) => WherePredicate::Type(PredicateType {
+                bounded_ty: Type::from(pt.bounded_ty),
+                bounds: pt
+                    .bounds
+                    .into_iter()
+                    .filter_map(|b| match b {
+                        syn::TypeParamBound::Trait(t) => Some(Type::Path(Path::from(t.path))),
+                        _ => None,
+                    })
+                    .collect(),
+            }),
+            syn::WherePredicate::Lifetime(pl) => {
+                WherePredicate::Lifetime(PredicateLifetime {
+                    lifetime: pl.lifetime.ident.to_string().into(),
+                    bounds: pl
+                        .bounds
+                        .into_iter()
+                        .map(|l| l.ident.to_string().into())
+                        .collect(),
+                })
+            }
+            _ => unimplemented!(),
+        }
+    }
+}
+
+#[cfg(feature = "syn")]
+fn where_clauses_from_generics(
+    generics: &syn::Generics,
+) -> Option<Vec<WherePredicate>> {
+    generics.where_clause.as_ref().map(|wc| {
+        wc.predicates
+            .iter()
+            .cloned()
+            .map(WherePredicate::from)
+            .collect()
+    })
+}
+
 impl From<WherePredicate> for TokenStream {
     fn from(value: WherePredicate) -> Self {
         match value {
@@ -3169,6 +3229,7 @@ impl From<WherePredicate> for TokenStream {
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Impl {
+    pub is_negative: bool,
     pub generics: Vec<GenericParam>,
     pub of_trait: Option<Type>,
     pub self_ty: Type,
@@ -3191,6 +3252,9 @@ impl fmt::Display for RefWithInnerAttrs<'_, '_, Impl> {
         }
         write!(f, " ")?;
         if let Some(of_trait) = &self.of_trait {
+            if self.is_negative {
+                write!(f, "!")?;
+            }
             write!(f, "{of_trait} for ")?;
         }
         write!(f, "{self_ty} ", self_ty = self.self_ty)?;
@@ -3240,6 +3304,9 @@ impl From<WithInnerAttrs<Impl>> for TokenStream {
             ts.push(Token::Gt);
         }
         if let Some(of_trait) = value.item.of_trait {
+            if value.item.is_negative {
+                ts.push(Token::Not);
+            }
             ts.extend(TokenStream::from(of_trait));
             ts.push(Token::Keyword(KeywordToken::For));
         }
@@ -3303,6 +3370,7 @@ impl Impl {
         items: Vec<AssocItem>,
     ) -> Self {
         Self {
+            is_negative: false,
             generics,
             of_trait,
             self_ty,
@@ -3319,6 +3387,7 @@ impl Impl {
         items: Vec<AssocItem>,
     ) -> Self {
         Self {
+            is_negative: false,
             generics,
             of_trait: Some(of_trait),
             self_ty,
@@ -3329,6 +3398,7 @@ impl Impl {
 
     pub fn simple(self_ty: Type, items: Vec<AssocItem>) -> Self {
         Self {
+            is_negative: false,
             generics: vec![],
             of_trait: None,
             self_ty,
@@ -3492,35 +3562,7 @@ impl From<syn::ItemForeignMod> for ExternBlock {
 #[cfg(feature = "syn")]
 impl From<syn::ForeignItemFn> for Fn {
     fn from(value: syn::ForeignItemFn) -> Self {
-        let is_unsafe = value.sig.unsafety.is_some();
-        let is_const = value.sig.constness.is_some();
-        let is_async = value.sig.asyncness.is_some();
-        let abi = value.sig.abi.map(|a| a.name.as_ref().unwrap().value().into());
-        let ident = value.sig.ident.to_string().into();
-        let generics = value
-            .sig
-            .generics
-            .params
-            .into_iter()
-            .map(GenericParam::from)
-            .collect();
-        let inputs = value.sig.inputs.into_iter().map(Param::from).collect();
-        let output = match value.sig.output {
-            syn::ReturnType::Default => None,
-            syn::ReturnType::Type(_, ty) => Some(Type::from(*ty)),
-        };
-        let is_variadic = value.sig.variadic.is_some();
-        let fn_decl = FnDecl::new(inputs, output, is_variadic);
-        Self {
-            is_unsafe,
-            is_const,
-            is_async,
-            abi,
-            ident,
-            generics,
-            fn_decl,
-            body: None,
-        }
+        fn_from_signature(value.sig, None)
     }
 }
 
@@ -3785,12 +3827,12 @@ impl From<syn::Visibility> for Visibility {
         match value {
             syn::Visibility::Public(_) => Visibility::Public,
             syn::Visibility::Restricted(r) => {
-                let path = r.path.get_ident().map(|i| i.to_string());
-                match path.as_deref() {
+                let path_ident = r.path.get_ident().map(|i| i.to_string());
+                match path_ident.as_deref() {
                     Some("crate") => Visibility::Scoped(VisibilityScope::Crate),
                     Some("super") => Visibility::Scoped(VisibilityScope::Super),
                     Some("self") => Visibility::Scoped(VisibilityScope::Self_),
-                    _ => Visibility::Scoped(VisibilityScope::Crate),
+                    _ => Visibility::Scoped(VisibilityScope::Path(Path::from(*r.path))),
                 }
             }
             _ => Visibility::Inherited,
@@ -4127,13 +4169,7 @@ impl From<syn::ItemTrait> for TraitDef {
         let supertraits = value
             .supertraits
             .into_iter()
-            .filter_map(|bound| {
-                if let syn::TypeParamBound::Trait(t) = bound {
-                    Some(Type::Path(Path::from(t.path)))
-                } else {
-                    None
-                }
-            })
+            .map(GenericBound::from)
             .collect();
         let items = value
             .items
@@ -4173,12 +4209,14 @@ impl From<syn::ItemTrait> for TraitDef {
 #[cfg(feature = "syn")]
 impl From<syn::ItemImpl> for Impl {
     fn from(value: syn::ItemImpl) -> Self {
+        let where_clauses = where_clauses_from_generics(&value.generics);
         let generics = value
             .generics
             .params
             .into_iter()
             .map(GenericParam::from)
             .collect();
+        let is_negative = value.trait_.as_ref().map_or(false, |(bang, _, _)| bang.is_some());
         let of_trait = value.trait_.map(|(_, path, _)| Type::Path(Path::from(path)));
         let self_ty = Type::from(*value.self_ty);
         let items = value
@@ -4219,10 +4257,11 @@ impl From<syn::ItemImpl> for Impl {
             })
             .collect();
         Self {
+            is_negative,
             generics,
             of_trait,
             self_ty,
-            where_clauses: None,
+            where_clauses,
             items,
         }
     }
@@ -4280,8 +4319,14 @@ fn fn_from_signature(sig: syn::Signature, block: Option<syn::Block>) -> Fn {
     let is_unsafe = sig.unsafety.is_some();
     let is_const = sig.constness.is_some();
     let is_async = sig.asyncness.is_some();
-    let abi = sig.abi.map(|a| a.name.as_ref().unwrap().value().into());
+    let abi = sig.abi.map(|a| {
+        a.name
+            .map(|n| n.value())
+            .unwrap_or_else(|| "C".to_string())
+            .into()
+    });
     let ident = sig.ident.to_string().into();
+    let where_clauses = where_clauses_from_generics(&sig.generics);
     let generics = sig
         .generics
         .params
@@ -4304,6 +4349,7 @@ fn fn_from_signature(sig: syn::Signature, block: Option<syn::Block>) -> Fn {
         ident,
         generics,
         fn_decl,
+        where_clauses,
         body,
     }
 }
