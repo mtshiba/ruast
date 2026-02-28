@@ -11,14 +11,43 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 syn = { version = "2", features = ["full"] }
 arbitrary = { version = "1.4.2" }
+quote = "1.0"
 
 [dependencies.ruast]
 path = ".."
-features = ["fuzzing"]
+features = ["fuzzing", "tokenize"]
 
 [[bin]]
 name = "fuzz_expr"
 path = "fuzz_targets/fuzz_expr.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_type"
+path = "fuzz_targets/fuzz_type.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_crate"
+path = "fuzz_targets/fuzz_crate.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_expr_tokenstream"
+path = "fuzz_targets/fuzz_expr_tokenstream.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_display_vs_tokenstream"
+path = "fuzz_targets/fuzz_display_vs_tokenstream.rs"
 test = false
 doc = false
 bench = false

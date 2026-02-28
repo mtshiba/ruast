@@ -1,0 +1,97 @@
+name: Property Tests & Fuzzing
+
+on:
+  schedule:
+    # Run daily at 04:00 UTC
+    - cron: '0 4 * * *'
+  # Allow manual trigger
+  workflow_dispatch:
+  # Also run on PRs that touch relevant files
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "src/**"
+      - "tests/test_properties.rs"
+      - "fuzz/**"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  property-tests:
+    name: Property-based tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run property tests
+        # Property tests may find new bugs — report but don't block CI
+        continue-on-error: true
+        run: |
+          cargo test -p ruast --test test_properties --features "fuzzing,tokenize,syn" -- \
+            --ignored --test-threads=1 2>&1 | tee property-test-results.txt
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: property-test-results
+          path: property-test-results.txt
+
+  fuzz:
+    name: Fuzz (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - fuzz_expr
+          - fuzz_type
+          - fuzz_crate
+          - fuzz_expr_tokenstream
+          - fuzz_display_vs_tokenstream
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      # Restore corpus from previous runs
+      - name: Restore fuzz corpus
+        uses: actions/cache@v4
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.sha }}
+          restore-keys: |
+            fuzz-corpus-${{ matrix.target }}-
+
+      - name: Run fuzzer for 5 minutes
+        continue-on-error: true
+        run: |
+          cd fuzz
+          mkdir -p corpus/${{ matrix.target }}
+          timeout 300 cargo +nightly fuzz run ${{ matrix.target }} \
+            corpus/${{ matrix.target }} \
+            -- -max_len=4096 2>&1 | tee fuzz-${{ matrix.target }}.txt || true
+
+      - name: Upload crash artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-${{ matrix.target }}-results
+          path: |
+            fuzz/fuzz-${{ matrix.target }}.txt
+            fuzz/artifacts/${{ matrix.target }}/
+          if-no-files-found: ignore
