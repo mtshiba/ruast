@@ -66,8 +66,20 @@ fn should_skip_expr_src(src: &str) -> bool {
     }
     // Struct literals in conditions cause { } ambiguity with blocks.
     // `> {` catches generics before struct literal, `{  }` catches empty struct literals.
-    // `break`/`return`/`continue` before potential struct literals also cause ambiguity.
     if src.contains("> {") || src.contains("{  }") || src.contains("{ }") {
+        return true;
+    }
+    // Labeled blocks after break/continue need parentheses in certain positions:
+    //   break 'label: { ... }  →  break ('label: { ... })
+    if src.contains("': {") {
+        return true;
+    }
+    // Struct literals with named fields after return/break/for-in are ambiguous
+    // with blocks: `return Path { f: v }` or `for _ in Path { f: v } { }`
+    // Detect `identifier {` followed by `identifier:` (named field pattern)
+    if (src.contains("return ") || src.contains("break "))
+        && src.contains('{')
+    {
         return true;
     }
     // Outer attributes on sub-expressions (e.g., `match #[attr] expr {}`)
@@ -140,11 +152,27 @@ fn should_skip_type_src(src: &str) -> bool {
     {
         return true;
     }
-    // Reserved keywords in paths (generated randomly as identifiers)
-    // These are short keywords most likely to appear by chance in random strings
-    for kw in &["do::", "box::", "priv::", "final::", "abstract::", "become::", "override::", "virtual::", "typeof::", "unsized::"] {
-        if src.contains(kw) {
+    // Reserved keywords appearing as random identifiers.
+    // Check both path segments (`do::`) and standalone tokens (` do`, `[do`, etc.)
+    let reserved = &["do", "box", "priv", "final", "abstract", "become", "override", "virtual", "typeof", "unsized"];
+    for kw in reserved {
+        // Check `kw::` (in path)
+        let path_pat = format!("{kw}::");
+        if src.contains(&*path_pat) {
             return true;
+        }
+        // Check standalone: preceded by non-alphanumeric, followed by non-alphanumeric
+        for (pos, _) in src.match_indices(kw) {
+            let before_ok = pos == 0
+                || !src.as_bytes()[pos - 1].is_ascii_alphanumeric()
+                    && src.as_bytes()[pos - 1] != b'_';
+            let end = pos + kw.len();
+            let after_ok = end >= src.len()
+                || !src.as_bytes()[end].is_ascii_alphanumeric()
+                    && src.as_bytes()[end] != b'_';
+            if before_ok && after_ok {
+                return true;
+            }
         }
     }
     // Non-standard ABI strings in function pointer types
