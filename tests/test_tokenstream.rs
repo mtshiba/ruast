@@ -1113,7 +1113,7 @@ fn test_structdef_to_tokenstream() {
         ]),
     );
     let ts = TokenStream::from(struct_def_tuple);
-    assert_snapshot!(ts, @"struct Color (i32, i32, i32)");
+    assert_snapshot!(ts, @"struct Color (i32, i32, i32) ;");
 
     let struct_def_unit = StructDef::new("UnitStruct", vec![], Fields::Unit);
     let ts = TokenStream::from(struct_def_unit);

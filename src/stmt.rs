@@ -2719,18 +2719,36 @@ impl fmt::Display for StructDef {
             }
             write!(f, ">")?;
         }
-        if let Some(where_clauses) = &self.where_clauses {
-            if !where_clauses.is_empty() {
-                write!(f, " where ")?;
-                for (i, clause) in where_clauses.iter().enumerate() {
-                    if i != 0 {
-                        write!(f, ", ")?;
+        // For tuple structs: fields come before where clause
+        // `struct Foo<T>(T) where T: Clone;`
+        if matches!(self.fields, Fields::Tuple(_)) {
+            write!(f, "{}", self.fields)?;
+            if let Some(where_clauses) = &self.where_clauses {
+                if !where_clauses.is_empty() {
+                    write!(f, " where ")?;
+                    for (i, clause) in where_clauses.iter().enumerate() {
+                        if i != 0 {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{clause}")?;
                     }
-                    write!(f, "{clause}")?;
                 }
             }
+            write!(f, ";")
+        } else {
+            if let Some(where_clauses) = &self.where_clauses {
+                if !where_clauses.is_empty() {
+                    write!(f, " where ")?;
+                    for (i, clause) in where_clauses.iter().enumerate() {
+                        if i != 0 {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{clause}")?;
+                    }
+                }
+            }
+            write!(f, "{}", self.fields)
         }
-        write!(f, "{}", self.fields)
     }
 }
 
@@ -2749,18 +2767,37 @@ impl From<StructDef> for TokenStream {
             }
             ts.push(Token::Gt);
         }
-        if let Some(where_clauses) = value.where_clauses {
-            if !where_clauses.is_empty() {
-                ts.push(Token::Keyword(KeywordToken::Where));
-                for (i, clause) in where_clauses.into_iter().enumerate() {
-                    if i != 0 {
-                        ts.push(Token::Comma);
+        let is_tuple = matches!(value.fields, Fields::Tuple(_));
+        // For tuple structs: fields come before where clause
+        // `struct Foo<T>(T) where T: Clone;`
+        if is_tuple {
+            ts.extend(TokenStream::from(value.fields));
+            if let Some(where_clauses) = value.where_clauses {
+                if !where_clauses.is_empty() {
+                    ts.push(Token::Keyword(KeywordToken::Where));
+                    for (i, clause) in where_clauses.into_iter().enumerate() {
+                        if i != 0 {
+                            ts.push(Token::Comma);
+                        }
+                        ts.extend(TokenStream::from(clause));
                     }
-                    ts.extend(TokenStream::from(clause));
                 }
             }
+            ts.push(Token::Semi);
+        } else {
+            if let Some(where_clauses) = value.where_clauses {
+                if !where_clauses.is_empty() {
+                    ts.push(Token::Keyword(KeywordToken::Where));
+                    for (i, clause) in where_clauses.into_iter().enumerate() {
+                        if i != 0 {
+                            ts.push(Token::Comma);
+                        }
+                        ts.extend(TokenStream::from(clause));
+                    }
+                }
+            }
+            ts.extend(TokenStream::from(value.fields));
         }
-        ts.extend(TokenStream::from(value.fields));
         ts
     }
 }
