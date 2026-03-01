@@ -1,0 +1,10 @@
+{
+  "serde": { "passed": 237, "total": 237 },
+  "anyhow": { "passed": 37, "total": 37 },
+  "thiserror": { "passed": 69, "total": 69 },
+  "once_cell": { "passed": 20, "total": 20 },
+  "itertools": { "passed": 73, "total": 75 },
+  "regex": { "passed": 222, "total": 225 },
+  "clap": { "passed": 329, "total": 329 },
+  "tokio": { "passed": 763, "total": 765 }
+}

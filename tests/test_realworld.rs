@@ -4,14 +4,15 @@
 //! can be parsed by `syn`, converted to `ruast::Crate`, rendered via `Display`,
 //! and re-parsed by `syn` without errors.
 //!
-//! Run all:
-//!   cargo test -p ruast --test test_realworld --features syn -- --ignored --nocapture
+//! Run all (with regression check):
+//!   cargo test -p ruast --test test_realworld --features syn -- --ignored test_realworld_all --nocapture
 //!
 //! Run a single project:
 //!   cargo test -p ruast --test test_realworld --features syn -- --ignored test_realworld_anyhow --nocapture
 
 #[cfg(feature = "syn")]
 mod realworld {
+    use std::collections::BTreeMap;
     use std::fmt;
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -279,6 +280,219 @@ mod realworld {
     }
 
     // =====================================================================
+    // Baseline comparison
+    // =====================================================================
+
+    /// Per-project entry in baseline / results JSON.
+    #[derive(Debug, Clone)]
+    struct ProjectEntry {
+        passed: usize,
+        total: usize,
+    }
+
+    /// Minimal JSON parser for baseline file (avoids serde_json dependency).
+    /// Expected format: `{ "name": { "passed": N, "total": M }, ... }`
+    fn parse_baseline(json: &str) -> BTreeMap<String, ProjectEntry> {
+        let mut map = BTreeMap::new();
+        // Strip outer braces and iterate over key-value pairs
+        let inner = json.trim().trim_start_matches('{').trim_end_matches('}');
+        for entry in inner.split("},") {
+            let entry = entry.trim().trim_end_matches('}');
+            // Parse "name": { "passed": N, "total": M
+            let Some((key_part, val_part)) = entry.split_once(':') else {
+                continue;
+            };
+            let name = key_part.trim().trim_matches('"').to_string();
+            if name.is_empty() {
+                continue;
+            }
+            let val_part = val_part.trim().trim_start_matches('{');
+            let mut passed = 0;
+            let mut total = 0;
+            for field in val_part.split(',') {
+                let field = field.trim();
+                if let Some((k, v)) = field.split_once(':') {
+                    let k = k.trim().trim_matches('"');
+                    let v = v.trim().trim_matches('"');
+                    match k {
+                        "passed" => passed = v.parse().unwrap_or(0),
+                        "total" => total = v.parse().unwrap_or(0),
+                        _ => {}
+                    }
+                }
+            }
+            map.insert(name, ProjectEntry { passed, total });
+        }
+        map
+    }
+
+    fn write_results_json(
+        results: &BTreeMap<String, ProjectEntry>,
+        path: &Path,
+    ) -> std::io::Result<()> {
+        let mut json = String::from("{\n");
+        let entries: Vec<_> = results.iter().collect();
+        for (i, (name, entry)) in entries.iter().enumerate() {
+            json.push_str(&format!(
+                "  \"{}\": {{ \"passed\": {}, \"total\": {} }}",
+                name, entry.passed, entry.total
+            ));
+            if i + 1 < entries.len() {
+                json.push(',');
+            }
+            json.push('\n');
+        }
+        json.push_str("}\n");
+        fs::write(path, json)
+    }
+
+    /// Compare current results against baseline, return list of regressions.
+    fn check_regressions(
+        baseline: &BTreeMap<String, ProjectEntry>,
+        current: &BTreeMap<String, ProjectEntry>,
+    ) -> Vec<String> {
+        let mut regressions = Vec::new();
+        for (name, cur) in current {
+            if let Some(base) = baseline.get(name) {
+                if cur.passed < base.passed {
+                    regressions.push(format!(
+                        "{}: passed {} -> {} (regression of -{})",
+                        name,
+                        base.passed,
+                        cur.passed,
+                        base.passed - cur.passed,
+                    ));
+                }
+            }
+        }
+        regressions
+    }
+
+    fn print_comparison_table(
+        baseline: &BTreeMap<String, ProjectEntry>,
+        current: &BTreeMap<String, ProjectEntry>,
+    ) {
+        eprintln!();
+        eprintln!(
+            "  {:<12} {:>10}   {:>10}   {:>6}",
+            "Project", "Baseline", "Current", "Delta"
+        );
+        eprintln!("  {}", "-".repeat(48));
+
+        let mut total_base_passed = 0usize;
+        let mut total_base_total = 0usize;
+        let mut total_cur_passed = 0usize;
+        let mut total_cur_total = 0usize;
+
+        for (name, cur) in current {
+            let base = baseline.get(name);
+            let (bp, bt) = base.map_or((0, 0), |b| (b.passed, b.total));
+            let delta = cur.passed as i64 - bp as i64;
+            let delta_str = if delta > 0 {
+                format!("+{delta}")
+            } else if delta < 0 {
+                format!("{delta}")
+            } else {
+                "0".to_string()
+            };
+            let marker = if delta < 0 { " REGRESSION" } else { "" };
+            eprintln!(
+                "  {:<12} {:>4}/{:<4}    {:>4}/{:<4}   {:>6}{}",
+                name, bp, bt, cur.passed, cur.total, delta_str, marker
+            );
+
+            total_base_passed += bp;
+            total_base_total += bt;
+            total_cur_passed += cur.passed;
+            total_cur_total += cur.total;
+        }
+
+        eprintln!("  {}", "-".repeat(48));
+        let total_delta = total_cur_passed as i64 - total_base_passed as i64;
+        let total_delta_str = if total_delta > 0 {
+            format!("+{total_delta}")
+        } else if total_delta < 0 {
+            format!("{total_delta}")
+        } else {
+            "0".to_string()
+        };
+        eprintln!(
+            "  {:<12} {:>4}/{:<4}    {:>4}/{:<4}   {:>6}",
+            "TOTAL",
+            total_base_passed,
+            total_base_total,
+            total_cur_passed,
+            total_cur_total,
+            total_delta_str
+        );
+        eprintln!();
+    }
+
+    /// Generate a Markdown comparison table for CI job summaries.
+    fn generate_markdown_report(
+        baseline: &BTreeMap<String, ProjectEntry>,
+        current: &BTreeMap<String, ProjectEntry>,
+        regressions: &[String],
+    ) -> String {
+        let mut md = String::new();
+
+        md.push_str("## Real-world Round-trip Test Results\n\n");
+        md.push_str("| Project | Baseline | Current | Delta |\n");
+        md.push_str("|---------|----------|---------|-------|\n");
+
+        let mut total_bp = 0usize;
+        let mut total_bt = 0usize;
+        let mut total_cp = 0usize;
+        let mut total_ct = 0usize;
+
+        for (name, cur) in current {
+            let base = baseline.get(name);
+            let (bp, bt) = base.map_or((0, 0), |b| (b.passed, b.total));
+            let delta = cur.passed as i64 - bp as i64;
+            let delta_str = if delta > 0 {
+                format!("+{delta}")
+            } else if delta < 0 {
+                format!("**{delta}**")
+            } else {
+                "0".to_string()
+            };
+            md.push_str(&format!(
+                "| {} | {}/{} | {}/{} | {} |\n",
+                name, bp, bt, cur.passed, cur.total, delta_str
+            ));
+            total_bp += bp;
+            total_bt += bt;
+            total_cp += cur.passed;
+            total_ct += cur.total;
+        }
+
+        let total_delta = total_cp as i64 - total_bp as i64;
+        let total_delta_str = if total_delta > 0 {
+            format!("+{total_delta}")
+        } else if total_delta < 0 {
+            format!("**{total_delta}**")
+        } else {
+            "0".to_string()
+        };
+        md.push_str(&format!(
+            "| **TOTAL** | **{}/{}** | **{}/{}** | **{}** |\n",
+            total_bp, total_bt, total_cp, total_ct, total_delta_str
+        ));
+
+        md.push('\n');
+        if regressions.is_empty() {
+            md.push_str("No regressions detected.\n");
+        } else {
+            md.push_str("### Regressions detected\n\n");
+            for r in regressions {
+                md.push_str(&format!("- {r}\n"));
+            }
+        }
+
+        md
+    }
+
+    // =====================================================================
     // Individual project tests
     // =====================================================================
 
@@ -331,7 +545,7 @@ mod realworld {
     }
 
     // =====================================================================
-    // All projects at once
+    // All projects at once — with regression check
     // =====================================================================
 
     #[test]
@@ -339,44 +553,86 @@ mod realworld {
     fn test_realworld_all() {
         eprintln!("\n=== Real-world round-trip tests ===\n");
 
+        // Run all projects and collect results
+        let mut current: BTreeMap<String, ProjectEntry> = BTreeMap::new();
         let mut all_failures: Vec<(String, PathBuf, String)> = Vec::new();
-        let mut total_files = 0;
-        let mut total_succeeded = 0;
-        let mut total_skipped = 0;
 
         for project in PROJECTS {
             let results = test_project(project);
-            total_files += results.total_files;
-            total_succeeded += results.succeeded;
-            total_skipped += results.syn_skipped;
+            current.insert(
+                results.name.clone(),
+                ProjectEntry {
+                    passed: results.succeeded,
+                    total: results.total_files,
+                },
+            );
             for (path, err) in results.failures {
                 all_failures.push((results.name.clone(), path, err));
             }
         }
 
-        eprintln!("\n=== Summary ===");
-        eprintln!(
-            "  Total: {} files, {} succeeded, {} syn-skipped, {} failed",
-            total_files,
-            total_succeeded,
-            total_skipped,
-            all_failures.len()
-        );
+        // Write current results to JSON
+        let results_path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/realworld-results.json");
+        if let Err(e) = write_results_json(&current, &results_path) {
+            eprintln!("  Warning: could not write results JSON: {e}");
+        } else {
+            eprintln!("  Results written to {}", results_path.display());
+        }
 
+        // Load baseline
+        let baseline_path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/realworld_baseline.json");
+        let baseline = match fs::read_to_string(&baseline_path) {
+            Ok(json) => parse_baseline(&json),
+            Err(e) => {
+                eprintln!(
+                    "  Warning: could not read baseline ({}): {e}",
+                    baseline_path.display()
+                );
+                BTreeMap::new()
+            }
+        };
+
+        // Print comparison table
+        print_comparison_table(&baseline, &current);
+
+        // Check for regressions
+        let regressions = check_regressions(&baseline, &current);
+
+        // Generate Markdown report for CI
+        let md = generate_markdown_report(&baseline, &current, &regressions);
+        let report_path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/realworld-report.md");
+        if let Err(e) = fs::write(&report_path, &md) {
+            eprintln!("  Warning: could not write Markdown report: {e}");
+        }
+
+        // Print failures for debugging
         if !all_failures.is_empty() {
-            eprintln!("\n=== Failures ===");
+            eprintln!("=== Failures ({}) ===", all_failures.len());
             for (project, path, err) in &all_failures {
                 eprintln!("  [{project}] {}", path.display());
                 for line in err.lines().take(3) {
                     eprintln!("    {line}");
                 }
             }
+        }
+
+        // Fail ONLY on regression (not on absolute failures)
+        if !regressions.is_empty() {
+            eprintln!("\n=== REGRESSION DETECTED ===");
+            for r in &regressions {
+                eprintln!("  {r}");
+            }
             panic!(
-                "{} / {} files failed round-trip across {} projects",
-                all_failures.len(),
-                total_files,
-                PROJECTS.len()
+                "Regression detected: {} project(s) have fewer passing files than baseline",
+                regressions.len()
             );
         }
+
+        let total_passed: usize = current.values().map(|e| e.passed).sum();
+        let total_files: usize = current.values().map(|e| e.total).sum();
+        eprintln!("=== OK: {total_passed}/{total_files} files passed, no regressions ===");
     }
 }

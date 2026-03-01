@@ -64,18 +64,26 @@ jobs:
             realworld-repos-
 
       - name: Run real-world tests
-        # Real-world tests may find new bugs — report but don't block CI
-        continue-on-error: true
         run: |
           cargo test -p ruast --test test_realworld --features "syn" -- \
-            --ignored --test-threads=1 2>&1 | tee realworld-test-results.txt
+            --ignored test_realworld_all --test-threads=1 --nocapture 2>&1 | tee realworld-test-results.txt
+
+      - name: Post results to Job Summary
+        if: always()
+        run: |
+          if [ -f target/realworld-report.md ]; then
+            cat target/realworld-report.md >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: realworld-test-results
-          path: realworld-test-results.txt
+          path: |
+            realworld-test-results.txt
+            target/realworld-results.json
+            target/realworld-report.md
 
   fuzz:
     name: Fuzz (${{ matrix.target }})
