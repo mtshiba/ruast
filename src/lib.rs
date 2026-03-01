@@ -375,3 +375,171 @@ impl From<syn::File> for Crate {
         Self { attrs, items }
     }
 }
+
+// =====================================================================
+// Parser API (requires `syn` feature)
+// =====================================================================
+
+/// Error type for parse operations.
+#[cfg(feature = "syn")]
+#[derive(Debug)]
+pub struct ParseError(syn::Error);
+
+#[cfg(feature = "syn")]
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+#[cfg(feature = "syn")]
+impl std::error::Error for ParseError {}
+
+#[cfg(feature = "syn")]
+impl From<syn::Error> for ParseError {
+    fn from(e: syn::Error) -> Self {
+        Self(e)
+    }
+}
+
+#[cfg(feature = "syn")]
+impl Crate {
+    /// Parse a Rust source string into a [`Crate`].
+    ///
+    /// This is a convenience wrapper around `syn::parse_file` followed by
+    /// `Crate::from`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # #[cfg(feature = "syn")]
+    /// # {
+    /// let krate = ruast::Crate::parse("fn main() {}").unwrap();
+    /// assert_eq!(krate.items.len(), 1);
+    /// # }
+    /// ```
+    pub fn parse(source: &str) -> Result<Self, ParseError> {
+        let file = syn::parse_file(source)?;
+        Ok(Self::from(file))
+    }
+}
+
+#[cfg(feature = "syn")]
+impl Expr {
+    /// Parse a Rust expression string into an [`Expr`].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # #[cfg(feature = "syn")]
+    /// # {
+    /// let expr = ruast::Expr::parse("1 + 2 * 3").unwrap();
+    /// assert_eq!(expr.to_string(), "1 + 2 * 3");
+    /// # }
+    /// ```
+    pub fn parse(source: &str) -> Result<Self, ParseError> {
+        let expr: syn::Expr = syn::parse_str(source)?;
+        Ok(Self::from(expr))
+    }
+}
+
+#[cfg(feature = "syn")]
+impl Type {
+    /// Parse a Rust type string into a [`Type`].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # #[cfg(feature = "syn")]
+    /// # {
+    /// let ty = ruast::Type::parse("Vec<(i32, String)>").unwrap();
+    /// assert_eq!(ty.to_string(), "Vec<(i32, String)>");
+    /// # }
+    /// ```
+    pub fn parse(source: &str) -> Result<Self, ParseError> {
+        let ty: syn::Type = syn::parse_str(source)?;
+        Ok(Self::from(ty))
+    }
+}
+
+#[cfg(feature = "syn")]
+impl Item {
+    /// Parse a Rust item string into an [`Item`].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # #[cfg(feature = "syn")]
+    /// # {
+    /// let item = ruast::Item::parse("struct Foo { x: i32 }").unwrap();
+    /// assert!(item.ident() == Some("Foo"));
+    /// # }
+    /// ```
+    pub fn parse(source: &str) -> Result<Self, ParseError> {
+        let item: syn::Item = syn::parse_str(source)?;
+        Ok(Self::from(item))
+    }
+}
+
+#[cfg(feature = "syn")]
+impl Stmt {
+    /// Parse a Rust statement string into a [`Stmt`].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # #[cfg(feature = "syn")]
+    /// # {
+    /// let stmt = ruast::Stmt::parse("let x: i32 = 42;").unwrap();
+    /// assert_eq!(stmt.to_string(), "let x: i32 = 42;");
+    /// # }
+    /// ```
+    pub fn parse(source: &str) -> Result<Self, ParseError> {
+        let stmt: syn::Stmt = syn::parse_str(source)?;
+        Ok(Self::from(stmt))
+    }
+}
+
+#[cfg(feature = "syn")]
+impl Block {
+    /// Parse a Rust block string into a [`Block`].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # #[cfg(feature = "syn")]
+    /// # {
+    /// let block = ruast::Block::parse("{ let x = 1; x + 1 }").unwrap();
+    /// assert_eq!(block.stmts.len(), 2);
+    /// # }
+    /// ```
+    pub fn parse(source: &str) -> Result<Self, ParseError> {
+        let block: syn::ExprBlock = syn::parse_str(source)?;
+        Ok(Self::from(block.block))
+    }
+}
+
+#[cfg(feature = "syn")]
+impl Pat {
+    /// Parse a Rust pattern string into a [`Pat`].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # #[cfg(feature = "syn")]
+    /// # {
+    /// let pat = ruast::Pat::parse("Some(x)").unwrap();
+    /// assert_eq!(pat.to_string(), "Some(x)");
+    /// # }
+    /// ```
+    pub fn parse(source: &str) -> Result<Self, ParseError> {
+        // syn::Pat doesn't implement Parse directly; parse via a let binding
+        let stmt: syn::Stmt = syn::parse_str(&format!("let {source} = ();"))?;
+        match stmt {
+            syn::Stmt::Local(local) => Ok(Self::from(local.pat)),
+            _ => Err(
+                syn::Error::new(syn::spanned::Spanned::span(&stmt), "expected a pattern").into(),
+            ),
+        }
+    }
+}

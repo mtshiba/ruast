@@ -6,6 +6,8 @@ This crate provides a printable & modifiable Rust AST.
 
 * [x] Indentation-aware pretty-printing
 * [x] Operator precedence-aware pretty-printing
+* [x] Parse Rust source code into a modifiable AST (via `syn`)
+* [x] Convert to `proc_macro2::TokenStream`
 * [x] Fuzzable AST nodes (with `arbitrary` crate)
 
 ## Basic usage
@@ -162,6 +164,52 @@ println!("{tokens}");
 
 You can also find examples on how to create a proc macro using this crate in [`examples/proc_macro_example`](https://github.com/mtshiba/ruast/tree/main/examples/proc_macro_example).
 
+### Parsing Rust source code
+
+By enabling a feature `syn`, you can parse Rust source code strings directly into `ruast` AST nodes.
+
+```rust
+use ruast::*;
+
+// Parse a whole file
+let krate = Crate::parse("use std::io; fn main() { println!(\"hello\"); }").unwrap();
+assert_eq!(krate.items.len(), 2);
+
+// Parse an expression
+let expr = Expr::parse("1 + 2 * 3").unwrap();
+assert_eq!(expr.to_string(), "1 + 2 * 3");
+
+// Parse a type
+let ty = Type::parse("Vec<(i32, String)>").unwrap();
+assert_eq!(ty.to_string(), "Vec<(i32, String)>");
+
+// Parse an item
+let item = Item::parse("struct Foo { x: i32 }").unwrap();
+assert!(item.ident() == Some("Foo"));
+```
+
+### Converting from `syn` AST
+
+With the `syn` feature, you can also convert `syn` AST nodes into `ruast` AST nodes via `From` trait implementations. This enables round-trip workflows: parse with `syn`, convert to `ruast`, inspect/modify, and render back to source code.
+
+```rust
+let source = r#"
+fn greet(name: &str) {
+    println!("Hello, {name}!");
+}
+"#;
+let syn_file = syn::parse_file(source).unwrap();
+let krate = ruast::Crate::from(syn_file);
+
+// Modify the AST...
+// krate.add_item(...);
+
+// Render back to source code
+println!("{krate}");
+```
+
+Supported conversions include `syn::File` → `Crate`, `syn::Expr` → `Expr`, `syn::Type` → `Type`, `syn::Item` → `Item`, `syn::Stmt` → `Stmt`, `syn::Pat` → `Pat`, and many more.
+
 ### Fuzzing
 
 By enabling a feature `fuzzing`, you can use [`arbitrary`](https://docs.rs/arbitrary/latest/arbitrary/) crate to generate random AST nodes for fuzz testing.
@@ -179,6 +227,7 @@ println!("{expr}");
 
 ## Feature flags
 
+* `syn`: Enables parsing Rust source code and conversion from `syn` AST types.
 * `tokenize`: Enables conversion to `proc_macro2::TokenStream`.
 * `checked-ident`: Enables `check_ident`, `Identifier`, etc.
 * `fuzzing`: Enables `arbitrary` implementations for AST nodes for fuzz testing.
@@ -189,7 +238,7 @@ println!("{expr}");
 
 There is a [`codegen`](https://github.com/carllerche/codegen) crate for Rust code generation, but this crate has not been maintained for some time and only supports basic syntax elements.
 
-There is also a [`syn`](https://github.com/dtolnay/syn) crate that can parse `proc_macro::TokenStream` into an AST, but its AST elements don't implement `Display` trait and are not designed for direct construction & modification.
+There is also a [`syn`](https://github.com/dtolnay/syn) crate that can parse `proc_macro::TokenStream` into an AST, but its AST elements don't implement `Display` trait and are not designed for direct construction & modification. `ruast` can optionally convert from `syn` AST types, combining `syn`'s parsing capability with `ruast`'s pretty-printing and modification APIs.
 
 ## Goals
 
