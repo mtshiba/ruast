@@ -3660,8 +3660,8 @@ impl fmt::Display for ExternBlock {
             write!(f, "unsafe ")?;
         }
         write!(f, "extern ")?;
-        if self.abi.is_some() {
-            write!(f, "\"{}\" ", self.abi.as_ref().unwrap())?;
+        if let Some(abi) = &self.abi {
+            write!(f, "\"{abi}\" ")?;
         }
         write!(f, "{}", self.block)
     }
@@ -3729,8 +3729,8 @@ impl From<ExternBlock> for TokenStream {
             ts.push(Token::Keyword(KeywordToken::Unsafe));
         }
         ts.push(Token::Keyword(KeywordToken::Extern));
-        if value.abi.is_some() {
-            ts.push(Token::Lit(Lit::str(value.abi.unwrap())));
+        if let Some(abi) = value.abi {
+            ts.push(Token::Lit(Lit::str(abi)));
         }
         ts.extend(TokenStream::from(value.block));
         ts
@@ -4366,7 +4366,7 @@ impl From<syn::ItemImpl> for Impl {
         let is_negative = value
             .trait_
             .as_ref()
-            .map_or(false, |(bang, _, _)| bang.is_some());
+            .is_some_and(|(bang, _, _)| bang.is_some());
         let of_trait = value
             .trait_
             .map(|(_, path, _)| Type::Path(Path::from(path)));

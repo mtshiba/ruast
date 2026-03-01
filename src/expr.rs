@@ -3501,7 +3501,7 @@ impl From<syn::Path> for Path {
             segments: value
                 .segments
                 .into_iter()
-                .map(|seg| PathSegment::from(seg))
+                .map(PathSegment::from)
                 .collect(),
         }
     }
@@ -3665,7 +3665,6 @@ impl fmt::Display for PathSegment {
 }
 
 #[cfg(feature = "syn")]
-#[cfg(feature = "syn")]
 impl From<syn::Ident> for PathSegment {
     fn from(value: syn::Ident) -> Self {
         Self {
@@ -3688,7 +3687,7 @@ impl From<syn::PathSegment> for PathSegment {
                 args: Some(
                     args.args
                         .into_iter()
-                        .map(|arg| GenericArg::from(arg))
+                        .map(GenericArg::from)
                         .collect(),
                 ),
             },
