@@ -17,9 +17,7 @@ fuzz_target!(|bytes: &[u8]| {
     match syn::parse_str::<syn::Expr>(src.as_str()) {
         Ok(_) => {}
         Err(err) => {
-            panic!(
-                "failed to parse TokenStream output: \"{src}\"\ntokens: {ts:?}\nerror: {err}"
-            )
+            panic!("failed to parse TokenStream output: \"{src}\"\ntokens: {ts:?}\nerror: {err}")
         }
     }
 });

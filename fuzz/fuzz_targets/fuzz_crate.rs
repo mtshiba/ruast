@@ -16,7 +16,9 @@ fuzz_target!(|bytes: &[u8]| {
     match syn::parse_file(src.as_str()) {
         Ok(_) => {}
         Err(err) => {
-            panic!("failed to parse generated crate code: \"{src}\"\ncrate: {krate:?}\nerror: {err}")
+            panic!(
+                "failed to parse generated crate code: \"{src}\"\ncrate: {krate:?}\nerror: {err}"
+            )
         }
     }
 });

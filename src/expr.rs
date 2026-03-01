@@ -3498,11 +3498,7 @@ impl From<syn::Path> for Path {
     fn from(value: syn::Path) -> Self {
         Self {
             is_global: value.leading_colon.is_some(),
-            segments: value
-                .segments
-                .into_iter()
-                .map(PathSegment::from)
-                .collect(),
+            segments: value.segments.into_iter().map(PathSegment::from).collect(),
         }
     }
 }
@@ -3684,12 +3680,7 @@ impl From<syn::PathSegment> for PathSegment {
             },
             syn::PathArguments::AngleBracketed(args) => Self {
                 ident: value.ident.to_string().into(),
-                args: Some(
-                    args.args
-                        .into_iter()
-                        .map(GenericArg::from)
-                        .collect(),
-                ),
+                args: Some(args.args.into_iter().map(GenericArg::from).collect()),
             },
             syn::PathArguments::Parenthesized(args) => {
                 let mut generic_args: Vec<GenericArg> = args

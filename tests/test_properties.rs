@@ -131,7 +131,7 @@ fn should_skip_expr_kind(kind: &ExprKind) -> bool {
             should_skip_expr(&i.cond)
                 || contains_control_flow(&i.cond)
                 || should_skip_block(&i.then)
-                || i.else_.as_ref().map_or(false, |e| should_skip_expr(e))
+                || i.else_.as_deref().is_some_and(should_skip_expr)
         }
         ExprKind::While(w) => {
             should_skip_expr(&w.cond)
@@ -151,7 +151,7 @@ fn should_skip_expr_kind(kind: &ExprKind) -> bool {
                 || m.arms.iter().any(|arm| {
                     !arm.attrs.is_empty()
                         || should_skip_pat(&arm.pat)
-                        || arm.guard.as_ref().map_or(false, |g| should_skip_expr(g))
+                        || arm.guard.as_deref().is_some_and(should_skip_expr)
                         || should_skip_expr(&arm.body)
                 })
         }
@@ -167,11 +167,11 @@ fn should_skip_expr_kind(kind: &ExprKind) -> bool {
             // Range expressions with block-like sub-expressions cause
             // parsing ambiguity (precedence, block boundaries, etc.)
             r.start
-                .as_ref()
-                .map_or(false, |e| should_skip_expr(e) || contains_block_expr(e))
+                .as_deref()
+                .is_some_and(|e| should_skip_expr(e) || contains_block_expr(e))
                 || r.end
-                    .as_ref()
-                    .map_or(false, |e| should_skip_expr(e) || contains_block_expr(e))
+                    .as_deref()
+                    .is_some_and(|e| should_skip_expr(e) || contains_block_expr(e))
         }
         ExprKind::Path(p) => should_skip_path(p),
         ExprKind::AddrOf(a) => should_skip_expr(&a.expr),
@@ -186,7 +186,7 @@ fn should_skip_expr_kind(kind: &ExprKind) -> bool {
             false
         }
         ExprKind::Continue(_) => false,
-        ExprKind::Return(r) => r.expr.as_ref().map_or(false, |e| should_skip_expr(e)),
+        ExprKind::Return(r) => r.expr.as_deref().is_some_and(should_skip_expr),
         ExprKind::Repeat(r) => should_skip_expr(&r.expr) || should_skip_expr(&r.len.0),
         ExprKind::Try(t) => should_skip_expr(&t.expr),
         ExprKind::Paren(p) => should_skip_expr(&p.0),
@@ -223,8 +223,8 @@ fn contains_control_flow(expr: &Expr) -> bool {
         ExprKind::Assign(a) => contains_control_flow(&a.left) || contains_control_flow(&a.right),
         ExprKind::AssignOp(a) => contains_control_flow(&a.left) || contains_control_flow(&a.right),
         ExprKind::Range(r) => {
-            r.start.as_ref().map_or(false, |e| contains_control_flow(e))
-                || r.end.as_ref().map_or(false, |e| contains_control_flow(e))
+            r.start.as_deref().is_some_and(contains_control_flow)
+                || r.end.as_deref().is_some_and(contains_control_flow)
         }
         ExprKind::Try(t) => contains_control_flow(&t.expr),
         ExprKind::Tuple(t) => t.0.iter().any(contains_control_flow),
@@ -285,8 +285,8 @@ fn contains_block_expr(expr: &Expr) -> bool {
         ExprKind::Tuple(t) => t.0.iter().any(contains_block_expr),
         ExprKind::Array(a) => a.0.iter().any(contains_block_expr),
         ExprKind::Range(r) => {
-            r.start.as_ref().map_or(false, |e| contains_block_expr(e))
-                || r.end.as_ref().map_or(false, |e| contains_block_expr(e))
+            r.start.as_deref().is_some_and(contains_block_expr)
+                || r.end.as_deref().is_some_and(contains_block_expr)
         }
         ExprKind::Let(l) => contains_block_expr(&l.expr),
         _ => false,
@@ -318,7 +318,7 @@ fn should_skip_type(ty: &Type) -> bool {
         Type::Ptr(p) => should_skip_type_non_impl_dyn(&p.ty),
         Type::Ref(r) => should_skip_type_non_impl_dyn(&r.ty.ty),
         Type::BareFn(bf) => should_skip_bare_fn(bf),
-        Type::Tuple(tys) => tys.iter().any(|t| should_skip_type_non_impl_dyn(t)),
+        Type::Tuple(tys) => tys.iter().any(should_skip_type_non_impl_dyn),
         Type::Path(p) => should_skip_path(p),
         Type::Never | Type::Infer | Type::ImplicitSelf | Type::Err => false,
     }
@@ -397,7 +397,7 @@ fn should_skip_generic_param(param: &GenericParam) -> bool {
                 return true;
             }
             tp.bounds.iter().any(should_skip_generic_bound)
-                || tp.default.as_ref().map_or(false, should_skip_type)
+                || tp.default.as_ref().is_some_and(should_skip_type)
         }
         GenericParam::ConstParam(cp) => {
             if is_reserved_keyword(&cp.ident) {
@@ -478,7 +478,7 @@ fn should_skip_path_segment(seg: &PathSegment) -> bool {
     }
     seg.args
         .as_ref()
-        .map_or(false, |args| args.iter().any(should_skip_generic_arg))
+        .is_some_and(|args| args.iter().any(should_skip_generic_arg))
 }
 
 // ---------------------------------------------------------------------------
@@ -490,7 +490,7 @@ fn should_skip_pat(pat: &Pat) -> bool {
         Pat::MacCall(_) => true,
         Pat::Wild | Pat::Rest => false,
         Pat::Ident(ip) => {
-            is_reserved_keyword(&ip.ident) || ip.pat.as_ref().map_or(false, |p| should_skip_pat(p))
+            is_reserved_keyword(&ip.ident) || ip.pat.as_deref().is_some_and(should_skip_pat)
         }
         Pat::Struct(sp) => {
             should_skip_path(&sp.path) || sp.fields.iter().any(|f| should_skip_pat(&f.pat))
@@ -501,8 +501,8 @@ fn should_skip_pat(pat: &Pat) -> bool {
         Pat::Ref(r) => should_skip_pat(&r.pat),
         Pat::Lit(e) => should_skip_expr(e),
         Pat::Range(r) => {
-            r.start.as_ref().map_or(false, |e| should_skip_expr(e))
-                || r.end.as_ref().map_or(false, |e| should_skip_expr(e))
+            r.start.as_deref().is_some_and(should_skip_expr)
+                || r.end.as_deref().is_some_and(should_skip_expr)
         }
         Pat::Type(tp) => should_skip_pat(&tp.pat) || should_skip_type(&tp.ty),
     }
@@ -525,7 +525,7 @@ fn should_skip_stmt(stmt: &Stmt) -> bool {
         Stmt::Semi(semi) => should_skip_expr(&semi.0),
         Stmt::Local(local) => {
             should_skip_pat(&local.pat)
-                || local.ty.as_ref().map_or(false, should_skip_type)
+                || local.ty.as_ref().is_some_and(should_skip_type)
                 || match &local.kind {
                     LocalKind::Decl => false,
                     LocalKind::Init(e) => should_skip_expr(e),
@@ -544,7 +544,7 @@ fn should_skip_fn_decl(decl: &FnDecl) -> bool {
     decl.inputs
         .iter()
         .any(|p| should_skip_pat(&p.pat) || should_skip_type(&p.ty))
-        || decl.output.as_ref().map_or(false, should_skip_type)
+        || decl.output.as_ref().is_some_and(should_skip_type)
 }
 
 // ---------------------------------------------------------------------------
@@ -591,8 +591,7 @@ fn should_skip_item_kind(kind: &ItemKind) -> bool {
             if is_reserved_keyword(&ta.ident) {
                 return true;
             }
-            should_skip_generic_params(&ta.generics)
-                || ta.ty.as_ref().map_or(false, should_skip_type)
+            should_skip_generic_params(&ta.generics) || ta.ty.as_ref().is_some_and(should_skip_type)
         }
 
         // I: Negative impls
@@ -609,7 +608,7 @@ fn should_skip_item_kind(kind: &ItemKind) -> bool {
                 return true;
             }
             should_skip_generic_params(&imp.generics)
-                || imp.of_trait.as_ref().map_or(false, should_skip_type)
+                || imp.of_trait.as_ref().is_some_and(should_skip_type)
                 || should_skip_type(&imp.self_ty)
                 || should_skip_where_clauses(&imp.where_clauses)
                 || imp.items.iter().any(should_skip_assoc_item)
@@ -648,7 +647,7 @@ fn should_skip_item_kind(kind: &ItemKind) -> bool {
                         || has_inner_attr(&v.attrs)
                         || should_skip_fields(&v.fields)
                         || fields_have_inner_attrs(&v.fields)
-                        || v.discriminant.as_ref().map_or(false, should_skip_expr)
+                        || v.discriminant.as_ref().is_some_and(should_skip_expr)
                 })
         }
 
@@ -671,7 +670,7 @@ fn should_skip_item_kind(kind: &ItemKind) -> bool {
             }
             is_reserved_keyword(&si.ident)
                 || should_skip_type(&si.ty)
-                || si.expr.as_ref().map_or(false, should_skip_expr)
+                || si.expr.as_ref().is_some_and(should_skip_expr)
         }
 
         ItemKind::ConstItem(ci) => {
@@ -681,7 +680,7 @@ fn should_skip_item_kind(kind: &ItemKind) -> bool {
             }
             is_reserved_keyword(&ci.ident)
                 || should_skip_type(&ci.ty)
-                || ci.expr.as_ref().map_or(false, should_skip_expr)
+                || ci.expr.as_ref().is_some_and(should_skip_expr)
         }
 
         ItemKind::Mod(m) => match m {
@@ -705,7 +704,7 @@ fn should_skip_fn(f: &Fn) -> bool {
     should_skip_generic_params(&f.generics)
         || should_skip_fn_decl(&f.fn_decl)
         || should_skip_where_clauses(&f.where_clauses)
-        || f.body.as_ref().map_or(false, should_skip_block)
+        || f.body.as_ref().is_some_and(should_skip_block)
 }
 
 fn should_skip_assoc_item(item: &AssocItem) -> bool {
@@ -714,12 +713,12 @@ fn should_skip_assoc_item(item: &AssocItem) -> bool {
         AssocItemKind::TyAlias(ta) => {
             is_reserved_keyword(&ta.ident)
                 || should_skip_generic_params(&ta.generics)
-                || ta.ty.as_ref().map_or(false, should_skip_type)
+                || ta.ty.as_ref().is_some_and(should_skip_type)
         }
         AssocItemKind::ConstItem(ci) => {
             is_reserved_keyword(&ci.ident)
                 || should_skip_type(&ci.ty)
-                || ci.expr.as_ref().map_or(false, should_skip_expr)
+                || ci.expr.as_ref().is_some_and(should_skip_expr)
         }
         AssocItemKind::MacCall(_) => true,
     }
@@ -735,7 +734,7 @@ fn should_skip_fields(fields: &Fields) -> bool {
         Fields::Struct(fds) => fds.iter().any(|fd| {
             // Named struct fields must have an identifier
             fd.ident.is_none()
-                || fd.ident.as_ref().map_or(false, |i| is_reserved_keyword(i))
+                || fd.ident.as_ref().is_some_and(|i| is_reserved_keyword(i))
                 || should_skip_type(&fd.ty)
         }),
     }
@@ -758,7 +757,7 @@ fn fields_have_inner_attrs(fields: &Fields) -> bool {
 }
 
 fn should_skip_where_clauses(wc: &Option<Vec<WherePredicate>>) -> bool {
-    wc.as_ref().map_or(false, |preds| {
+    wc.as_ref().is_some_and(|preds| {
         preds.iter().any(|pred| match pred {
             WherePredicate::Type(pt) => {
                 should_skip_type(&pt.bounded_ty)
@@ -907,17 +906,13 @@ fn prop_expr_display_and_tokenstream_are_consistent() {
         let display_parsed = syn::parse_str::<syn::Expr>(&display_src);
         let ts_parsed = syn::parse_str::<syn::Expr>(&ts_src);
 
-        match (display_parsed, ts_parsed) {
-            (Ok(d), Ok(t)) => {
-                let d_norm = quote::quote!(#d).to_string();
-                let t_norm = quote::quote!(#t).to_string();
-                assert_eq!(
-                    d_norm, t_norm,
-                    "Display and TokenStream diverge:\n  display: {display_src}\n  tokens:  {ts_src}"
-                );
-            }
-            // If either side fails to parse, skip — P1/P2 catch these
-            _ => {}
+        if let (Ok(d), Ok(t)) = (display_parsed, ts_parsed) {
+            let d_norm = quote::quote!(#d).to_string();
+            let t_norm = quote::quote!(#t).to_string();
+            assert_eq!(
+                d_norm, t_norm,
+                "Display and TokenStream diverge:\n  display: {display_src}\n  tokens:  {ts_src}"
+            );
         }
         Ok(())
     });
@@ -938,16 +933,13 @@ fn prop_type_display_and_tokenstream_are_consistent() {
         let display_parsed = syn::parse_str::<syn::Type>(&display_src);
         let ts_parsed = syn::parse_str::<syn::Type>(&ts_src);
 
-        match (display_parsed, ts_parsed) {
-            (Ok(d), Ok(t)) => {
-                let d_norm = quote::quote!(#d).to_string();
-                let t_norm = quote::quote!(#t).to_string();
-                assert_eq!(
-                    d_norm, t_norm,
-                    "Display and TokenStream diverge:\n  display: {display_src}\n  tokens:  {ts_src}"
-                );
-            }
-            _ => {}
+        if let (Ok(d), Ok(t)) = (display_parsed, ts_parsed) {
+            let d_norm = quote::quote!(#d).to_string();
+            let t_norm = quote::quote!(#t).to_string();
+            assert_eq!(
+                d_norm, t_norm,
+                "Display and TokenStream diverge:\n  display: {display_src}\n  tokens:  {ts_src}"
+            );
         }
         Ok(())
     });
