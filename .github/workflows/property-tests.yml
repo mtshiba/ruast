@@ -12,6 +12,7 @@ on:
     paths:
       - "src/**"
       - "tests/test_properties.rs"
+      - "tests/test_realworld.rs"
       - "fuzz/**"
 
 env:
@@ -42,6 +43,39 @@ jobs:
         with:
           name: property-test-results
           path: property-test-results.txt
+
+  realworld-tests:
+    name: Real-world project tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Cache cloned repositories
+        uses: actions/cache@v4
+        with:
+          path: target/realworld-repos
+          key: realworld-repos-${{ github.sha }}
+          restore-keys: |
+            realworld-repos-
+
+      - name: Run real-world tests
+        # Real-world tests may find new bugs — report but don't block CI
+        continue-on-error: true
+        run: |
+          cargo test -p ruast --test test_realworld --features "syn" -- \
+            --ignored --test-threads=1 2>&1 | tee realworld-test-results.txt
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: realworld-test-results
+          path: realworld-test-results.txt
 
   fuzz:
     name: Fuzz (${{ matrix.target }})

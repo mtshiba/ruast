@@ -6,14 +6,14 @@ use std::ops::{Deref, Index, IndexMut};
 #[cfg(feature = "syn")]
 use crate::expr::AttributeItem;
 use crate::expr::{
-    Async, Attribute, Call, ConstBlock, DelimArgs, Expr, MacCall, MethodCall, Path, Range,
-    TryBlock, UnsafeBlock,
+    Async, Attribute, Call, ConstBlock, DelimArgs, Expr, MacCall, MacDelimiter, MethodCall, Path,
+    Range, TryBlock, UnsafeBlock,
 };
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 use crate::ty::Type;
 use crate::{
-    impl_display_for_enum, impl_hasitem_methods, impl_obvious_conversion, ForLoop, GenericBound,
-    GenericParam, HasPrecedence, Lit, Mutability, OperatorPrecedence,
+    impl_hasitem_methods, impl_obvious_conversion, ForLoop, GenericBound, GenericParam,
+    HasPrecedence, Lit, Mutability, OperatorPrecedence,
 };
 
 #[cfg(feature = "fuzzing")]
@@ -826,7 +826,7 @@ impl fmt::Display for Pat {
                 }
                 write!(f, "]")
             }
-            Self::Rest => write!(f, "..."),
+            Self::Rest => write!(f, ".."),
             Self::Paren(pat) => write!(f, "({pat})"),
             Self::MacCall(mac_call) => write!(f, "{mac_call}"),
             Self::Type(type_pat) => write!(f, "{type_pat}"),
@@ -905,6 +905,11 @@ impl From<syn::Pat> for Pat {
                 pat: Box::new(Pat::from(*pat.pat)),
                 ty: Type::from(*pat.ty),
             }),
+            syn::Pat::Path(pat_path) => Pat::Lit(Expr::from(Path::from(pat_path.path))),
+            syn::Pat::Macro(pat_macro) => Pat::MacCall(MacCall::from(pat_macro.mac)),
+            syn::Pat::Const(pat_const) => {
+                Pat::Lit(Expr::from(ConstBlock::new(Block::from(pat_const.block))))
+            }
             syn::Pat::Verbatim(_) => unimplemented!("Pat::Verbatim"),
             _ => unimplemented!(),
         }
@@ -967,7 +972,7 @@ impl From<Pat> for TokenStream {
                 ts.push(Token::CloseDelim(Delimiter::Bracket));
                 ts
             }
-            Pat::Rest => TokenStream::from(vec![Token::DotDotDot]),
+            Pat::Rest => TokenStream::from(vec![Token::DotDot]),
             Pat::Paren(pat) => {
                 let mut ts = TokenStream::new();
                 ts.push(Token::OpenDelim(Delimiter::Parenthesis));
@@ -4232,7 +4237,34 @@ impl ItemKind {
 }
 
 impl_obvious_conversion!(ItemKind; Use, StaticItem, ConstItem, Fn, Mod, TyAlias, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCallWithSemi, ExternBlock, ExternCrate);
-impl_display_for_enum!(ItemKind; Use, StaticItem, ConstItem, Fn, Mod, TyAlias, EnumDef, StructDef, UnionDef, TraitDef, Impl, MacroDef, MacCallWithSemi, ExternBlock, ExternCrate);
+impl fmt::Display for ItemKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Use(item) => write!(f, "{item}"),
+            Self::StaticItem(item) => write!(f, "{item}"),
+            Self::ConstItem(item) => write!(f, "{item}"),
+            Self::Fn(item) => write!(f, "{item}"),
+            Self::Mod(item) => write!(f, "{item}"),
+            Self::TyAlias(item) => write!(f, "{item}"),
+            Self::EnumDef(item) => write!(f, "{item}"),
+            Self::StructDef(item) => write!(f, "{item}"),
+            Self::UnionDef(item) => write!(f, "{item}"),
+            Self::TraitDef(item) => write!(f, "{item}"),
+            Self::Impl(item) => write!(f, "{item}"),
+            Self::MacroDef(item) => write!(f, "{item}"),
+            Self::MacCallWithSemi(semi_mac) => {
+                // Brace-delimited macro calls don't need a trailing semicolon
+                if semi_mac.0.args.delim == MacDelimiter::Brace {
+                    write!(f, "{}", semi_mac.0)
+                } else {
+                    write!(f, "{};", semi_mac.0)
+                }
+            }
+            Self::ExternBlock(item) => write!(f, "{item}"),
+            Self::ExternCrate(item) => write!(f, "{item}"),
+        }
+    }
+}
 
 impl MaybeIdent for ItemKind {
     fn ident(&self) -> Option<&str> {
@@ -4593,11 +4625,28 @@ impl From<syn::Item> for Item {
             }
             syn::Item::Macro(item) => {
                 let attrs = item.attrs.clone();
-                (
-                    attrs,
-                    Visibility::Inherited,
-                    ItemKind::MacCallWithSemi(Semi(MacCall::from(item.mac))),
-                )
+                if let Some(ident) = &item.ident {
+                    // macro_rules! definition
+                    let delim = match item.mac.delimiter {
+                        syn::MacroDelimiter::Paren(_) => MacDelimiter::Parenthesis,
+                        syn::MacroDelimiter::Brace(_) => MacDelimiter::Brace,
+                        syn::MacroDelimiter::Bracket(_) => MacDelimiter::Bracket,
+                    };
+                    let tokens = TokenStream::from(vec![Token::ident(item.mac.tokens.to_string())]);
+                    let args = DelimArgs { delim, tokens };
+                    (
+                        attrs,
+                        Visibility::Inherited,
+                        ItemKind::MacroDef(MacroDef::new(ident.to_string(), args)),
+                    )
+                } else {
+                    // Macro invocation at item position
+                    (
+                        attrs,
+                        Visibility::Inherited,
+                        ItemKind::MacCallWithSemi(Semi(MacCall::from(item.mac))),
+                    )
+                }
             }
             _ => unimplemented!("unsupported syn::Item variant"),
         };
@@ -5105,7 +5154,23 @@ impl HasVisibility for AssocItemKind {
     }
 }
 
-impl_display_for_enum!(AssocItemKind; ConstItem, Fn, TyAlias, MacCall);
+impl fmt::Display for AssocItemKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ConstItem(item) => write!(f, "{item}"),
+            Self::Fn(item) => write!(f, "{item}"),
+            Self::TyAlias(item) => write!(f, "{item}"),
+            Self::MacCall(mac) => {
+                // Brace-delimited macro calls don't need a trailing semicolon
+                if mac.args.delim == MacDelimiter::Brace {
+                    write!(f, "{mac}")
+                } else {
+                    write!(f, "{mac};")
+                }
+            }
+        }
+    }
+}
 impl_obvious_conversion!(AssocItemKind; ConstItem, Fn, TyAlias, MacCall);
 
 impl MaybeIdent for AssocItemKind {
@@ -5321,7 +5386,14 @@ impl fmt::Display for Stmt {
             Self::Expr(expr) => write!(f, "{expr}"),
             Self::Semi(semi) => write!(f, "{semi}"),
             Self::Empty(_) => write!(f, ""),
-            Self::MacCallWithSemi(mac_call) => write!(f, "{mac_call}"),
+            Self::MacCallWithSemi(semi_mac) => {
+                // Brace-delimited macro calls don't need a trailing semicolon
+                if semi_mac.0.args.delim == MacDelimiter::Brace {
+                    write!(f, "{}", semi_mac.0)
+                } else {
+                    write!(f, "{};", semi_mac.0)
+                }
+            }
         }
     }
 }

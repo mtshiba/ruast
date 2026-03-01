@@ -833,6 +833,17 @@ impl From<syn::Expr> for Expr {
                 Expr::from(ConstBlock::new(Block::from(const_expr.block)))
             }
             syn::Expr::Infer(_) => Expr::from(Underscore {}),
+            syn::Expr::RawAddr(raw) => {
+                let mutability = match raw.mutability {
+                    syn::PointerMutability::Const(_) => Mutability::Not,
+                    syn::PointerMutability::Mut(_) => Mutability::Mut,
+                };
+                Expr::from(AddrOf {
+                    kind: BorrowKind::Raw,
+                    mutability,
+                    expr: Box::new(Expr::from(*raw.expr)),
+                })
+            }
             _ => unimplemented!(),
         }
     }
@@ -3057,27 +3068,111 @@ impl From<syn::Lit> for Lit {
                 kind: LitKind::Bool,
                 symbol: lit.value().to_string().into(),
             },
-            syn::Lit::Byte(lit) => Self {
-                kind: LitKind::Byte,
-                symbol: lit.value().to_string().into(),
+            syn::Lit::Byte(lit) => {
+                let b = lit.value();
+                let escaped = match b {
+                    b'\'' => "\\'".to_string(),
+                    b'\\' => "\\\\".to_string(),
+                    b'\n' => "\\n".to_string(),
+                    b'\r' => "\\r".to_string(),
+                    b'\t' => "\\t".to_string(),
+                    b'\0' => "\\0".to_string(),
+                    0x20..=0x7e => (b as char).to_string(),
+                    _ => format!("\\x{b:02x}"),
+                };
+                Self {
+                    kind: LitKind::Byte,
+                    symbol: format!("b'{escaped}'").into(),
+                }
+            }
+            syn::Lit::Char(lit) => {
+                let ch = lit.value();
+                let escaped = match ch {
+                    '\'' => "\\'".to_string(),
+                    '\\' => "\\\\".to_string(),
+                    '\n' => "\\n".to_string(),
+                    '\r' => "\\r".to_string(),
+                    '\t' => "\\t".to_string(),
+                    '\0' => "\\0".to_string(),
+                    c => c.to_string(),
+                };
+                Self {
+                    kind: LitKind::Char,
+                    symbol: format!("'{escaped}'").into(),
+                }
+            }
+            syn::Lit::Int(lit) => {
+                let suffix = lit.suffix();
+                let symbol = if suffix.is_empty() {
+                    lit.base10_digits().to_string()
+                } else {
+                    format!("{}{}", lit.base10_digits(), suffix)
+                };
+                Self {
+                    kind: LitKind::Integer,
+                    symbol: symbol.into(),
+                }
+            }
+            syn::Lit::Float(lit) => {
+                let suffix = lit.suffix();
+                let symbol = if suffix.is_empty() {
+                    lit.base10_digits().to_string()
+                } else {
+                    format!("{}{}", lit.base10_digits(), suffix)
+                };
+                Self {
+                    kind: LitKind::Float,
+                    symbol: symbol.into(),
+                }
+            }
+            syn::Lit::Str(lit) => {
+                let value = lit.value();
+                let mut escaped = std::string::String::new();
+                for ch in value.chars() {
+                    match ch {
+                        '"' => escaped.push_str("\\\""),
+                        '\\' => escaped.push_str("\\\\"),
+                        '\n' => escaped.push_str("\\n"),
+                        '\r' => escaped.push_str("\\r"),
+                        '\t' => escaped.push_str("\\t"),
+                        '\0' => escaped.push_str("\\0"),
+                        c => escaped.push(c),
+                    }
+                }
+                Self {
+                    kind: LitKind::Str,
+                    symbol: escaped.into(),
+                }
+            }
+            syn::Lit::ByteStr(lit) => {
+                let bytes = lit.value();
+                let mut escaped = std::string::String::new();
+                for &b in &bytes {
+                    match b {
+                        b'"' => escaped.push_str("\\\""),
+                        b'\\' => escaped.push_str("\\\\"),
+                        b'\n' => escaped.push_str("\\n"),
+                        b'\r' => escaped.push_str("\\r"),
+                        b'\t' => escaped.push_str("\\t"),
+                        b'\0' => escaped.push_str("\\0"),
+                        0x20..=0x7e => escaped.push(b as char),
+                        _ => escaped.push_str(&format!("\\x{b:02x}")),
+                    }
+                }
+                Self {
+                    kind: LitKind::ByteStr,
+                    symbol: escaped.into(),
+                }
+            }
+            syn::Lit::CStr(lit) => Self {
+                kind: LitKind::CStr,
+                symbol: lit.value().to_string_lossy().into_owned().into(),
             },
-            syn::Lit::Char(lit) => Self {
-                kind: LitKind::Char,
-                symbol: lit.value().to_string().into(),
-            },
-            syn::Lit::Int(lit) => Self {
+            syn::Lit::Verbatim(lit) => Self {
                 kind: LitKind::Integer,
-                symbol: lit.base10_digits().to_string().into(),
+                symbol: lit.to_string().into(),
             },
-            syn::Lit::Float(lit) => Self {
-                kind: LitKind::Float,
-                symbol: lit.base10_digits().to_string().into(),
-            },
-            syn::Lit::Str(lit) => Self {
-                kind: LitKind::Str,
-                symbol: lit.value().into(),
-            },
-            _ => todo!("Handle other lit types"),
+            _ => unimplemented!("unknown syn::Lit variant"),
         }
     }
 }
@@ -3387,6 +3482,7 @@ impl From<syn::ExprMethodCall> for MethodCall {
             PathSegment {
                 ident: value.method.to_string().into(),
                 args: Some(args),
+                turbofish: true,
             }
         } else {
             PathSegment::from(value.method)
@@ -3627,18 +3723,31 @@ impl Path {
     }
 }
 
-#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PathSegment {
     pub ident: String,
     pub args: Option<Vec<GenericArg>>,
+    pub turbofish: bool,
+}
+
+#[cfg(feature = "fuzzing")]
+impl<'a> arbitrary::Arbitrary<'a> for PathSegment {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let ident = String::arbitrary(u)?;
+        let args = Option::<Vec<GenericArg>>::arbitrary(u)?;
+        // turbofish is always false for fuzzing (type context)
+        Ok(Self {
+            ident,
+            args,
+            turbofish: false,
+        })
+    }
 }
 
 #[cfg(feature = "fuzzing")]
 impl PathSegment {
     fn arbitrary_no_arg(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
         use arbitrary::Arbitrary;
-
         Ok(Self::new(String::arbitrary(u)?, None))
     }
 }
@@ -3647,7 +3756,11 @@ impl fmt::Display for PathSegment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.ident)?;
         if let Some(args) = &self.args {
-            write!(f, "::<")?;
+            if self.turbofish {
+                write!(f, "::<")?;
+            } else {
+                write!(f, "<")?;
+            }
             for (i, arg) in args.iter().enumerate() {
                 if i > 0 {
                     write!(f, ", ")?;
@@ -3666,6 +3779,7 @@ impl From<syn::Ident> for PathSegment {
         Self {
             ident: value.to_string().into(),
             args: None,
+            turbofish: false,
         }
     }
 }
@@ -3677,11 +3791,16 @@ impl From<syn::PathSegment> for PathSegment {
             syn::PathArguments::None => Self {
                 ident: value.ident.to_string().into(),
                 args: None,
+                turbofish: false,
             },
-            syn::PathArguments::AngleBracketed(args) => Self {
-                ident: value.ident.to_string().into(),
-                args: Some(args.args.into_iter().map(GenericArg::from).collect()),
-            },
+            syn::PathArguments::AngleBracketed(args) => {
+                let turbofish = args.colon2_token.is_some();
+                Self {
+                    ident: value.ident.to_string().into(),
+                    args: Some(args.args.into_iter().map(GenericArg::from).collect()),
+                    turbofish,
+                }
+            }
             syn::PathArguments::Parenthesized(args) => {
                 let mut generic_args: Vec<GenericArg> = args
                     .inputs
@@ -3694,6 +3813,7 @@ impl From<syn::PathSegment> for PathSegment {
                 Self {
                     ident: value.ident.to_string().into(),
                     args: Some(generic_args),
+                    turbofish: false,
                 }
             }
         }
@@ -3701,7 +3821,11 @@ impl From<syn::PathSegment> for PathSegment {
 }
 impl From<String> for PathSegment {
     fn from(ident: String) -> Self {
-        Self { ident, args: None }
+        Self {
+            ident,
+            args: None,
+            turbofish: false,
+        }
     }
 }
 impl From<&str> for PathSegment {
@@ -3709,6 +3833,7 @@ impl From<&str> for PathSegment {
         Self {
             ident: ident.to_string().into(),
             args: None,
+            turbofish: false,
         }
     }
 }
@@ -3719,7 +3844,9 @@ impl From<PathSegment> for TokenStream {
 
         if let Some(args) = value.args {
             ts.push(Token::ident(value.ident).into_joint());
-            ts.push(Token::ModSep.into_joint());
+            if value.turbofish {
+                ts.push(Token::ModSep.into_joint());
+            }
             ts.push(Token::Lt.into_joint());
             for (i, arg) in args.iter().enumerate() {
                 if i > 0 {
@@ -3740,6 +3867,7 @@ impl PathSegment {
         Self {
             ident: ident.into(),
             args,
+            turbofish: false,
         }
     }
 
