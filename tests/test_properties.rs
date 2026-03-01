@@ -39,8 +39,7 @@ const KNOWN_ABIS: &[&str] = &[
 
 /// Reserved keywords that random identifier generation may produce.
 const RESERVED_KEYWORDS: &[&str] = &[
-    "do", "box", "priv", "final", "abstract", "become", "override", "virtual",
-    "typeof", "unsized",
+    "do", "box", "priv", "final", "abstract", "become", "override", "virtual", "typeof", "unsized",
 ];
 
 fn is_valid_abi(abi: &str) -> bool {
@@ -109,9 +108,7 @@ fn should_skip_expr_kind(kind: &ExprKind) -> bool {
 
         // Recurse into sub-expressions
         ExprKind::Array(a) => a.0.iter().any(should_skip_expr),
-        ExprKind::Call(c) => {
-            should_skip_expr(&c.func) || c.args.iter().any(should_skip_expr)
-        }
+        ExprKind::Call(c) => should_skip_expr(&c.func) || c.args.iter().any(should_skip_expr),
         ExprKind::MethodCall(mc) => {
             should_skip_expr(&mc.receiver)
                 || mc.args.iter().any(should_skip_expr)
@@ -128,12 +125,8 @@ fn should_skip_expr_kind(kind: &ExprKind) -> bool {
             }
             should_skip_expr(&c.expr) || should_skip_type(&c.ty)
         }
-        ExprKind::TypeAscription(ta) => {
-            should_skip_expr(&ta.expr) || should_skip_type(&ta.ty)
-        }
-        ExprKind::Let(l) => {
-            should_skip_pat(&l.pat) || should_skip_expr(&l.expr)
-        }
+        ExprKind::TypeAscription(ta) => should_skip_expr(&ta.expr) || should_skip_type(&ta.ty),
+        ExprKind::Let(l) => should_skip_pat(&l.pat) || should_skip_expr(&l.expr),
         ExprKind::If(i) => {
             should_skip_expr(&i.cond)
                 || contains_control_flow(&i.cond)
@@ -166,26 +159,19 @@ fn should_skip_expr_kind(kind: &ExprKind) -> bool {
         ExprKind::Async(a) => should_skip_block(&a.block),
         ExprKind::Await(a) => should_skip_expr(&a.expr),
         ExprKind::TryBlock(tb) => should_skip_block(&tb.block),
-        ExprKind::Assign(a) => {
-            should_skip_expr(&a.left) || should_skip_expr(&a.right)
-        }
-        ExprKind::AssignOp(a) => {
-            should_skip_expr(&a.left) || should_skip_expr(&a.right)
-        }
-        ExprKind::Field(f) => {
-            should_skip_expr(&f.expr) || is_reserved_keyword(&f.ident)
-        }
-        ExprKind::Index(i) => {
-            should_skip_expr(&i.expr) || should_skip_expr(&i.index)
-        }
+        ExprKind::Assign(a) => should_skip_expr(&a.left) || should_skip_expr(&a.right),
+        ExprKind::AssignOp(a) => should_skip_expr(&a.left) || should_skip_expr(&a.right),
+        ExprKind::Field(f) => should_skip_expr(&f.expr) || is_reserved_keyword(&f.ident),
+        ExprKind::Index(i) => should_skip_expr(&i.expr) || should_skip_expr(&i.index),
         ExprKind::Range(r) => {
             // Range expressions with block-like sub-expressions cause
             // parsing ambiguity (precedence, block boundaries, etc.)
-            r.start.as_ref().map_or(false, |e| {
-                should_skip_expr(e) || contains_block_expr(e)
-            }) || r.end.as_ref().map_or(false, |e| {
-                should_skip_expr(e) || contains_block_expr(e)
-            })
+            r.start
+                .as_ref()
+                .map_or(false, |e| should_skip_expr(e) || contains_block_expr(e))
+                || r.end
+                    .as_ref()
+                    .map_or(false, |e| should_skip_expr(e) || contains_block_expr(e))
         }
         ExprKind::Path(p) => should_skip_path(p),
         ExprKind::AddrOf(a) => should_skip_expr(&a.expr),
@@ -200,12 +186,8 @@ fn should_skip_expr_kind(kind: &ExprKind) -> bool {
             false
         }
         ExprKind::Continue(_) => false,
-        ExprKind::Return(r) => {
-            r.expr.as_ref().map_or(false, |e| should_skip_expr(e))
-        }
-        ExprKind::Repeat(r) => {
-            should_skip_expr(&r.expr) || should_skip_expr(&r.len.0)
-        }
+        ExprKind::Return(r) => r.expr.as_ref().map_or(false, |e| should_skip_expr(e)),
+        ExprKind::Repeat(r) => should_skip_expr(&r.expr) || should_skip_expr(&r.len.0),
         ExprKind::Try(t) => should_skip_expr(&t.expr),
         ExprKind::Paren(p) => should_skip_expr(&p.0),
     }
@@ -229,22 +211,17 @@ fn has_label(kind: &ExprKind) -> bool {
 /// (if/while/for/match scrutinee).
 fn contains_control_flow(expr: &Expr) -> bool {
     match &expr.kind {
-        ExprKind::Break(_) | ExprKind::Continue(_) | ExprKind::Return(_)
-        | ExprKind::Yield(_) => true,
+        ExprKind::Break(_) | ExprKind::Continue(_) | ExprKind::Return(_) | ExprKind::Yield(_) => {
+            true
+        }
         ExprKind::Paren(p) => contains_control_flow(&p.0),
         ExprKind::Cast(c) => contains_control_flow(&c.expr),
         ExprKind::TypeAscription(ta) => contains_control_flow(&ta.expr),
-        ExprKind::Binary(b) => {
-            contains_control_flow(&b.left) || contains_control_flow(&b.right)
-        }
+        ExprKind::Binary(b) => contains_control_flow(&b.left) || contains_control_flow(&b.right),
         ExprKind::Unary(u) => contains_control_flow(&u.expr),
         ExprKind::AddrOf(a) => contains_control_flow(&a.expr),
-        ExprKind::Assign(a) => {
-            contains_control_flow(&a.left) || contains_control_flow(&a.right)
-        }
-        ExprKind::AssignOp(a) => {
-            contains_control_flow(&a.left) || contains_control_flow(&a.right)
-        }
+        ExprKind::Assign(a) => contains_control_flow(&a.left) || contains_control_flow(&a.right),
+        ExprKind::AssignOp(a) => contains_control_flow(&a.left) || contains_control_flow(&a.right),
         ExprKind::Range(r) => {
             r.start.as_ref().map_or(false, |e| contains_control_flow(e))
                 || r.end.as_ref().map_or(false, |e| contains_control_flow(e))
@@ -252,17 +229,14 @@ fn contains_control_flow(expr: &Expr) -> bool {
         ExprKind::Try(t) => contains_control_flow(&t.expr),
         ExprKind::Tuple(t) => t.0.iter().any(contains_control_flow),
         ExprKind::Array(a) => a.0.iter().any(contains_control_flow),
-        ExprKind::Index(i) => {
-            contains_control_flow(&i.expr) || contains_control_flow(&i.index)
-        }
+        ExprKind::Index(i) => contains_control_flow(&i.expr) || contains_control_flow(&i.index),
         ExprKind::Field(f) => contains_control_flow(&f.expr),
         ExprKind::Await(a) => contains_control_flow(&a.expr),
         ExprKind::Call(c) => {
             contains_control_flow(&c.func) || c.args.iter().any(contains_control_flow)
         }
         ExprKind::MethodCall(mc) => {
-            contains_control_flow(&mc.receiver)
-                || mc.args.iter().any(contains_control_flow)
+            contains_control_flow(&mc.receiver) || mc.args.iter().any(contains_control_flow)
         }
         ExprKind::Let(l) => contains_control_flow(&l.expr),
         // Block-like expressions create their own context
@@ -276,38 +250,37 @@ fn contains_control_flow(expr: &Expr) -> bool {
 /// range expressions or match scrutinees.
 fn contains_block_expr(expr: &Expr) -> bool {
     match &expr.kind {
-        ExprKind::If(_) | ExprKind::While(_) | ExprKind::ForLoop(_)
-        | ExprKind::Loop(_) | ExprKind::Match(_) | ExprKind::UnsafeBlock(_)
-        | ExprKind::Async(_) | ExprKind::TryBlock(_) | ExprKind::ConstBlock(_)
-        | ExprKind::LabelledBlock(_) | ExprKind::Closure(_)
-        | ExprKind::Struct(_) | ExprKind::Break(_) | ExprKind::Continue(_)
-        | ExprKind::Return(_) | ExprKind::Yield(_) => true,
+        ExprKind::If(_)
+        | ExprKind::While(_)
+        | ExprKind::ForLoop(_)
+        | ExprKind::Loop(_)
+        | ExprKind::Match(_)
+        | ExprKind::UnsafeBlock(_)
+        | ExprKind::Async(_)
+        | ExprKind::TryBlock(_)
+        | ExprKind::ConstBlock(_)
+        | ExprKind::LabelledBlock(_)
+        | ExprKind::Closure(_)
+        | ExprKind::Struct(_)
+        | ExprKind::Break(_)
+        | ExprKind::Continue(_)
+        | ExprKind::Return(_)
+        | ExprKind::Yield(_) => true,
         ExprKind::Paren(p) => contains_block_expr(&p.0),
         ExprKind::Cast(c) => contains_block_expr(&c.expr),
         ExprKind::TypeAscription(ta) => contains_block_expr(&ta.expr),
-        ExprKind::Binary(b) => {
-            contains_block_expr(&b.left) || contains_block_expr(&b.right)
-        }
+        ExprKind::Binary(b) => contains_block_expr(&b.left) || contains_block_expr(&b.right),
         ExprKind::Unary(u) => contains_block_expr(&u.expr),
         ExprKind::AddrOf(a) => contains_block_expr(&a.expr),
-        ExprKind::Assign(a) => {
-            contains_block_expr(&a.left) || contains_block_expr(&a.right)
-        }
-        ExprKind::AssignOp(a) => {
-            contains_block_expr(&a.left) || contains_block_expr(&a.right)
-        }
+        ExprKind::Assign(a) => contains_block_expr(&a.left) || contains_block_expr(&a.right),
+        ExprKind::AssignOp(a) => contains_block_expr(&a.left) || contains_block_expr(&a.right),
         ExprKind::Try(t) => contains_block_expr(&t.expr),
         ExprKind::Field(f) => contains_block_expr(&f.expr),
         ExprKind::Await(a) => contains_block_expr(&a.expr),
-        ExprKind::Index(i) => {
-            contains_block_expr(&i.expr) || contains_block_expr(&i.index)
-        }
-        ExprKind::Call(c) => {
-            contains_block_expr(&c.func) || c.args.iter().any(contains_block_expr)
-        }
+        ExprKind::Index(i) => contains_block_expr(&i.expr) || contains_block_expr(&i.index),
+        ExprKind::Call(c) => contains_block_expr(&c.func) || c.args.iter().any(contains_block_expr),
         ExprKind::MethodCall(mc) => {
-            contains_block_expr(&mc.receiver)
-                || mc.args.iter().any(contains_block_expr)
+            contains_block_expr(&mc.receiver) || mc.args.iter().any(contains_block_expr)
         }
         ExprKind::Tuple(t) => t.0.iter().any(contains_block_expr),
         ExprKind::Array(a) => a.0.iter().any(contains_block_expr),
@@ -341,9 +314,7 @@ fn should_skip_type(ty: &Type) -> bool {
         Type::ImplTrait(it) => it.bounds.iter().any(should_skip_generic_bound),
 
         Type::Slice(inner) => should_skip_type_non_impl_dyn(inner),
-        Type::Array(inner, len) => {
-            should_skip_type_non_impl_dyn(inner) || should_skip_expr(&len.0)
-        }
+        Type::Array(inner, len) => should_skip_type_non_impl_dyn(inner) || should_skip_expr(&len.0),
         Type::Ptr(p) => should_skip_type_non_impl_dyn(&p.ty),
         Type::Ref(r) => should_skip_type_non_impl_dyn(&r.ty.ty),
         Type::BareFn(bf) => should_skip_bare_fn(bf),
@@ -454,7 +425,9 @@ fn should_skip_generic_param(param: &GenericParam) -> bool {
 
 /// for<...> only supports simple lifetime params on stable Rust.
 fn should_skip_higher_ranked_params(params: &[GenericParam]) -> bool {
-    params.iter().any(|p| !matches!(p, GenericParam::Lifetime(lp) if lp.bounds.is_empty()))
+    params
+        .iter()
+        .any(|p| !matches!(p, GenericParam::Lifetime(lp) if lp.bounds.is_empty()))
 }
 
 fn should_skip_const_param_default(expr: &Expr) -> bool {
@@ -465,9 +438,7 @@ fn should_skip_const_param_default(expr: &Expr) -> bool {
         // Only literals, paths, and simple braced blocks are allowed
         ExprKind::Lit(_) => false,
         ExprKind::Path(p) => should_skip_path(p),
-        ExprKind::LabelledBlock(lb) if lb.label.is_none() => {
-            should_skip_block(&lb.block)
-        }
+        ExprKind::LabelledBlock(lb) if lb.label.is_none() => should_skip_block(&lb.block),
         // Everything else is rejected as a const param default
         _ => true,
     }
@@ -490,9 +461,7 @@ fn should_skip_generic_arg(arg: &GenericArg) -> bool {
         GenericArg::Lifetime(_) => false,
         GenericArg::Type(ty) => should_skip_type(ty),
         GenericArg::Const(c) => should_skip_expr(&c.0),
-        GenericArg::AssocType { ident, ty } => {
-            is_reserved_keyword(ident) || should_skip_type(ty)
-        }
+        GenericArg::AssocType { ident, ty } => is_reserved_keyword(ident) || should_skip_type(ty),
         GenericArg::AssocConst { ident, value } => {
             is_reserved_keyword(ident) || should_skip_expr(&value.0)
         }
@@ -521,19 +490,13 @@ fn should_skip_pat(pat: &Pat) -> bool {
         Pat::MacCall(_) => true,
         Pat::Wild | Pat::Rest => false,
         Pat::Ident(ip) => {
-            is_reserved_keyword(&ip.ident)
-                || ip.pat.as_ref().map_or(false, |p| should_skip_pat(p))
+            is_reserved_keyword(&ip.ident) || ip.pat.as_ref().map_or(false, |p| should_skip_pat(p))
         }
         Pat::Struct(sp) => {
-            should_skip_path(&sp.path)
-                || sp.fields.iter().any(|f| should_skip_pat(&f.pat))
+            should_skip_path(&sp.path) || sp.fields.iter().any(|f| should_skip_pat(&f.pat))
         }
-        Pat::TupleStruct(ts) => {
-            should_skip_path(&ts.path) || ts.pats.iter().any(should_skip_pat)
-        }
-        Pat::Or(pats) | Pat::Tuple(pats) | Pat::Slice(pats) => {
-            pats.iter().any(should_skip_pat)
-        }
+        Pat::TupleStruct(ts) => should_skip_path(&ts.path) || ts.pats.iter().any(should_skip_pat),
+        Pat::Or(pats) | Pat::Tuple(pats) | Pat::Slice(pats) => pats.iter().any(should_skip_pat),
         Pat::Box(p) | Pat::Paren(p) => should_skip_pat(p),
         Pat::Ref(r) => should_skip_pat(&r.pat),
         Pat::Lit(e) => should_skip_expr(e),
@@ -566,9 +529,7 @@ fn should_skip_stmt(stmt: &Stmt) -> bool {
                 || match &local.kind {
                     LocalKind::Decl => false,
                     LocalKind::Init(e) => should_skip_expr(e),
-                    LocalKind::InitElse(e, b) => {
-                        should_skip_expr(e) || should_skip_block(b)
-                    }
+                    LocalKind::InitElse(e, b) => should_skip_expr(e) || should_skip_block(b),
                 }
         }
         Stmt::Empty(_) => false,
@@ -580,12 +541,10 @@ fn should_skip_stmt(stmt: &Stmt) -> bool {
 // ---------------------------------------------------------------------------
 
 fn should_skip_fn_decl(decl: &FnDecl) -> bool {
-    decl.inputs.iter().any(|p| {
-        should_skip_pat(&p.pat) || should_skip_type(&p.ty)
-    }) || decl
-        .output
-        .as_ref()
-        .map_or(false, should_skip_type)
+    decl.inputs
+        .iter()
+        .any(|p| should_skip_pat(&p.pat) || should_skip_type(&p.ty))
+        || decl.output.as_ref().map_or(false, should_skip_type)
 }
 
 // ---------------------------------------------------------------------------
@@ -598,8 +557,7 @@ fn should_skip_item(item: &Item) -> bool {
         return true;
     }
     // Visibility on extern blocks is not valid Rust
-    if matches!(&item.kind, ItemKind::ExternBlock(_))
-        && !matches!(&item.vis, Visibility::Inherited)
+    if matches!(&item.kind, ItemKind::ExternBlock(_)) && !matches!(&item.vis, Visibility::Inherited)
     {
         return true;
     }
@@ -785,9 +743,9 @@ fn should_skip_fields(fields: &Fields) -> bool {
 
 /// Returns true if any `Attribute` is an inner attribute (`#![...]`).
 fn has_inner_attr(attrs: &[Attribute]) -> bool {
-    attrs.iter().any(|attr| {
-        matches!(&attr.kind, AttrKind::Normal(ai) if matches!(ai.style, AttrStyle::Inner))
-    })
+    attrs.iter().any(
+        |attr| matches!(&attr.kind, AttrKind::Normal(ai) if matches!(ai.style, AttrStyle::Inner)),
+    )
 }
 
 /// Returns true if any field/variant in the definition has an inner attribute.

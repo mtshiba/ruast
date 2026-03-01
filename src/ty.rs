@@ -312,12 +312,7 @@ impl From<syn::TypeBareFn> for BareFn {
         });
         let generic_params = value
             .lifetimes
-            .map(|bl| {
-                bl.lifetimes
-                    .into_iter()
-                    .map(GenericParam::from)
-                    .collect()
-            })
+            .map(|bl| bl.lifetimes.into_iter().map(GenericParam::from).collect())
             .unwrap_or_default();
         Self {
             generic_params,
@@ -640,7 +635,11 @@ impl From<syn::GenericParam> for GenericParam {
                 default: cp.default.map(Expr::from),
             }),
             syn::GenericParam::Lifetime(lt) => {
-                let bounds = lt.bounds.iter().map(|b| b.ident.to_string().into()).collect();
+                let bounds = lt
+                    .bounds
+                    .iter()
+                    .map(|b| b.ident.to_string().into())
+                    .collect();
                 GenericParam::Lifetime(LifetimeParam {
                     name: lt.lifetime.ident.to_string().into(),
                     bounds,
@@ -678,12 +677,7 @@ impl From<syn::TraitBound> for PolyTraitRef {
     fn from(value: syn::TraitBound) -> Self {
         let bound_generic_params = value
             .lifetimes
-            .map(|bl| {
-                bl.lifetimes
-                    .into_iter()
-                    .map(GenericParam::from)
-                    .collect()
-            })
+            .map(|bl| bl.lifetimes.into_iter().map(GenericParam::from).collect())
             .unwrap_or_default();
         let trait_ref = Path::from(value.path);
         Self {

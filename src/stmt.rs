@@ -3,12 +3,12 @@ use std::fmt;
 use std::hash::Hash;
 use std::ops::{Deref, Index, IndexMut};
 
+#[cfg(feature = "syn")]
+use crate::expr::AttributeItem;
 use crate::expr::{
     Async, Attribute, Call, ConstBlock, DelimArgs, Expr, MacCall, MethodCall, Path, Range,
     TryBlock, UnsafeBlock,
 };
-#[cfg(feature = "syn")]
-use crate::expr::AttributeItem;
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 use crate::ty::Type;
 use crate::{
@@ -2528,7 +2528,11 @@ impl From<syn::ItemEnum> for EnumDef {
 #[cfg(feature = "syn")]
 impl From<syn::Variant> for Variant {
     fn from(value: syn::Variant) -> Self {
-        let attrs = value.attrs.into_iter().map(|a| Attribute::from(AttributeItem::from(a))).collect();
+        let attrs = value
+            .attrs
+            .into_iter()
+            .map(|a| Attribute::from(AttributeItem::from(a)))
+            .collect();
         let ident = value.ident.to_string().into();
         let fields = Fields::from(value.fields);
         let discriminant = value.discriminant.map(|d| Expr::from(d.1));
@@ -2561,7 +2565,11 @@ impl From<syn::Fields> for Fields {
 #[cfg(feature = "syn")]
 impl From<syn::Field> for FieldDef {
     fn from(value: syn::Field) -> Self {
-        let attrs = value.attrs.into_iter().map(|a| Attribute::from(AttributeItem::from(a))).collect();
+        let attrs = value
+            .attrs
+            .into_iter()
+            .map(|a| Attribute::from(AttributeItem::from(a)))
+            .collect();
         let vis = Visibility::from(value.vis);
         let ident = value.ident.map(|i| i.to_string().into());
         let ty = Type::from(value.ty);
@@ -3323,25 +3331,21 @@ impl From<syn::WherePredicate> for WherePredicate {
                     })
                     .collect(),
             }),
-            syn::WherePredicate::Lifetime(pl) => {
-                WherePredicate::Lifetime(PredicateLifetime {
-                    lifetime: pl.lifetime.ident.to_string().into(),
-                    bounds: pl
-                        .bounds
-                        .into_iter()
-                        .map(|l| l.ident.to_string().into())
-                        .collect(),
-                })
-            }
+            syn::WherePredicate::Lifetime(pl) => WherePredicate::Lifetime(PredicateLifetime {
+                lifetime: pl.lifetime.ident.to_string().into(),
+                bounds: pl
+                    .bounds
+                    .into_iter()
+                    .map(|l| l.ident.to_string().into())
+                    .collect(),
+            }),
             _ => unimplemented!(),
         }
     }
 }
 
 #[cfg(feature = "syn")]
-fn where_clauses_from_generics(
-    generics: &syn::Generics,
-) -> Option<Vec<WherePredicate>> {
+fn where_clauses_from_generics(generics: &syn::Generics) -> Option<Vec<WherePredicate>> {
     generics.where_clause.as_ref().map(|wc| {
         wc.predicates
             .iter()
@@ -4320,16 +4324,19 @@ impl From<syn::ItemTrait> for TraitDef {
                 }
                 syn::TraitItem::Type(t) => Item::inherited(AssocItemKind::TyAlias(TyAlias {
                     ident: t.ident.to_string().into(),
-                    generics: t.generics.params.into_iter().map(GenericParam::from).collect(),
+                    generics: t
+                        .generics
+                        .params
+                        .into_iter()
+                        .map(GenericParam::from)
+                        .collect(),
                     ty: None,
                 })),
-                syn::TraitItem::Const(c) => {
-                    Item::inherited(AssocItemKind::ConstItem(ConstItem {
-                        ident: c.ident.to_string().into(),
-                        ty: Type::from(c.ty),
-                        expr: c.default.map(|(_, e)| Expr::from(e)),
-                    }))
-                }
+                syn::TraitItem::Const(c) => Item::inherited(AssocItemKind::ConstItem(ConstItem {
+                    ident: c.ident.to_string().into(),
+                    ty: Type::from(c.ty),
+                    expr: c.default.map(|(_, e)| Expr::from(e)),
+                })),
                 syn::TraitItem::Macro(m) => {
                     Item::inherited(AssocItemKind::MacCall(MacCall::from(m.mac)))
                 }
@@ -4356,8 +4363,13 @@ impl From<syn::ItemImpl> for Impl {
             .into_iter()
             .map(GenericParam::from)
             .collect();
-        let is_negative = value.trait_.as_ref().map_or(false, |(bang, _, _)| bang.is_some());
-        let of_trait = value.trait_.map(|(_, path, _)| Type::Path(Path::from(path)));
+        let is_negative = value
+            .trait_
+            .as_ref()
+            .map_or(false, |(bang, _, _)| bang.is_some());
+        let of_trait = value
+            .trait_
+            .map(|(_, path, _)| Type::Path(Path::from(path)));
         let self_ty = Type::from(*value.self_ty);
         let items = value
             .items
@@ -4374,7 +4386,12 @@ impl From<syn::ItemImpl> for Impl {
                         vis,
                         AssocItemKind::TyAlias(TyAlias {
                             ident: t.ident.to_string().into(),
-                            generics: t.generics.params.into_iter().map(GenericParam::from).collect(),
+                            generics: t
+                                .generics
+                                .params
+                                .into_iter()
+                                .map(GenericParam::from)
+                                .collect(),
                             ty: Some(Type::from(t.ty)),
                         }),
                     )
@@ -4447,7 +4464,12 @@ impl From<syn::ItemType> for TyAlias {
     fn from(value: syn::ItemType) -> Self {
         Self {
             ident: value.ident.to_string().into(),
-            generics: value.generics.params.into_iter().map(GenericParam::from).collect(),
+            generics: value
+                .generics
+                .params
+                .into_iter()
+                .map(GenericParam::from)
+                .collect(),
             ty: Some(Type::from(*value.ty)),
         }
     }
@@ -4530,7 +4552,11 @@ impl From<syn::Item> for Item {
             }
             syn::Item::Impl(item) => {
                 let attrs = item.attrs.clone();
-                (attrs, Visibility::Inherited, ItemKind::Impl(Impl::from(item)))
+                (
+                    attrs,
+                    Visibility::Inherited,
+                    ItemKind::Impl(Impl::from(item)),
+                )
             }
             syn::Item::Mod(item) => {
                 let attrs = item.attrs.clone();
@@ -4554,7 +4580,11 @@ impl From<syn::Item> for Item {
             }
             syn::Item::ForeignMod(item) => {
                 let attrs = item.attrs.clone();
-                (attrs, Visibility::Inherited, ItemKind::ExternBlock(ExternBlock::from(item)))
+                (
+                    attrs,
+                    Visibility::Inherited,
+                    ItemKind::ExternBlock(ExternBlock::from(item)),
+                )
             }
             syn::Item::ExternCrate(item) => {
                 let attrs = item.attrs.clone();
@@ -5019,7 +5049,12 @@ impl From<syn::ForeignItemType> for TyAlias {
     fn from(value: syn::ForeignItemType) -> Self {
         Self {
             ident: value.ident.to_string().into(),
-            generics: value.generics.params.into_iter().map(GenericParam::from).collect(),
+            generics: value
+                .generics
+                .params
+                .into_iter()
+                .map(GenericParam::from)
+                .collect(),
             ty: None,
         }
     }
@@ -5273,9 +5308,7 @@ impl From<syn::Stmt> for Stmt {
             syn::Stmt::Item(item) => Self::Item(Item::from(item)),
             syn::Stmt::Expr(expr, None) => Self::Expr(Expr::from(expr)),
             syn::Stmt::Expr(expr, Some(_)) => Self::Semi(Semi(Expr::from(expr))),
-            syn::Stmt::Macro(mac_call) => {
-                Self::MacCallWithSemi(Semi(MacCall::from(mac_call.mac)))
-            }
+            syn::Stmt::Macro(mac_call) => Self::MacCallWithSemi(Semi(MacCall::from(mac_call.mac))),
         }
     }
 }

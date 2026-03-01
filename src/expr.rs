@@ -2,9 +2,9 @@ use core::fmt::Write;
 use std::fmt;
 use std::ops::{Add, Deref, DerefMut, Div, Mul, Neg, Sub};
 
-use crate::stmt::{Block, EmptyItem, FnDecl, Pat, Use};
 #[cfg(feature = "syn")]
 use crate::stmt::Param;
+use crate::stmt::{Block, EmptyItem, FnDecl, Pat, Use};
 use crate::token::{BinOpToken, Delimiter, KeywordToken, Token, TokenStream};
 use crate::ty::Type;
 use crate::{
@@ -1464,8 +1464,7 @@ impl From<If> for TokenStream {
                     &else_.kind,
                     ExprKind::LabelledBlock(lb) if lb.label.is_none()
                 )
-                || else_.attrs.is_empty()
-                    && matches!(&else_.kind, ExprKind::If(_));
+                || else_.attrs.is_empty() && matches!(&else_.kind, ExprKind::If(_));
             if skip_wrap {
                 ts.extend(TokenStream::from(*else_));
             } else {
@@ -1697,10 +1696,7 @@ impl EmptyItem for Loop {
 
 impl Loop {
     pub fn new(body: Block) -> Self {
-        Self {
-            label: None,
-            body,
-        }
+        Self { label: None, body }
     }
 }
 
@@ -1994,11 +1990,9 @@ impl From<syn::ExprClosure> for Closure {
         let inputs = value
             .inputs
             .into_iter()
-            .map(|pat| {
-                match pat {
-                    syn::Pat::Type(pt) => Param::new(Pat::from(*pt.pat), Type::from(*pt.ty)),
-                    other => Param::new(Pat::from(other), Type::Infer),
-                }
+            .map(|pat| match pat {
+                syn::Pat::Type(pt) => Param::new(Pat::from(*pt.pat), Type::from(*pt.ty)),
+                other => Param::new(Pat::from(other), Type::Infer),
             })
             .collect();
         let output = match value.output {
@@ -3389,11 +3383,7 @@ impl From<syn::ExprMethodCall> for MethodCall {
     fn from(value: syn::ExprMethodCall) -> Self {
         let receiver = Expr::from(*value.receiver);
         let method = if let Some(turbofish) = value.turbofish {
-            let args: Vec<GenericArg> = turbofish
-                .args
-                .into_iter()
-                .map(GenericArg::from)
-                .collect();
+            let args: Vec<GenericArg> = turbofish.args.into_iter().map(GenericArg::from).collect();
             PathSegment {
                 ident: value.method.to_string().into(),
                 args: Some(args),
@@ -3459,7 +3449,10 @@ impl<'a> arbitrary::Arbitrary<'a> for Path {
         for _ in 0..len {
             segments.push(PathSegment::arbitrary(u)?);
         }
-        Ok(Self { is_global: false, segments })
+        Ok(Self {
+            is_global: false,
+            segments,
+        })
     }
 }
 
@@ -3471,7 +3464,10 @@ impl Path {
         for _ in 0..len {
             segments.push(PathSegment::arbitrary_no_arg(u)?);
         }
-        Ok(Self { is_global: false, segments })
+        Ok(Self {
+            is_global: false,
+            segments,
+        })
     }
 }
 
@@ -3541,7 +3537,10 @@ impl From<&str> for Path {
 }
 impl From<Vec<PathSegment>> for Path {
     fn from(segments: Vec<PathSegment>) -> Self {
-        Self { is_global: false, segments }
+        Self {
+            is_global: false,
+            segments,
+        }
     }
 }
 
@@ -3567,7 +3566,10 @@ impl From<Path> for TokenStream {
 
 impl Path {
     pub const fn new(segments: Vec<PathSegment>) -> Self {
-        Self { is_global: false, segments }
+        Self {
+            is_global: false,
+            segments,
+        }
     }
 
     pub fn single(ident: impl Into<PathSegment>) -> Self {
@@ -3578,13 +3580,19 @@ impl Path {
     }
 
     pub fn global(segments: Vec<PathSegment>) -> Self {
-        Self { is_global: true, segments }
+        Self {
+            is_global: true,
+            segments,
+        }
     }
 
     pub fn chain(self, ident: impl Into<PathSegment>) -> Self {
         let mut segments = self.segments;
         segments.push(ident.into());
-        Self { is_global: self.is_global, segments }
+        Self {
+            is_global: self.is_global,
+            segments,
+        }
     }
 
     pub fn chain_use_group(self, group: Vec<UseTree>) -> UseTree {
@@ -4370,7 +4378,10 @@ impl From<syn::FieldValue> for FieldValue {
             syn::Member::Unnamed(index) => index.index.to_string(),
         };
         let expr = Expr::from(value.expr);
-        Self { ident: ident.into(), expr }
+        Self {
+            ident: ident.into(),
+            expr,
+        }
     }
 }
 

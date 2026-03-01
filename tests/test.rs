@@ -439,9 +439,7 @@ mod syn_conversion {
 
     #[test]
     fn test_trait_def() {
-        let krate = parse_and_convert(
-            "trait Summary { fn summarize(&self) -> String; }",
-        );
+        let krate = parse_and_convert("trait Summary { fn summarize(&self) -> String; }");
         let output = display(&krate);
         assert!(output.contains("trait Summary"));
         assert!(output.contains("fn summarize(&self) -> String;"));
@@ -449,9 +447,8 @@ mod syn_conversion {
 
     #[test]
     fn test_impl_block() {
-        let krate = parse_and_convert(
-            "impl Point { fn new(x: f64, y: f64) -> Self { Self { x, y } } }",
-        );
+        let krate =
+            parse_and_convert("impl Point { fn new(x: f64, y: f64) -> Self { Self { x, y } } }");
         let output = display(&krate);
         assert!(output.contains("impl Point"));
         assert!(output.contains("fn new(x: f64, y: f64) -> Self"));
@@ -529,9 +526,7 @@ mod syn_conversion {
 
     #[test]
     fn test_generics() {
-        let krate = parse_and_convert(
-            "fn first<T: Clone>(items: &[T]) -> T { items[0].clone() }",
-        );
+        let krate = parse_and_convert("fn first<T: Clone>(items: &[T]) -> T { items[0].clone() }");
         let output = display(&krate);
         assert!(output.contains("fn first<T: Clone>"));
         assert!(output.contains("items: &[T]"));
